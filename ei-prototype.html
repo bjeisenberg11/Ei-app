@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The EI — Eisenberg Invitational</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E9E4D6; --paper-2:#F2EEE3; --paper-3:#DFD8C6;
+  --ink:#12321F; --ink-soft:#4A6353; --ink-faint:#8A9A8F;
+  --rule:#B9B09A; --rule-soft:#D3CCBA;
+  --pencil:#A82B1E; --brass:#8A6A22;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:'Barlow',system-ui,sans-serif;
+  font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;
+  padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+.wrap{max-width:620px;margin:0 auto;padding:0 16px}
+button{font-family:inherit}
+
+/* header */
+.top{border-bottom:1.5px solid var(--ink);background:var(--paper);position:sticky;top:0;z-index:30}
+.top-in{display:flex;align-items:center;gap:11px;padding:11px 0 10px}
+.monogram{width:38px;height:38px;flex:none;border:1.5px solid var(--ink);
+  display:grid;place-items:center;font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;font-size:19px;letter-spacing:.02em;background:var(--ink);color:var(--paper)}
+.top h1{margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.03em;font-size:19px;line-height:1}
+.top .sub{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.15em;font-size:10px;font-weight:600;color:var(--ink-soft);margin-top:2px}
+.back{margin-left:auto;background:none;border:1px solid var(--ink);color:var(--ink);
+  font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.11em;
+  font-size:11px;font-weight:700;padding:6px 11px;cursor:pointer}
+
+/* generic */
+.eyebrow{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.15em;font-size:11px;font-weight:600;color:var(--ink-soft)}
+h2.sec{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.02em;font-size:22px;margin:22px 0 9px;padding-bottom:5px;
+  border-bottom:1.5px solid var(--ink)}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+
+/* leaderboard */
+table.lb{width:100%;border-collapse:collapse}
+table.lb th{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.12em;font-size:10px;font-weight:600;color:var(--ink-soft);
+  text-align:right;padding:0 0 5px}
+table.lb th:first-child,table.lb td:first-child{text-align:left}
+table.lb td{padding:8px 0;border-top:1px solid var(--rule-soft);font-size:15px;text-align:right}
+table.lb tr:first-child td{border-top:1px solid var(--rule)}
+.pos{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-faint);
+  display:inline-block;width:20px}
+.pts{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.hcp{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
+
+/* game cards */
+.gcard{display:block;width:100%;text-align:left;background:var(--paper-2);
+  border:1px solid var(--rule);border-left:3px solid var(--ink);
+  padding:12px 13px;margin-bottom:9px;cursor:pointer}
+.gcard.live{border-left-color:var(--pencil)}
+.gcard.done{opacity:.62}
+.gcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.05em;font-size:16px}
+.gstate{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+.gstate.live{color:var(--pencil)}
+.gteams{font-size:13.5px;color:var(--ink-soft);margin-top:3px}
+.gmeta{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.13em;font-size:10px;color:var(--ink-faint);margin-top:5px}
+
+/* hole strip */
+.hstrip{display:grid;grid-template-columns:repeat(18,1fr);border:1px solid var(--rule);
+  border-right:none;background:var(--paper-2);margin:10px 0 0}
+.hcell{border:none;border-right:1px solid var(--rule);background:transparent;
+  padding:5px 0 4px;font-family:'IBM Plex Mono',monospace;font-size:9px;
+  color:var(--ink-faint);cursor:pointer;position:relative}
+.hcell[data-s="done"]{background:var(--ink);color:var(--paper-2)}
+.hcell[data-s="cur"]{box-shadow:inset 0 -3px 0 var(--brass);color:var(--ink);font-weight:600}
+.hcell[data-s="done"][data-s2="cur"]{box-shadow:inset 0 -3px 0 var(--brass)}
+
+/* match banner */
+.banner{border:1.5px solid var(--ink);background:var(--paper-2);padding:13px;margin-top:12px;text-align:center}
+.banner .st{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.04em;font-size:27px;line-height:1}
+.banner .thru{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.14em;font-size:10px;color:var(--ink-soft);margin-top:4px}
+.banner.closed{background:var(--ink);color:var(--paper)}
+.banner.closed .thru{color:#A9BFAE}
+.tag{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.12em;font-size:10px;border:1px solid var(--pencil);
+  color:var(--pencil);padding:1px 6px;margin-top:6px}
+
+/* hole header */
+.hhead{display:flex;align-items:baseline;gap:9px;margin:18px 0 4px}
+.hnum{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:30px;line-height:1}
+.hinfo{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.13em;font-size:11px;color:var(--ink-soft)}
+.nav{margin-left:auto;display:flex;gap:6px}
+.nav button{width:38px;height:32px;border:1px solid var(--ink);background:transparent;
+  color:var(--ink);font-size:16px;cursor:pointer;line-height:1}
+.nav button:disabled{opacity:.28;cursor:default}
+
+/* team block */
+.team{border:1px solid var(--rule);background:var(--paper-2);margin-top:11px}
+.team.win{border-color:var(--ink);border-width:1.5px}
+.team-head{display:flex;justify-content:space-between;align-items:center;
+  padding:8px 11px;border-bottom:1px solid var(--rule-soft);background:var(--paper-3)}
+.team-name{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.09em;font-size:13px}
+.team-score{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px}
+.prow{display:flex;align-items:center;gap:9px;padding:8px 11px;border-top:1px solid var(--rule-soft)}
+.prow:first-child{border-top:none}
+.pname{flex:1;font-size:14.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pname .dots{color:var(--pencil);font-size:11px;letter-spacing:1px;margin-left:4px}
+.pnet{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);width:34px;text-align:right}
+.step{display:flex;align-items:center;border:1px solid var(--rule)}
+.step button{width:32px;height:30px;border:none;background:var(--paper-3);color:var(--ink);
+  font-size:16px;cursor:pointer;line-height:1}
+.step .val{width:34px;text-align:center;font-family:'IBM Plex Mono',monospace;
+  font-weight:600;font-size:15px;background:var(--paper-2)}
+.step .val.empty{color:var(--ink-faint)}
+.pu{border:1px solid var(--rule);background:var(--paper-3);color:var(--ink-soft);
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:10px;
+  letter-spacing:.1em;padding:0 7px;height:32px;cursor:pointer}
+.pu.on{background:var(--pencil);border-color:var(--pencil);color:var(--paper-2)}
+.sel{width:30px;height:30px;flex:none;border:1.5px solid var(--rule);background:var(--paper);
+  cursor:pointer;display:grid;place-items:center;font-family:'IBM Plex Mono',monospace;
+  font-size:14px;font-weight:600;color:transparent}
+.sel.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.sel:disabled{opacity:.3;cursor:default}
+
+/* actions */
+.acts{display:flex;gap:7px;margin-top:12px}
+.btn{flex:1;background:var(--ink);color:var(--paper);border:none;padding:13px 8px;cursor:pointer;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.11em;font-size:13px}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--ink)}
+.btn.red{background:var(--pencil)}
+.btn:disabled{opacity:.32;cursor:default}
+.note{font-size:13px;color:var(--ink-soft);margin:9px 0 0;text-align:center}
+.note.warn{color:var(--pencil);font-weight:500}
+
+/* 40ball corridor */
+.corridor{border:1.5px solid var(--ink);background:var(--paper-2);padding:11px;margin-top:11px}
+.cor-row{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;
+  font-size:12px;margin-bottom:7px}
+.cor-row b{font-weight:600}
+.bar{height:9px;background:var(--paper-3);border:1px solid var(--rule);position:relative;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ink)}
+.bar i.tight{background:var(--pencil)}
+.cor-msg{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.1em;font-size:11px;font-weight:600;margin-top:7px;color:var(--ink-soft)}
+.cor-msg.warn{color:var(--pencil)}
+.locked-flag{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.12em;font-size:10px;font-weight:700;color:var(--paper);
+  background:var(--ink);padding:2px 7px}
+
+/* tabs */
+.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
+  border-top:1.5px solid var(--ink);display:flex;z-index:40;
+  padding-bottom:env(safe-area-inset-bottom)}
+.tabs button{flex:1;background:none;border:none;padding:13px 4px 12px;cursor:pointer;
+  font-family:'Barlow Condensed',sans-serif;font-weight:600;text-transform:uppercase;
+  letter-spacing:.13em;font-size:11px;color:var(--ink-faint)}
+.tabs button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--ink)}
+
+.footnote{border-top:1px solid var(--rule);margin-top:26px;padding:14px 0 8px;
+  font-size:12.5px;color:var(--ink-faint);line-height:1.5}
+.toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%) translateY(140%);
+  background:var(--ink);color:var(--paper);padding:9px 16px;font-family:'Barlow Condensed',sans-serif;
+  text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:600;
+  transition:transform .2s;z-index:60}
+.toast.on{transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap"><div class="top-in">
+  <div class="monogram">EI</div>
+  <div>
+    <h1 id="ttl">Eisenberg Invitational</h1>
+    <div class="sub" id="tsub">Prototype · scoring engine</div>
+  </div>
+  <button class="back" id="back" style="display:none">Back</button>
+</div></div></header>
+
+<div class="wrap"><main id="app"></main></div>
+
+<nav class="tabs">
+  <button data-tab="home" class="on">Games</button>
+  <button data-tab="board">Board</button>
+  <button data-tab="sched">Schedule</button>
+  <button data-tab="players">Field</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   THE EI — PHASE 1 PROTOTYPE
+   All state in memory. No backend. Fake data.
+   Implements spec v2 §1–§9 and §11.
+   ============================================================ */
+
+/* ---------- course ---------- */
+const COURSE = {
+  name: "Pine Hollow",
+  holes: [
+    {par:4,si:7},{par:4,si:3},{par:3,si:17},{par:5,si:11},{par:4,si:1},
+    {par:4,si:9},{par:3,si:15},{par:4,si:5},{par:5,si:13},
+    {par:4,si:8},{par:5,si:4},{par:3,si:18},{par:4,si:12},{par:4,si:2},
+    {par:4,si:10},{par:3,si:16},{par:5,si:6},{par:4,si:14}
+  ]
+};
+
+/* ---------- players ---------- */
+const PLAYERS = [
+  {id:"p1",name:"Blake",   hcp:8,  admin:true},
+  {id:"p2",name:"Dan",     hcp:14},
+  {id:"p3",name:"Jason",   hcp:5},
+  {id:"p4",name:"Daniel",  hcp:21},
+  {id:"p5",name:"Howard",  hcp:11},
+  {id:"p6",name:"Luke",    hcp:16},
+  {id:"p7",name:"Jake",    hcp:3},
+  {id:"p8",name:"Adam",    hcp:19}
+];
+const P = id => PLAYERS.find(p => p.id === id);
+
+/* ---------- games ---------- */
+function blankHoles(){
+  return Array.from({length:18}, () => ({
+    scores:{},               // playerId -> number | "PU"
+    teamScore:[null,null],   // scrambles
+    conceded:null,           // 0 | 1 = team index that GAVE the hole
+    selected:[[],[]],        // 40ball: playerIds spent, per team
+    locked:[false,false]     // 40ball
+  }));
+}
+
+let GAMES = [
+  { id:"g1", round:"Saturday AM", type:"BESTBALL", mode:"RELATIVE",
+    teams:[["p1","p4"],["p2","p5"]], holes:blankHoles() },
+  { id:"g2", round:"Saturday AM", type:"BESTBALL", mode:"RELATIVE",
+    teams:[["p3","p6"],["p7","p8"]], holes:blankHoles() },
+  { id:"g3", round:"Saturday PM", type:"SCRAMBLE4", mode:"RELATIVE",
+    teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() },
+  { id:"g4", round:"Sunday AM", type:"SCRAMBLE3", mode:"RELATIVE",
+    teams:[["p1","p4","p3"],["p2","p5","p7"]], holes:blankHoles() },
+  { id:"g5", round:"Sunday PM", type:"FORTYBALL", mode:"RELATIVE", hidden:true,
+    teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() }
+];
+
+/* ---------- §10 weekend schedule ---------- */
+let SCHEDULE = [
+  {day:"Friday", time:"14:20", type:"TRAVEL", dir:"ARRIVAL", pid:"p3",
+   title:"United 1442", notes:"ORD"},
+  {day:"Friday", time:"15:05", type:"TRAVEL", dir:"ARRIVAL", pid:"p7",
+   title:"Delta 883", notes:"ORD"},
+  {day:"Friday", time:"16:40", type:"TRAVEL", dir:"ARRIVAL", pid:"p8",
+   title:"Southwest 212", notes:"MDW"},
+  {day:"Friday", time:null, type:"TRAVEL", dir:"ARRIVAL", pid:"p2",
+   title:"Driving", notes:"Sometime afternoon"},
+  {day:"Friday", time:"17:30", type:"OTHER", title:"Hotel check-in",
+   location:"The Lodge"},
+  {day:"Friday", time:"19:30", type:"MEAL", title:"Welcome dinner",
+   location:"Grill Room", notes:"Reservation under Eisenberg, 8 people"},
+  {day:"Saturday", time:"08:10", type:"ROUND", title:"2v2 Best Ball — two matches",
+   location:"Pine Hollow", gameId:"g1"},
+  {day:"Saturday", time:"13:40", type:"ROUND", title:"4v4 Scramble",
+   location:"Pine Hollow", gameId:"g3"},
+  {day:"Saturday", time:"19:00", type:"MEAL", title:"Steak night",
+   location:"Halcyon Tavern", notes:"Reservation 7:00, bar from 6:15"},
+  {day:"Sunday", time:"08:30", type:"ROUND", title:"3v3 Scramble",
+   location:"Pine Hollow", gameId:"g4"},
+  {day:"Sunday", time:"13:15", type:"ROUND", title:"40ball",
+   location:"Pine Hollow", gameId:"g5"},
+  {day:"Sunday", time:"18:00", type:"MEAL", title:"Closing dinner & trophy",
+   location:"Grill Room"},
+  {day:"Sunday", time:"20:45", type:"TRAVEL", dir:"DEPARTURE", pid:"p7",
+   title:"Delta 1190", notes:"ORD"},
+  {day:"Monday", time:"06:50", type:"TRAVEL", dir:"DEPARTURE", pid:"p3",
+   title:"United 610", notes:"ORD"},
+  {day:"Monday", time:"09:15", type:"TRAVEL", dir:"DEPARTURE", pid:"p8",
+   title:"Southwest 401", notes:"MDW"}
+];
+const DAYS = ["Friday","Saturday","Sunday","Monday"];
+
+const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
+                SCRAMBLE3:"3v3 Scramble", FORTYBALL:"40ball" };
+const isMatch = g => g.type !== "FORTYBALL";
+const isScramble = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3";
+const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
+
+/* ============================================================
+   §1.4–1.5  HANDICAPS
+   ============================================================ */
+function baseline(g){
+  const all = [...g.teams[0], ...g.teams[1]];
+  return Math.min(...all.map(id => P(id).hcp));
+}
+function playingHcp(pid, g){
+  if (!usesHcp(g)) return 0;
+  return g.mode === "FULL" ? P(pid).hcp : P(pid).hcp - baseline(g);
+}
+function strokesOn(pid, g, h){
+  if (!usesHcp(g)) return 0;
+  const ph = playingHcp(pid, g), si = COURSE.holes[h].si;
+  let s = 0;
+  if (ph >= si) s = 1;
+  if (ph >= si + 18) s = 2;
+  return s;
+}
+function netOf(pid, g, h){
+  const raw = g.holes[h].scores[pid];
+  if (raw == null || raw === "PU") return null;
+  return raw - strokesOn(pid, g, h);
+}
+
+/* ============================================================
+   §3  MATCH PLAY ENGINE
+   ============================================================ */
+function teamHoleScore(g, t, h){
+  const hole = g.holes[h];
+  if (isScramble(g)) return hole.teamScore[t];
+  const nets = g.teams[t].map(id => netOf(id, g, h)).filter(n => n != null);
+  return nets.length ? Math.min(...nets) : null;
+}
+function holeComplete(g, h){
+  const hole = g.holes[h];
+  if (hole.conceded !== null) return true;                      // §4
+  if (isScramble(g)) return hole.teamScore[0] != null && hole.teamScore[1] != null;
+  return teamHoleScore(g,0,h) != null && teamHoleScore(g,1,h) != null;  // §5.3
+}
+function resolveHole(g, h){
+  const hole = g.holes[h];
+  if (hole.conceded === 0) return "B";
+  if (hole.conceded === 1) return "A";
+  const a = teamHoleScore(g,0,h), b = teamHoleScore(g,1,h);
+  if (a == null || b == null) return null;
+  if (a < b) return "A";
+  if (b < a) return "B";
+  return "H";
+}
+function matchState(g){
+  let status = 0, played = 0, closed = false, result = null;
+  for (let h = 0; h < 18; h++){
+    if (!holeComplete(g, h)) break;
+    const r = resolveHole(g, h);
+    played++;
+    if (r === "A") status++; else if (r === "B") status--;
+    const left = 18 - played;
+    if (Math.abs(status) > left){                                // §3.4
+      closed = true;
+      result = { winner: status > 0 ? "A" : "B",
+                 label: left === 0 ? `${Math.abs(status)} UP` : `${Math.abs(status)}&${left}` };
+      break;
+    }
+  }
+  const left = 18 - played;
+  if (!closed && played === 18){                                 // §3.5
+    result = status === 0 ? { winner:"TIE", label:"HALVED" }
+                          : { winner: status > 0 ? "A":"B", label:`${Math.abs(status)} UP` };
+  }
+  const dormie = !closed && Math.abs(status) === left && left > 0 && status !== 0;
+  return { status, played, left, closed, result, dormie };
+}
+function statusText(st){
+  if (st.status === 0) return "ALL SQUARE";
+  return `TEAM ${st.status > 0 ? "A" : "B"} ${Math.abs(st.status)} UP`;
+}
+// a match hard-locks once closed
+const matchLocked = (g, h) => { const s = matchState(g); return s.closed && h >= s.played; };
+
+/* ============================================================
+   §8  40BALL
+   ============================================================ */
+const QUOTA = 40;
+function fbSpent(g, t){
+  return g.holes.reduce((n,hole) => n + (hole.locked[t] ? hole.selected[t].length : 0), 0);
+}
+function fbHolesLocked(g, t){ return g.holes.filter(hole => hole.locked[t]).length; }
+function fbAvailable(g, t, h){
+  return g.teams[t].filter(id => {
+    const v = g.holes[h].scores[id];
+    return v != null && v !== "PU";
+  }).length;
+}
+function fbBudget(g, t, h){
+  const R = QUOTA - fbSpent(g, t);
+  const H = 18 - fbHolesLocked(g, t);
+  const A = fbAvailable(g, t, h);
+  const max = Math.min(A, R);
+  const min = Math.max(0, R - 4 * (H - 1));
+  const slack = 4 * H - R;
+  return { R, H, A, min, max, slack, slackHoles: Math.floor(slack/4),
+           broken: R > 4*(H-1) + A };
+}
+function fbTotal(g, t){
+  let sum = 0;
+  g.holes.forEach((hole, h) => {
+    if (!hole.locked[t]) return;
+    hole.selected[t].forEach(id => { const n = netOf(id, g, h); if (n != null) sum += n; });
+  });
+  return sum;
+}
+function fbState(g){
+  const doneA = fbHolesLocked(g,0) === 18, doneB = fbHolesLocked(g,1) === 18;
+  if (!(doneA && doneB)) return { done:false, result:null };
+  const a = fbTotal(g,0), b = fbTotal(g,1);
+  return { done:true, result: a < b ? {winner:"A",label:`${a}–${b}`}
+                       : b < a ? {winner:"B",label:`${b}–${a}`}
+                       : {winner:"TIE",label:`${a}–${a}`} };
+}
+
+/* ---------- unified result ---------- */
+function gameResult(g){
+  return isMatch(g) ? matchState(g).result : fbState(g).result;
+}
+
+/* ============================================================
+   §11  LEADERBOARD
+   ============================================================ */
+function standings(){
+  const rec = {};
+  PLAYERS.forEach(p => rec[p.id] = { w:0, l:0, t:0, gp:0 });
+  GAMES.forEach(g => {
+    const r = gameResult(g);
+    if (!r) return;
+    g.teams.forEach((team, t) => {
+      const side = t === 0 ? "A" : "B";
+      team.forEach(id => {
+        rec[id].gp++;
+        if (r.winner === "TIE") rec[id].t++;
+        else if (r.winner === side) rec[id].w++;
+        else rec[id].l++;
+      });
+    });
+  });
+  return PLAYERS.map(p => ({ ...p, ...rec[p.id], pts: rec[p.id].w + rec[p.id].t * 0.5 }))
+    .sort((a,b) => b.pts - a.pts || b.w - a.w || a.gp - b.gp || a.name.localeCompare(b.name));
+}
+
+/* ============================================================
+   VIEW STATE
+   ============================================================ */
+let view = { tab:"home", gameId:null, hole:0 };
+
+const $ = s => document.querySelector(s);
+const app = $("#app");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._x); t._x = setTimeout(() => t.classList.remove("on"), 1500);
+}
+
+/* ---------- render router ---------- */
+function render(){
+  const inGame = !!view.gameId;
+  $("#back").style.display = inGame ? "block" : "none";
+  if (inGame){
+    const g = GAMES.find(x => x.id === view.gameId);
+    $("#ttl").textContent = LABEL[g.type];
+    $("#tsub").textContent = g.round + " · " + COURSE.name;
+  } else {
+    $("#ttl").textContent = "Eisenberg Invitational";
+    $("#tsub").textContent = "Prototype · scoring engine";
+  }
+  document.querySelectorAll(".tabs button").forEach(b =>
+    b.classList.toggle("on", !inGame && b.dataset.tab === view.tab));
+
+  if (inGame) return renderGame();
+  if (view.tab === "board") return renderBoard();
+  if (view.tab === "sched") return renderSchedule();
+  if (view.tab === "players") return renderPlayers();
+  renderHome();
+}
+
+/* ---------- home ---------- */
+function renderHome(){
+  const rounds = [...new Set(GAMES.map(g => g.round))];
+  let h = "";
+  rounds.forEach(r => {
+    h += `<h2 class="sec">${esc(r)}</h2>`;
+    GAMES.filter(g => g.round === r).forEach(g => {
+      const res = gameResult(g);
+      let state, cls = "";
+      if (res){
+        state = res.winner === "TIE" ? "HALVED"
+              : `TEAM ${res.winner} ${res.label}`;
+        cls = "done";
+      } else if (isMatch(g)){
+        const st = matchState(g);
+        if (st.played === 0) state = "not started";
+        else { state = `${statusText(st)} · ${st.played}`; cls = "live"; }
+      } else {
+        const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
+        if (la + lb === 0) state = "not started";
+        else { state = `A ${fbSpent(g,0)}/40 · B ${fbSpent(g,1)}/40`; cls = "live"; }
+      }
+      const names = t => g.teams[t].map(id => P(id).name).join(" & ");
+      h += `<button class="gcard ${cls}" data-game="${g.id}">
+        <div class="gcard-top">
+          <span class="gtype">${LABEL[g.type]}</span>
+          <span class="gstate ${cls==="live"?"live":""}">${esc(state)}</span>
+        </div>
+        <div class="gteams">${esc(names(0))} <b>vs</b> ${esc(names(1))}</div>
+        <div class="gmeta">${g.mode === "RELATIVE" ? "Relative handicaps" : "Full handicaps"}${
+          usesHcp(g) ? "" : " · gross"}${g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
+      </button>`;
+    });
+  });
+  h += `<div class="footnote">Phase 1 prototype. Everything lives in memory and resets when you
+    reload. Handicaps, scoring, match status, close-out and the 40ball budget guard are all real —
+    the data is not.</div>`;
+  app.innerHTML = h;
+}
+
+/* ---------- leaderboard ---------- */
+function renderBoard(){
+  const s = standings();
+  let h = `<h2 class="sec">Standings</h2>
+  <table class="lb"><thead><tr>
+    <th>Player</th><th>W</th><th>L</th><th>T</th><th>GP</th><th>Pts</th>
+  </tr></thead><tbody>`;
+  s.forEach((p,i) => {
+    h += `<tr><td><span class="pos">${String(i+1).padStart(2,"0")}</span>${esc(p.name)}
+      <span class="hcp"> ${p.hcp}</span></td>
+      <td class="mono">${p.w}</td><td class="mono">${p.l}</td><td class="mono">${p.t}</td>
+      <td class="mono" style="color:var(--ink-faint)">${p.gp}</td>
+      <td class="pts">${p.pts % 1 ? p.pts.toFixed(1) : p.pts}</td></tr>`;
+  });
+  h += `</tbody></table>
+  <div class="footnote">Win 1 point, tie 0.5, loss 0. Games played is shown because the 3v3
+  sits two players out, so records are not expected to be even.</div>`;
+  app.innerHTML = h;
+}
+
+/* ---------- §10 schedule ---------- */
+let schedMode = "timeline";
+function fmtTime(t){
+  if (!t) return "—";
+  let [h,m] = t.split(":").map(Number);
+  const ap = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2,"0")}${ap}`;
+}
+function renderSchedule(){
+  let h = `<div class="acts" style="margin-top:18px">
+    <button class="btn ${schedMode==="timeline"?"":"ghost"}" data-sched="timeline">Timeline</button>
+    <button class="btn ${schedMode==="travel"?"":"ghost"}" data-sched="travel">Travel</button>
+  </div>`;
+
+  if (schedMode === "timeline"){
+    DAYS.forEach(day => {
+      const evs = SCHEDULE.filter(e => e.day === day);
+      if (!evs.length) return;
+      const timed = evs.filter(e => e.time).sort((a,b) => a.time.localeCompare(b.time));
+      const untimed = evs.filter(e => !e.time);
+      h += `<h2 class="sec">${day}</h2>`;
+      [...timed, ...untimed].forEach(e => {
+        const icon = { TRAVEL: e.dir === "ARRIVAL" ? "IN" : "OUT",
+                       ROUND:"GOLF", MEAL:"EAT", OTHER:"—" }[e.type];
+        const who = e.pid ? P(e.pid).name + " · " : "";
+        h += `<div class="gcard" style="cursor:${e.gameId?"pointer":"default"}"
+          ${e.gameId?`data-game="${e.gameId}"`:""}>
+          <div class="gcard-top">
+            <span class="gtype" style="font-size:14px">${esc(who + e.title)}</span>
+            <span class="gstate">${e.time ? fmtTime(e.time) : "TBD"}</span>
+          </div>
+          ${e.location?`<div class="gteams">${esc(e.location)}</div>`:""}
+          <div class="gmeta">${icon}${e.notes?` · ${esc(e.notes)}`:""}${
+            e.gameId?" · tap to score":""}</div>
+        </div>`;
+      });
+    });
+  } else {
+    ["ARRIVAL","DEPARTURE"].forEach(dir => {
+      h += `<h2 class="sec">${dir === "ARRIVAL" ? "Arrivals" : "Departures"}</h2>`;
+      const evs = SCHEDULE.filter(e => e.type === "TRAVEL" && e.dir === dir);
+      const listed = evs.map(e => e.pid);
+      evs.sort((a,b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) ||
+                        (a.time||"zz").localeCompare(b.time||"zz"));
+      evs.forEach(e => {
+        h += `<div class="gcard" style="cursor:default">
+          <div class="gcard-top">
+            <span class="gtype" style="font-size:15px">${esc(P(e.pid).name)}</span>
+            <span class="gstate">${e.day} ${e.time?fmtTime(e.time):"TBD"}</span>
+          </div>
+          <div class="gteams">${esc(e.title)}${e.notes?` · ${esc(e.notes)}`:""}</div>
+        </div>`;
+      });
+      const missing = PLAYERS.filter(p => !listed.includes(p.id));
+      if (missing.length)
+        h += `<p class="note">No ${dir.toLowerCase()} entered: ${
+          missing.map(p => esc(p.name)).join(", ")}</p>`;
+    });
+  }
+
+  h += `<div class="footnote">In the real app the admin enters rounds, meals and anything else;
+    each player adds his own flights, and the admin can add or edit any of them. Rounds link
+    straight to the live scorecard.</div>`;
+  app.innerHTML = h;
+}
+
+/* ---------- players ---------- */
+function renderPlayers(){
+  let h = `<h2 class="sec">Field</h2><table class="lb"><thead><tr>
+    <th>Player</th><th>Index</th></tr></thead><tbody>`;
+  PLAYERS.forEach(p => {
+    h += `<tr><td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
+      <td class="mono">${p.hcp}</td></tr>`;
+  });
+  h += `</tbody></table>
+  <h2 class="sec">${esc(COURSE.name)}</h2>
+  <table class="lb"><thead><tr><th>Hole</th><th>Par</th><th>Index</th></tr></thead><tbody>`;
+  COURSE.holes.forEach((c,i) => {
+    h += `<tr><td class="mono">${i+1}</td><td class="mono">${c.par}</td>
+      <td class="mono" style="color:var(--ink-soft)">${c.si}</td></tr>`;
+  });
+  h += `</tbody></table>
+  <div class="footnote">In the real app the admin edits these. Handicaps are open to everyone;
+  the course library and rosters are admin-only.</div>`;
+  app.innerHTML = h;
+}
+
+/* ---------- game ---------- */
+function renderGame(){
+  const g = GAMES.find(x => x.id === view.gameId);
+  const h = view.hole;
+  let out = "";
+
+  /* hole strip */
+  out += `<div class="hstrip">`;
+  for (let i = 0; i < 18; i++){
+    const done = isMatch(g) ? holeComplete(g,i) : (g.holes[i].locked[0] && g.holes[i].locked[1]);
+    out += `<button class="hcell" data-hole="${i}" data-s="${done?"done":(i===h?"cur":"")}"
+      ${done && i===h ? 'data-s2="cur"' : ""}>${i+1}</button>`;
+  }
+  out += `</div>`;
+
+  /* banner */
+  if (isMatch(g)){
+    const st = matchState(g);
+    out += `<div class="banner ${st.closed?"closed":""}">
+      <div class="st">${st.closed ? `TEAM ${st.result.winner} WINS ${st.result.label}`
+        : st.result ? (st.result.winner==="TIE"?"HALVED":`TEAM ${st.result.winner} WINS ${st.result.label}`)
+        : statusText(st)}</div>
+      <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
+        !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
+      ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
+    </div>`;
+  } else {
+    const fs = fbState(g);
+    out += `<div class="banner ${fs.done?"closed":""}">
+      <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
+        : `TEAM ${fs.result.winner} ${fs.result.label}`)
+        : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
+      <div class="thru">A ${fbSpent(g,0)}/40 spent · B ${fbSpent(g,1)}/40 spent</div>
+    </div>`;
+  }
+
+  /* hole header */
+  const c = COURSE.holes[h];
+  out += `<div class="hhead">
+    <span class="hnum">${h+1}</span>
+    <span class="hinfo">Par ${c.par} · Index ${c.si}</span>
+    <span class="nav">
+      <button id="prev" ${h===0?"disabled":""}>&larr;</button>
+      <button id="next" ${h===17?"disabled":""}>&rarr;</button>
+    </span></div>`;
+
+  const hardLocked = isMatch(g) && matchLocked(g, h);
+  if (hardLocked){
+    out += `<p class="note warn">Match closed out. This hole is locked and not scored.</p>`;
+  }
+
+  /* team blocks */
+  [0,1].forEach(t => out += renderTeam(g, t, h, hardLocked));
+
+  /* actions */
+  if (isMatch(g) && !hardLocked){
+    const hole = g.holes[h];
+    out += `<div class="acts">
+      <button class="btn ghost" data-concede="0">${hole.conceded===0?"Undo concede":"A concedes"}</button>
+      <button class="btn ghost" data-concede="1">${hole.conceded===1?"Undo concede":"B concedes"}</button>
+    </div>`;
+    if (hole.conceded !== null)
+      out += `<p class="note warn">Team ${hole.conceded===0?"A":"B"} conceded — hole awarded, scoring skipped.</p>`;
+    else if (!holeComplete(g,h))
+      out += `<p class="note">${isScramble(g) ? "Both teams need a score."
+        : "At least one player per side must hole out."}</p>`;
+  }
+
+  out += `<div class="acts" style="margin-top:16px">
+    <button class="btn ghost" id="sim">Fill hole randomly</button>
+    <button class="btn ghost" id="reset">Reset game</button>
+  </div>`;
+
+  app.innerHTML = out;
+}
+
+function renderTeam(g, t, h, hardLocked){
+  const hole = g.holes[h];
+  const name = `Team ${t===0?"A":"B"}`;
+  const roster = g.teams[t].map(id => P(id).name).join(" · ");
+  let inner = "";
+  let winCls = "";
+
+  if (isMatch(g)){
+    const r = resolveHole(g,h);
+    if (r === (t===0?"A":"B")) winCls = "win";
+  }
+
+  /* --- scramble: one team score --- */
+  if (isScramble(g)){
+    inner += `<div class="prow">
+      <span class="pname">${esc(roster)}</span>
+      ${stepper(`ts-${t}`, hole.teamScore[t], hardLocked || hole.conceded!==null)}
+    </div>`;
+  }
+
+  /* --- best ball --- */
+  if (g.type === "BESTBALL"){
+    g.teams[t].forEach(id => {
+      const s = strokesOn(id, g, h);
+      const n = netOf(id, g, h);
+      const v = hole.scores[id];
+      inner += `<div class="prow">
+        <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
+        <span class="pnet">${n!=null?n:(v==="PU"?"—":"")}</span>
+        ${stepper(`sc-${id}`, v==="PU"?null:v, hardLocked || hole.conceded!==null)}
+        <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
+          ${hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
+      </div>`;
+    });
+  }
+
+  /* --- 40ball --- */
+  if (g.type === "FORTYBALL"){
+    const b = fbBudget(g, t, h);
+    const locked = hole.locked[t];
+    g.teams[t].forEach(id => {
+      const s = strokesOn(id, g, h);
+      const n = netOf(id, g, h);
+      const v = hole.scores[id];
+      const on = hole.selected[t].includes(id);
+      const canPick = !locked && n != null &&
+        (on || hole.selected[t].length < b.max);
+      inner += `<div class="prow">
+        <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
+        <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
+        <span class="pnet">${n!=null?n:(v==="PU"?"—":"")}</span>
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked)}
+        <button class="pu ${v==="PU"?"on":""}" data-pu="${id}" ${locked?"disabled":""}>PU</button>
+      </div>`;
+    });
+  }
+
+  let head = `<div class="team-head">
+    <span class="team-name">${name}</span>
+    <span class="team-score">`;
+  if (isMatch(g)){
+    const ts = teamHoleScore(g,t,h);
+    head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "—");
+  } else {
+    head += `${fbTotal(g,t)} · ${fbSpent(g,t)}/40`;
+    if (g.holes[h].locked[t]) head += ` <span class="locked-flag">Locked</span>`;
+  }
+  head += `</span></div>`;
+
+  let extra = "";
+  if (g.type === "FORTYBALL") extra = renderCorridor(g, t, h);
+
+  return `<div class="team ${winCls}">${head}${inner}</div>${extra}`;
+}
+
+function stepper(key, val, disabled){
+  return `<span class="step">
+    <button data-step="${key}:-1" ${disabled?"disabled":""}>−</button>
+    <span class="val ${val==null?"empty":""}">${val==null?"–":val}</span>
+    <button data-step="${key}:1" ${disabled?"disabled":""}>+</button>
+  </span>`;
+}
+
+/* §8.4 / §8.6 — the corridor */
+function renderCorridor(g, t, h){
+  const b = fbBudget(g, t, h);
+  const hole = g.holes[h];
+  const locked = hole.locked[t];
+  const picked = hole.selected[t].length;
+  const pct = Math.min(100, (b.R / QUOTA) * 100);
+  const tight = b.slackHoles < 1;
+
+  let msg, warn = false;
+  if (b.broken){ msg = "Budget unreachable — too many pickups"; warn = true; }
+  else if (b.min === b.max && b.max > 0){ msg = `You must take all ${b.max}`; warn = true; }
+  else if (b.min > 0){ msg = `Must take at least ${b.min} this hole`; warn = true; }
+  else if (tight){ msg = "No slack left — take scores every hole"; warn = true; }
+  else msg = `${b.slackHoles} hole${b.slackHoles===1?"":"s"} of slack`;
+
+  const ok = !locked && picked >= b.min && picked <= b.max &&
+             fbAvailable(g,t,h) === g.teams[t].filter(id => hole.scores[id] != null).length &&
+             g.teams[t].every(id => hole.scores[id] != null);
+
+  return `<div class="corridor">
+    <div class="cor-row"><span>Remaining <b>${b.R}</b> of 40</span>
+      <span>${b.H} hole${b.H===1?"":"s"} left</span></div>
+    <div class="bar"><i class="${tight?"tight":""}" style="width:${pct}%"></i></div>
+    <div class="cor-msg ${warn?"warn":""}">${msg}</div>
+    <div class="cor-row" style="margin:9px 0 0"><span>Selected <b>${picked}</b></span>
+      <span>Legal range ${b.min}–${b.max}</span></div>
+    ${locked ? `<p class="note">Hole locked. Admin can reopen.</p>
+      <div class="acts"><button class="btn ghost" data-unlock="${t}">Admin unlock</button></div>`
+    : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock Team ${t===0?"A":"B"}</button></div>
+       ${!ok && !g.teams[t].every(id => hole.scores[id]!=null)
+         ? `<p class="note">All four players need a score or a pickup.</p>` : ""}`}
+  </div>`;
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+document.addEventListener("click", e => {
+  const el = e.target.closest("button");
+  if (!el) return;
+  const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
+  const h = view.hole;
+
+  if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
+  if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
+  if (el.id === "back"){ view.gameId = null; render(); return; }
+  if (el.dataset.game){ view.gameId = el.dataset.game; view.hole = 0; render(); return; }
+  if (el.dataset.hole != null){ view.hole = +el.dataset.hole; render(); return; }
+  if (el.id === "prev"){ view.hole = Math.max(0, h-1); render(); return; }
+  if (el.id === "next"){ view.hole = Math.min(17, h+1); render(); return; }
+
+  if (el.dataset.step){
+    const [key, dRaw] = el.dataset.step.split(":");
+    const d = +dRaw;
+    const [kind, ref] = key.split("-");
+    const hole = g.holes[h];
+    if (kind === "ts"){
+      const t = +ref, cur = hole.teamScore[t] ?? COURSE.holes[h].par - d;
+      hole.teamScore[t] = Math.max(1, Math.min(14, cur + d));
+    } else {
+      const cur = (hole.scores[ref] === "PU" || hole.scores[ref] == null)
+        ? COURSE.holes[h].par - d : hole.scores[ref];
+      hole.scores[ref] = Math.max(1, Math.min(14, cur + d));
+    }
+    render(); return;
+  }
+
+  if (el.dataset.pu){
+    const hole = g.holes[h], id = el.dataset.pu;
+    if (hole.scores[id] === "PU") delete hole.scores[id];
+    else {
+      hole.scores[id] = "PU";
+      // a picked-up score can't stay selected in 40ball
+      [0,1].forEach(t => hole.selected[t] = hole.selected[t].filter(x => x !== id));
+    }
+    render(); return;
+  }
+
+  if (el.dataset.concede != null){
+    const t = +el.dataset.concede, hole = g.holes[h];
+    hole.conceded = hole.conceded === t ? null : t;
+    render(); return;
+  }
+
+  if (el.dataset.sel){
+    const [tRaw, id] = el.dataset.sel.split(":");
+    const t = +tRaw, hole = g.holes[h];
+    const i = hole.selected[t].indexOf(id);
+    if (i >= 0) hole.selected[t].splice(i,1);
+    else hole.selected[t].push(id);
+    render(); return;
+  }
+
+  if (el.dataset.lock != null){
+    const t = +el.dataset.lock, b = fbBudget(g, t, h);
+    const n = g.holes[h].selected[t].length;
+    if (n < b.min || n > b.max){ toast("Outside legal range"); return; }
+    g.holes[h].locked[t] = true;
+    toast(`Team ${t===0?"A":"B"} locked hole ${h+1}`);
+    render(); return;
+  }
+  if (el.dataset.unlock != null){
+    const t = +el.dataset.unlock;
+    g.holes[h].locked[t] = false;
+    toast("Hole reopened — visible to all");
+    render(); return;
+  }
+
+  if (el.id === "sim"){ fillHole(g, h); render(); return; }
+  if (el.id === "reset"){ g.holes = blankHoles(); view.hole = 0; render(); toast("Game reset"); return; }
+});
+
+/* random fill, for testing the engine quickly */
+function fillHole(g, h){
+  const par = COURSE.holes[h].par;
+  const roll = () => Math.max(2, par + [-1,0,0,0,1,1,2][Math.floor(Math.random()*7)]);
+  const hole = g.holes[h];
+  if (isScramble(g)){ hole.teamScore = [roll()-1, roll()-1]; return; }
+  [...g.teams[0], ...g.teams[1]].forEach(id => { hole.scores[id] = roll(); });
+  if (g.type === "FORTYBALL"){
+    [0,1].forEach(t => {
+      if (hole.locked[t]) return;
+      const b = fbBudget(g, t, h);
+      const ranked = g.teams[t].slice()
+        .sort((a,c) => netOf(a,g,h) - netOf(c,g,h));
+      const take = Math.max(b.min, Math.min(b.max, 2));
+      hole.selected[t] = ranked.slice(0, take);
+      hole.locked[t] = true;
+    });
+  }
+}
+
+render();
+</script>
+</body>
+</html>
