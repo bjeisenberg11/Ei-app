@@ -117,7 +117,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .pname{flex:1;font-size:14.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pname .dots{color:var(--pencil);font-size:11px;letter-spacing:1px;margin-left:4px}
 .pnet{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);width:34px;text-align:right}
-.step{display:flex;align-items:center;border:1px solid var(--rule)}
+.step{display:inline-flex;align-items:center;border:1px solid var(--rule)}
 .step button{width:32px;height:30px;border:none;background:var(--paper-3);color:var(--ink);
   font-size:16px;cursor:pointer;line-height:1}
 .step .val{width:34px;text-align:center;font-family:'IBM Plex Mono',monospace;
@@ -158,6 +158,17 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .locked-flag{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.12em;font-size:10px;font-weight:700;color:var(--paper);
   background:var(--ink);padding:2px 7px}
+
+/* score bug — other matches in this round */
+.bug{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+  background:var(--paper-3);border:1px solid var(--rule);border-left:3px solid var(--brass);
+  padding:8px 10px;margin-top:8px;cursor:pointer}
+.bug-label{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;font-size:10px;color:var(--ink-soft);flex:none}
+.bug-teams{flex:1;min-width:0;font-size:12px;color:var(--ink-soft);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bug-state{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;flex:none;color:var(--ink)}
+.bug-state.live{color:var(--pencil)}
 
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
@@ -446,6 +457,28 @@ function standings(){
     .sort((a,b) => b.pts - a.pts || b.w - a.w || a.gp - b.gp || a.name.localeCompare(b.name));
 }
 
+/* ---------- shared status text, used by home cards and the score bug ---------- */
+function gameStatusLabel(g){
+  const res = gameResult(g);
+  if (res) return { text: res.winner === "TIE" ? "HALVED" : `TEAM ${res.winner} ${res.label}`, cls:"done" };
+  if (isMatch(g)){
+    const st = matchState(g);
+    if (st.played === 0) return { text:"Not started", cls:"" };
+    return { text:`${statusText(st)} · thru ${st.played}`, cls:"live" };
+  }
+  const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
+  if (la + lb === 0) return { text:"Not started", cls:"" };
+  return { text:`A ${fbSpent(g,0)}/40 · B ${fbSpent(g,1)}/40`, cls:"live" };
+}
+/* which hole to land on when jumping into a game — the next one needing action */
+function currentHoleFor(g){
+  if (isMatch(g)) return Math.min(matchState(g).played, 17);
+  for (let i = 0; i < 18; i++){
+    if (!(g.holes[i].locked[0] && g.holes[i].locked[1])) return i;
+  }
+  return 17;
+}
+
 /* ============================================================
    VIEW STATE
    ============================================================ */
@@ -489,26 +522,12 @@ function renderHome(){
   rounds.forEach(r => {
     h += `<h2 class="sec">${esc(r)}</h2>`;
     GAMES.filter(g => g.round === r).forEach(g => {
-      const res = gameResult(g);
-      let state, cls = "";
-      if (res){
-        state = res.winner === "TIE" ? "HALVED"
-              : `TEAM ${res.winner} ${res.label}`;
-        cls = "done";
-      } else if (isMatch(g)){
-        const st = matchState(g);
-        if (st.played === 0) state = "not started";
-        else { state = `${statusText(st)} · ${st.played}`; cls = "live"; }
-      } else {
-        const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
-        if (la + lb === 0) state = "not started";
-        else { state = `A ${fbSpent(g,0)}/40 · B ${fbSpent(g,1)}/40`; cls = "live"; }
-      }
+      const stt = gameStatusLabel(g);
       const names = t => g.teams[t].map(id => P(id).name).join(" & ");
-      h += `<button class="gcard ${cls}" data-game="${g.id}">
+      h += `<button class="gcard ${stt.cls==="done"?"done":""}" data-game="${g.id}">
         <div class="gcard-top">
           <span class="gtype">${LABEL[g.type]}</span>
-          <span class="gstate ${cls==="live"?"live":""}">${esc(state)}</span>
+          <span class="gstate ${stt.cls==="live"?"live":""}">${esc(stt.text)}</span>
         </div>
         <div class="gteams">${esc(names(0))} <b>vs</b> ${esc(names(1))}</div>
         <div class="gmeta">${g.mode === "RELATIVE" ? "Relative handicaps" : "Full handicaps"}${
@@ -615,18 +634,38 @@ function renderPlayers(){
     <th>Player</th><th>Index</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
     h += `<tr><td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
-      <td class="mono">${p.hcp}</td></tr>`;
+      <td><span class="step">
+        <button data-hcpstep="${p.id}:-1">−</button>
+        <span class="val">${p.hcp}</span>
+        <button data-hcpstep="${p.id}:1">+</button>
+      </span></td></tr>`;
   });
   h += `</tbody></table>
+  <p class="note">Anyone can edit anyone's handicap — open by design.</p>
   <h2 class="sec">${esc(COURSE.name)}</h2>
   <table class="lb"><thead><tr><th>Hole</th><th>Par</th><th>Index</th></tr></thead><tbody>`;
+  const siCounts = {};
+  COURSE.holes.forEach(c => siCounts[c.si] = (siCounts[c.si]||0) + 1);
   COURSE.holes.forEach((c,i) => {
-    h += `<tr><td class="mono">${i+1}</td><td class="mono">${c.par}</td>
-      <td class="mono" style="color:var(--ink-soft)">${c.si}</td></tr>`;
+    const dup = siCounts[c.si] > 1;
+    h += `<tr><td class="mono">${i+1}</td>
+      <td><span class="step">
+        <button data-parstep="${i}:-1">−</button>
+        <span class="val">${c.par}</span>
+        <button data-parstep="${i}:1">+</button>
+      </span></td>
+      <td><span class="step">
+        <button data-sistep="${i}:-1">−</button>
+        <span class="val" style="${dup?"color:var(--pencil)":""}">${c.si}</span>
+        <button data-sistep="${i}:1">+</button>
+      </span></td></tr>`;
   });
-  h += `</tbody></table>
-  <div class="footnote">In the real app the admin edits these. Handicaps are open to everyone;
-  the course library and rosters are admin-only.</div>`;
+  h += `</tbody></table>`;
+  if (Object.values(siCounts).some(n => n > 1))
+    h += `<p class="note warn">Stroke index must be a complete 1–18 permutation with no
+      repeats — the red values above collide. Fix before relying on handicap strokes.</p>`;
+  h += `<div class="footnote">In the real app the course library and rosters are admin-only;
+  handicaps are open to everyone. Both are editable here since this prototype has no login.</div>`;
   app.innerHTML = h;
 }
 
@@ -635,6 +674,9 @@ function renderGame(){
   const g = GAMES.find(x => x.id === view.gameId);
   const h = view.hole;
   let out = "";
+
+  /* score bug — other matches running in this same round, always visible */
+  out += renderOtherBug(g);
 
   /* hole strip */
   out += `<div class="hstrip">`;
@@ -699,11 +741,25 @@ function renderGame(){
   }
 
   out += `<div class="acts" style="margin-top:16px">
-    <button class="btn ghost" id="sim">Fill hole randomly</button>
     <button class="btn ghost" id="reset">Reset game</button>
   </div>`;
 
   app.innerHTML = out;
+}
+
+/* score bug: sibling games in the same round, tap to jump straight to their current hole */
+function renderOtherBug(g){
+  const sibs = GAMES.filter(x => x.round === g.round && x.id !== g.id);
+  if (!sibs.length) return "";
+  return sibs.map(s => {
+    const st = gameStatusLabel(s);
+    const names = t => s.teams[t].map(id => P(id).name).join(" & ");
+    return `<button class="bug" data-game="${s.id}" data-jumphole="${currentHoleFor(s)}">
+      <span class="bug-label">${LABEL[s.type]}</span>
+      <span class="bug-teams">${esc(names(0))} <b>v</b> ${esc(names(1))}</span>
+      <span class="bug-state ${st.cls}">${esc(st.text)}</span>
+    </button>`;
+  }).join("");
 }
 
 function renderTeam(g, t, h, hardLocked){
@@ -836,10 +892,30 @@ document.addEventListener("click", e => {
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
   if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
   if (el.id === "back"){ view.gameId = null; render(); return; }
-  if (el.dataset.game){ view.gameId = el.dataset.game; view.hole = 0; render(); return; }
+  if (el.dataset.game){ view.gameId = el.dataset.game;
+    view.hole = el.dataset.jumphole != null ? +el.dataset.jumphole : 0; render(); return; }
   if (el.dataset.hole != null){ view.hole = +el.dataset.hole; render(); return; }
   if (el.id === "prev"){ view.hole = Math.max(0, h-1); render(); return; }
   if (el.id === "next"){ view.hole = Math.min(17, h+1); render(); return; }
+
+  if (el.dataset.hcpstep){
+    const [pid, dRaw] = el.dataset.hcpstep.split(":");
+    const p = P(pid);
+    p.hcp = Math.max(0, Math.min(54, p.hcp + (+dRaw)));
+    render(); return;
+  }
+  if (el.dataset.parstep){
+    const [idxRaw, dRaw] = el.dataset.parstep.split(":");
+    const c = COURSE.holes[+idxRaw];
+    c.par = Math.max(3, Math.min(6, c.par + (+dRaw)));
+    render(); return;
+  }
+  if (el.dataset.sistep){
+    const [idxRaw, dRaw] = el.dataset.sistep.split(":");
+    const c = COURSE.holes[+idxRaw];
+    c.si = Math.max(1, Math.min(18, c.si + (+dRaw)));
+    render(); return;
+  }
 
   if (el.dataset.step){
     const [key, dRaw] = el.dataset.step.split(":");
@@ -898,29 +974,8 @@ document.addEventListener("click", e => {
     render(); return;
   }
 
-  if (el.id === "sim"){ fillHole(g, h); render(); return; }
   if (el.id === "reset"){ g.holes = blankHoles(); view.hole = 0; render(); toast("Game reset"); return; }
 });
-
-/* random fill, for testing the engine quickly */
-function fillHole(g, h){
-  const par = COURSE.holes[h].par;
-  const roll = () => Math.max(2, par + [-1,0,0,0,1,1,2][Math.floor(Math.random()*7)]);
-  const hole = g.holes[h];
-  if (isScramble(g)){ hole.teamScore = [roll()-1, roll()-1]; return; }
-  [...g.teams[0], ...g.teams[1]].forEach(id => { hole.scores[id] = roll(); });
-  if (g.type === "FORTYBALL"){
-    [0,1].forEach(t => {
-      if (hole.locked[t]) return;
-      const b = fbBudget(g, t, h);
-      const ranked = g.teams[t].slice()
-        .sort((a,c) => netOf(a,g,h) - netOf(c,g,h));
-      const take = Math.max(b.min, Math.min(b.max, 2));
-      hole.selected[t] = ranked.slice(0, take);
-      hole.locked[t] = true;
-    });
-  }
-}
 
 render();
 </script>
