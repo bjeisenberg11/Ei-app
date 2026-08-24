@@ -63,7 +63,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   padding:12px 13px;margin-bottom:9px;cursor:pointer}
 .gcard.live{border-left-color:var(--pencil)}
 .gcard.done{opacity:.62}
-.gcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.gcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px 10px;flex-wrap:wrap}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:16px}
 .gstate{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
@@ -85,7 +85,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 /* match banner */
 .banner{border:1.5px solid var(--ink);background:var(--paper-2);padding:13px;margin-top:12px;text-align:center}
 .banner .st{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.04em;font-size:27px;line-height:1}
+  letter-spacing:.02em;font-size:24px;line-height:1.05}
 .banner .thru{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.14em;font-size:10px;color:var(--ink-soft);margin-top:4px}
 .banner.closed{background:var(--ink);color:var(--paper)}
@@ -107,11 +107,11 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 /* team block */
 .team{border:1px solid var(--rule);background:var(--paper-2);margin-top:11px}
 .team.win{border-color:var(--ink);border-width:1.5px}
-.team-head{display:flex;justify-content:space-between;align-items:center;
+.team-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 10px;
   padding:8px 11px;border-bottom:1px solid var(--rule-soft);background:var(--paper-3)}
 .team-name{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.09em;font-size:13px}
-.team-score{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px}
+  letter-spacing:.06em;font-size:13px;flex:1 1 auto;min-width:0}
+.team-score{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;flex:none}
 .prow{display:flex;align-items:center;gap:9px;padding:8px 11px;border-top:1px solid var(--rule-soft)}
 .prow:first-child{border-top:none}
 .pname{flex:1;font-size:14.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -159,16 +159,20 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   letter-spacing:.12em;font-size:10px;font-weight:700;color:var(--paper);
   background:var(--ink);padding:2px 7px}
 
-/* score bug — other matches in this round */
+/* score bug — other matches in this round, ticker-style when long */
 .bug{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
   background:var(--paper-3);border:1px solid var(--rule);border-left:3px solid var(--brass);
   padding:8px 10px;margin-top:8px;cursor:pointer}
 .bug-label{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.06em;font-size:10px;color:var(--ink-soft);flex:none}
-.bug-teams{flex:1;min-width:0;font-size:12px;color:var(--ink-soft);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bug-state{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;flex:none;color:var(--ink)}
-.bug-state.live{color:var(--pencil)}
+.bug-scroll{flex:1;min-width:0;overflow:hidden;white-space:nowrap}
+.bug-ticker{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+  font-weight:600;color:var(--ink-soft)}
+.bug-ticker.live{color:var(--pencil)}
+.bug-ticker.scrolling{padding-left:100%;animation-name:bugtick;animation-timing-function:linear;
+  animation-iteration-count:infinite}
+@keyframes bugtick{ from{transform:translateX(0)} to{transform:translateX(-100%)} }
+@media (prefers-reduced-motion:reduce){.bug-ticker.scrolling{animation:none;padding-left:0}}
 
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
@@ -381,9 +385,19 @@ function matchState(g){
   const dormie = !closed && Math.abs(status) === left && left > 0 && status !== 0;
   return { status, played, left, closed, result, dormie };
 }
-function statusText(st){
+/* ---------- team identity — always by player name, never "Team A/B" ---------- */
+function teamLabel(g, t){
+  const names = g.teams[t].map(id => P(id).name);
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return names.join(" & ");
+  return names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
+}
+function teamShort(g, t){ return P(g.teams[t][0]).name; } // one name, for tight captions
+function winnerLabel(g, code){ return teamLabel(g, code === "A" ? 0 : 1); }
+
+function statusText(g, st){
   if (st.status === 0) return "ALL SQUARE";
-  return `TEAM ${st.status > 0 ? "A" : "B"} ${Math.abs(st.status)} UP`;
+  return `${winnerLabel(g, st.status > 0 ? "A" : "B")} ${Math.abs(st.status)} UP`;
 }
 // a match hard-locks once closed
 const matchLocked = (g, h) => { const s = matchState(g); return s.closed && h >= s.played; };
@@ -460,15 +474,15 @@ function standings(){
 /* ---------- shared status text, used by home cards and the score bug ---------- */
 function gameStatusLabel(g){
   const res = gameResult(g);
-  if (res) return { text: res.winner === "TIE" ? "HALVED" : `TEAM ${res.winner} ${res.label}`, cls:"done" };
+  if (res) return { text: res.winner === "TIE" ? "HALVED" : `${winnerLabel(g,res.winner)} WIN ${res.label}`, cls:"done" };
   if (isMatch(g)){
     const st = matchState(g);
     if (st.played === 0) return { text:"Not started", cls:"" };
-    return { text:`${statusText(st)} · thru ${st.played}`, cls:"live" };
+    return { text:`${statusText(g,st)} · thru ${st.played}`, cls:"live" };
   }
   const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
   if (la + lb === 0) return { text:"Not started", cls:"" };
-  return { text:`A ${fbSpent(g,0)}/40 · B ${fbSpent(g,1)}/40`, cls:"live" };
+  return { text:`${teamShort(g,0)} ${fbSpent(g,0)}/40 · ${teamShort(g,1)} ${fbSpent(g,1)}/40`, cls:"live" };
 }
 /* which hole to land on when jumping into a game — the next one needing action */
 function currentHoleFor(g){
@@ -691,9 +705,9 @@ function renderGame(){
   if (isMatch(g)){
     const st = matchState(g);
     out += `<div class="banner ${st.closed?"closed":""}">
-      <div class="st">${st.closed ? `TEAM ${st.result.winner} WINS ${st.result.label}`
-        : st.result ? (st.result.winner==="TIE"?"HALVED":`TEAM ${st.result.winner} WINS ${st.result.label}`)
-        : statusText(st)}</div>
+      <div class="st">${st.closed ? `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`
+        : st.result ? (st.result.winner==="TIE"?"HALVED":`${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
+        : statusText(g, st)}</div>
       <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
         !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
       ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
@@ -702,9 +716,9 @@ function renderGame(){
     const fs = fbState(g);
     out += `<div class="banner ${fs.done?"closed":""}">
       <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
-        : `TEAM ${fs.result.winner} ${fs.result.label}`)
+        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
         : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
-      <div class="thru">A ${fbSpent(g,0)}/40 spent · B ${fbSpent(g,1)}/40 spent</div>
+      <div class="thru">${teamShort(g,0)} ${fbSpent(g,0)}/40 spent · ${teamShort(g,1)} ${fbSpent(g,1)}/40 spent</div>
     </div>`;
   }
 
@@ -730,11 +744,11 @@ function renderGame(){
   if (isMatch(g) && !hardLocked){
     const hole = g.holes[h];
     out += `<div class="acts">
-      <button class="btn ghost" data-concede="0">${hole.conceded===0?"Undo concede":"A concedes"}</button>
-      <button class="btn ghost" data-concede="1">${hole.conceded===1?"Undo concede":"B concedes"}</button>
+      <button class="btn ghost" data-concede="0">${hole.conceded===0?"Undo concede":`${teamShort(g,0)} concedes`}</button>
+      <button class="btn ghost" data-concede="1">${hole.conceded===1?"Undo concede":`${teamShort(g,1)} concedes`}</button>
     </div>`;
     if (hole.conceded !== null)
-      out += `<p class="note warn">Team ${hole.conceded===0?"A":"B"} conceded — hole awarded, scoring skipped.</p>`;
+      out += `<p class="note warn">${teamLabel(g,hole.conceded)} conceded — hole awarded, scoring skipped.</p>`;
     else if (!holeComplete(g,h))
       out += `<p class="note">${isScramble(g) ? "Both teams need a score."
         : "At least one player per side must hole out."}</p>`;
@@ -747,24 +761,27 @@ function renderGame(){
   app.innerHTML = out;
 }
 
-/* score bug: sibling games in the same round, tap to jump straight to their current hole */
+/* score bug: sibling games in the same round, tap to jump straight to their current hole.
+   Long lines auto-scroll like a ticker rather than getting clipped. */
 function renderOtherBug(g){
   const sibs = GAMES.filter(x => x.round === g.round && x.id !== g.id);
   if (!sibs.length) return "";
   return sibs.map(s => {
     const st = gameStatusLabel(s);
-    const names = t => s.teams[t].map(id => P(id).name).join(" & ");
+    const text = `${teamLabel(s,0)} vs ${teamLabel(s,1)} — ${st.text}`;
+    const long = text.length > 34;
+    const dur = Math.max(9, Math.round(text.length / 4));
     return `<button class="bug" data-game="${s.id}" data-jumphole="${currentHoleFor(s)}">
       <span class="bug-label">${LABEL[s.type]}</span>
-      <span class="bug-teams">${esc(names(0))} <b>v</b> ${esc(names(1))}</span>
-      <span class="bug-state ${st.cls}">${esc(st.text)}</span>
+      <span class="bug-scroll"><span class="bug-ticker ${long?"scrolling":""} ${st.cls}"
+        ${long?`style="animation-duration:${dur}s"`:""}>${esc(text)}</span></span>
     </button>`;
   }).join("");
 }
 
 function renderTeam(g, t, h, hardLocked){
   const hole = g.holes[h];
-  const name = `Team ${t===0?"A":"B"}`;
+  const name = teamLabel(g, t);
   const roster = g.teams[t].map(id => P(id).name).join(" · ");
   let inner = "";
   let winCls = "";
@@ -874,7 +891,7 @@ function renderCorridor(g, t, h){
       <span>Legal range ${b.min}–${b.max}</span></div>
     ${locked ? `<p class="note">Hole locked. Admin can reopen.</p>
       <div class="acts"><button class="btn ghost" data-unlock="${t}">Admin unlock</button></div>`
-    : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock Team ${t===0?"A":"B"}</button></div>
+    : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock ${esc(teamShort(g,t))}'s picks</button></div>
        ${!ok && !g.teams[t].every(id => hole.scores[id]!=null)
          ? `<p class="note">All four players need a score or a pickup.</p>` : ""}`}
   </div>`;
