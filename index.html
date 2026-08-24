@@ -194,8 +194,9 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 
 <nav class="tabs">
   <button data-tab="home" class="on">Games</button>
-  <button data-tab="board">Leaderboard</button>
-  <button data-tab="players">Players</button>
+  <button data-tab="board">Board</button>
+  <button data-tab="sched">Schedule</button>
+  <button data-tab="players">Field</button>
 </nav>
 
 <div class="toast" id="toast"></div>
@@ -221,13 +222,13 @@ const COURSE = {
 /* ---------- players ---------- */
 const PLAYERS = [
   {id:"p1",name:"Blake",   hcp:8,  admin:true},
-  {id:"p2",name:"Marty",   hcp:14},
-  {id:"p3",name:"Dev",     hcp:5},
-  {id:"p4",name:"Chris",   hcp:21},
-  {id:"p5",name:"Ray",     hcp:11},
-  {id:"p6",name:"Owen",    hcp:16},
-  {id:"p7",name:"Tom",     hcp:3},
-  {id:"p8",name:"Vic",     hcp:19}
+  {id:"p2",name:"Dan",     hcp:14},
+  {id:"p3",name:"Jason",   hcp:5},
+  {id:"p4",name:"Daniel",  hcp:21},
+  {id:"p5",name:"Howard",  hcp:11},
+  {id:"p6",name:"Luke",    hcp:16},
+  {id:"p7",name:"Jake",    hcp:3},
+  {id:"p8",name:"Adam",    hcp:19}
 ];
 const P = id => PLAYERS.find(p => p.id === id);
 
@@ -254,6 +255,41 @@ let GAMES = [
   { id:"g5", round:"Sunday PM", type:"FORTYBALL", mode:"RELATIVE", hidden:true,
     teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() }
 ];
+
+/* ---------- §10 weekend schedule ---------- */
+let SCHEDULE = [
+  {day:"Friday", time:"14:20", type:"TRAVEL", dir:"ARRIVAL", pid:"p3",
+   title:"United 1442", notes:"ORD"},
+  {day:"Friday", time:"15:05", type:"TRAVEL", dir:"ARRIVAL", pid:"p7",
+   title:"Delta 883", notes:"ORD"},
+  {day:"Friday", time:"16:40", type:"TRAVEL", dir:"ARRIVAL", pid:"p8",
+   title:"Southwest 212", notes:"MDW"},
+  {day:"Friday", time:null, type:"TRAVEL", dir:"ARRIVAL", pid:"p2",
+   title:"Driving", notes:"Sometime afternoon"},
+  {day:"Friday", time:"17:30", type:"OTHER", title:"Hotel check-in",
+   location:"The Lodge"},
+  {day:"Friday", time:"19:30", type:"MEAL", title:"Welcome dinner",
+   location:"Grill Room", notes:"Reservation under Eisenberg, 8 people"},
+  {day:"Saturday", time:"08:10", type:"ROUND", title:"2v2 Best Ball — two matches",
+   location:"Pine Hollow", gameId:"g1"},
+  {day:"Saturday", time:"13:40", type:"ROUND", title:"4v4 Scramble",
+   location:"Pine Hollow", gameId:"g3"},
+  {day:"Saturday", time:"19:00", type:"MEAL", title:"Steak night",
+   location:"Halcyon Tavern", notes:"Reservation 7:00, bar from 6:15"},
+  {day:"Sunday", time:"08:30", type:"ROUND", title:"3v3 Scramble",
+   location:"Pine Hollow", gameId:"g4"},
+  {day:"Sunday", time:"13:15", type:"ROUND", title:"40ball",
+   location:"Pine Hollow", gameId:"g5"},
+  {day:"Sunday", time:"18:00", type:"MEAL", title:"Closing dinner & trophy",
+   location:"Grill Room"},
+  {day:"Sunday", time:"20:45", type:"TRAVEL", dir:"DEPARTURE", pid:"p7",
+   title:"Delta 1190", notes:"ORD"},
+  {day:"Monday", time:"06:50", type:"TRAVEL", dir:"DEPARTURE", pid:"p3",
+   title:"United 610", notes:"ORD"},
+  {day:"Monday", time:"09:15", type:"TRAVEL", dir:"DEPARTURE", pid:"p8",
+   title:"Southwest 401", notes:"MDW"}
+];
+const DAYS = ["Friday","Saturday","Sunday","Monday"];
 
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
                 SCRAMBLE3:"3v3 Scramble", FORTYBALL:"40ball" };
@@ -441,6 +477,7 @@ function render(){
 
   if (inGame) return renderGame();
   if (view.tab === "board") return renderBoard();
+  if (view.tab === "sched") return renderSchedule();
   if (view.tab === "players") return renderPlayers();
   renderHome();
 }
@@ -502,6 +539,73 @@ function renderBoard(){
   h += `</tbody></table>
   <div class="footnote">Win 1 point, tie 0.5, loss 0. Games played is shown because the 3v3
   sits two players out, so records are not expected to be even.</div>`;
+  app.innerHTML = h;
+}
+
+/* ---------- §10 schedule ---------- */
+let schedMode = "timeline";
+function fmtTime(t){
+  if (!t) return "—";
+  let [h,m] = t.split(":").map(Number);
+  const ap = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2,"0")}${ap}`;
+}
+function renderSchedule(){
+  let h = `<div class="acts" style="margin-top:18px">
+    <button class="btn ${schedMode==="timeline"?"":"ghost"}" data-sched="timeline">Timeline</button>
+    <button class="btn ${schedMode==="travel"?"":"ghost"}" data-sched="travel">Travel</button>
+  </div>`;
+
+  if (schedMode === "timeline"){
+    DAYS.forEach(day => {
+      const evs = SCHEDULE.filter(e => e.day === day);
+      if (!evs.length) return;
+      const timed = evs.filter(e => e.time).sort((a,b) => a.time.localeCompare(b.time));
+      const untimed = evs.filter(e => !e.time);
+      h += `<h2 class="sec">${day}</h2>`;
+      [...timed, ...untimed].forEach(e => {
+        const icon = { TRAVEL: e.dir === "ARRIVAL" ? "IN" : "OUT",
+                       ROUND:"GOLF", MEAL:"EAT", OTHER:"—" }[e.type];
+        const who = e.pid ? P(e.pid).name + " · " : "";
+        h += `<div class="gcard" style="cursor:${e.gameId?"pointer":"default"}"
+          ${e.gameId?`data-game="${e.gameId}"`:""}>
+          <div class="gcard-top">
+            <span class="gtype" style="font-size:14px">${esc(who + e.title)}</span>
+            <span class="gstate">${e.time ? fmtTime(e.time) : "TBD"}</span>
+          </div>
+          ${e.location?`<div class="gteams">${esc(e.location)}</div>`:""}
+          <div class="gmeta">${icon}${e.notes?` · ${esc(e.notes)}`:""}${
+            e.gameId?" · tap to score":""}</div>
+        </div>`;
+      });
+    });
+  } else {
+    ["ARRIVAL","DEPARTURE"].forEach(dir => {
+      h += `<h2 class="sec">${dir === "ARRIVAL" ? "Arrivals" : "Departures"}</h2>`;
+      const evs = SCHEDULE.filter(e => e.type === "TRAVEL" && e.dir === dir);
+      const listed = evs.map(e => e.pid);
+      evs.sort((a,b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) ||
+                        (a.time||"zz").localeCompare(b.time||"zz"));
+      evs.forEach(e => {
+        h += `<div class="gcard" style="cursor:default">
+          <div class="gcard-top">
+            <span class="gtype" style="font-size:15px">${esc(P(e.pid).name)}</span>
+            <span class="gstate">${e.day} ${e.time?fmtTime(e.time):"TBD"}</span>
+          </div>
+          <div class="gteams">${esc(e.title)}${e.notes?` · ${esc(e.notes)}`:""}</div>
+        </div>`;
+      });
+      const missing = PLAYERS.filter(p => !listed.includes(p.id));
+      if (missing.length)
+        h += `<p class="note">No ${dir.toLowerCase()} entered: ${
+          missing.map(p => esc(p.name)).join(", ")}</p>`;
+    });
+  }
+
+  h += `<div class="footnote">In the real app the admin enters rounds, meals and anything else;
+    each player adds his own flights, and the admin can add or edit any of them. Rounds link
+    straight to the live scorecard.</div>`;
   app.innerHTML = h;
 }
 
@@ -730,6 +834,7 @@ document.addEventListener("click", e => {
   const h = view.hole;
 
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
+  if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
   if (el.id === "back"){ view.gameId = null; render(); return; }
   if (el.dataset.game){ view.gameId = el.dataset.game; view.hole = 0; render(); return; }
   if (el.dataset.hole != null){ view.hole = +el.dataset.hole; render(); return; }
