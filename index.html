@@ -116,7 +116,29 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .prow:first-child{border-top:none}
 .pname{flex:1;font-size:14.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pname .dots{color:var(--pencil);font-size:11px;letter-spacing:1px;margin-left:4px}
-.pnet{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);width:34px;text-align:right}
+.pnet{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
+  width:58px;text-align:right;flex:none;line-height:1.25}
+.pnet .adj{color:var(--pencil);font-weight:600}
+.pnet .net{color:var(--ink);font-weight:600;font-size:13px}
+
+/* strokes grid */
+.sgrid-wrap{overflow-x:auto;border:1px solid var(--rule);background:var(--paper-2);margin-top:10px;
+  -webkit-overflow-scrolling:touch}
+table.sgrid{border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:10px;width:100%}
+table.sgrid th,table.sgrid td{border-right:1px solid var(--rule-soft);
+  border-bottom:1px solid var(--rule-soft);padding:4px 0;text-align:center;min-width:17px}
+table.sgrid thead th{background:var(--paper-3);font-weight:600;color:var(--ink-soft);font-size:9px}
+table.sgrid tbody th{text-align:left;padding:4px 7px 4px 6px;white-space:nowrap;
+  font-family:'Barlow',sans-serif;font-size:11.5px;font-weight:500;position:sticky;left:0;
+  background:var(--paper-2);border-right:1px solid var(--rule);min-width:76px}
+table.sgrid tbody th i{font-family:'IBM Plex Mono',monospace;font-style:normal;
+  font-size:10px;color:var(--ink-faint);margin-left:3px}
+table.sgrid td.dot{color:var(--pencil);font-weight:700;font-size:12px}
+table.sgrid .cur{background:rgba(138,106,34,.16)}
+table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
+.sgrid-key{font-size:12.5px;color:var(--ink-soft);margin:8px 0 0}
+.hstrokes{font-size:13px;color:var(--ink-soft);margin:2px 0 0}
+.hstrokes b{color:var(--pencil);font-weight:600}
 .step{display:inline-flex;align-items:center;border:1px solid var(--rule)}
 .step button{width:32px;height:30px;border:none;background:var(--paper-3);color:var(--ink);
   font-size:16px;cursor:pointer;line-height:1}
@@ -497,6 +519,7 @@ function currentHoleFor(g){
    VIEW STATE
    ============================================================ */
 let view = { tab:"home", gameId:null, hole:0 };
+let showStrokes = false;
 
 const $ = s => document.querySelector(s);
 const app = $("#app");
@@ -732,6 +755,14 @@ function renderGame(){
       <button id="next" ${h===17?"disabled":""}>&rarr;</button>
     </span></div>`;
 
+  out += strokesHereLine(g, h);
+  if (usesHcp(g)){
+    out += `<div class="acts" style="margin-top:8px">
+      <button class="btn ghost" id="togglestrokes">${showStrokes?"Hide":"Show"} all strokes</button>
+    </div>`;
+    if (showStrokes) out += renderStrokeGrid(g, h);
+  }
+
   const hardLocked = isMatch(g) && matchLocked(g, h);
   if (hardLocked){
     out += `<p class="note warn">Match closed out. This hole is locked and not scored.</p>`;
@@ -779,6 +810,53 @@ function renderOtherBug(g){
   }).join("");
 }
 
+/* gross → adjustment → net, shown inline on every scoring row */
+function netCell(id, g, h){
+  const v = g.holes[h].scores[id];
+  const s = strokesOn(id, g, h);
+  if (v === "PU") return `<span class="pnet">picked up</span>`;
+  if (v == null) return `<span class="pnet">${s ? `<span class="adj">−${s}</span>` : ""}</span>`;
+  const n = v - s;
+  return `<span class="pnet">${s ? `<span class="adj">−${s}</span> ` : ""}<span class="net">${n}</span></span>`;
+}
+
+/* who gets strokes on the current hole — one line under the hole header */
+function strokesHereLine(g, h){
+  if (!usesHcp(g)) return "";
+  const gets = [...g.teams[0], ...g.teams[1]]
+    .map(id => ({ id, s: strokesOn(id, g, h) }))
+    .filter(x => x.s > 0);
+  if (!gets.length) return `<p class="hstrokes">No strokes on this hole — everyone plays it level.</p>`;
+  const list = gets.map(x => `<b>${esc(P(x.id).name)}${x.s > 1 ? ` ×${x.s}` : ""}</b>`).join(", ");
+  return `<p class="hstrokes">Strokes here: ${list}</p>`;
+}
+
+/* full stroke allocation — every player, every hole */
+function renderStrokeGrid(g, h){
+  if (!usesHcp(g)) return "";
+  const ids = [...g.teams[0], ...g.teams[1]];
+  let out = `<div class="sgrid-wrap"><table class="sgrid">
+    <thead><tr><th>Hole</th>`;
+  for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${i+1}</th>`;
+  out += `</tr><tr><th>Index</th>`;
+  for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${COURSE.holes[i].si}</th>`;
+  out += `</tr></thead><tbody>`;
+  ids.forEach(id => {
+    const ph = playingHcp(id, g);
+    out += `<tr><th>${esc(P(id).name)} <i>${ph}</i></th>`;
+    for (let i = 0; i < 18; i++){
+      const s = strokesOn(id, g, i);
+      out += `<td class="${s?"dot ":""}${i===h?"cur":""}">${s ? "•".repeat(s) : ""}</td>`;
+    }
+    out += `</tr>`;
+  });
+  out += `</tbody></table></div>
+    <p class="sgrid-key">Number after each name is that player's playing handicap
+    ${g.mode === "RELATIVE" ? `(relative — lowest in this game plays off scratch)` : `(full)`}.
+    A dot means a stroke on that hole, allocated by stroke index.</p>`;
+  return out;
+}
+
 function renderTeam(g, t, h, hardLocked){
   const hole = g.holes[h];
   const name = teamLabel(g, t);
@@ -803,12 +881,11 @@ function renderTeam(g, t, h, hardLocked){
   if (g.type === "BESTBALL"){
     g.teams[t].forEach(id => {
       const s = strokesOn(id, g, h);
-      const n = netOf(id, g, h);
       const v = hole.scores[id];
       inner += `<div class="prow">
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        <span class="pnet">${n!=null?n:(v==="PU"?"—":"")}</span>
         ${stepper(`sc-${id}`, v==="PU"?null:v, hardLocked || hole.conceded!==null)}
+        ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
           ${hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
       </div>`;
@@ -829,8 +906,8 @@ function renderTeam(g, t, h, hardLocked){
       inner += `<div class="prow">
         <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        <span class="pnet">${n!=null?n:(v==="PU"?"—":"")}</span>
         ${stepper(`sc-${id}`, v==="PU"?null:v, locked)}
+        ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}" ${locked?"disabled":""}>PU</button>
       </div>`;
     });
@@ -991,6 +1068,7 @@ document.addEventListener("click", e => {
     render(); return;
   }
 
+  if (el.id === "togglestrokes"){ showStrokes = !showStrokes; render(); return; }
   if (el.id === "reset"){ g.holes = blankHoles(); view.hole = 0; render(); toast("Game reset"); return; }
 });
 
