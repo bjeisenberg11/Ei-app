@@ -239,6 +239,10 @@ table.ftbl td:nth-child(n+2),table.ttbl td:nth-child(n+2){text-align:right}
 .cwrap{flex-wrap:wrap;gap:6px}
 .cwrap .btn{flex:1 1 30%;font-size:12px;padding:11px 6px}
 
+h3.sub3{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.13em;font-size:13px;color:var(--ink-soft);margin:20px 0 7px;
+  padding-bottom:4px;border-bottom:1px solid var(--rule)}
+
 /* course entry */
 .imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
 .imp label{display:block;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
@@ -775,8 +779,11 @@ function renderSchedule(){
         const icon = { TRAVEL: e.dir === "ARRIVAL" ? "IN" : "OUT",
                        ROUND:"GOLF", MEAL:"EAT", OTHER:"—" }[e.type];
         const who = e.pid ? P(e.pid).name + " · " : "";
-        h += `<div class="gcard" style="cursor:${e.gameId?"pointer":"default"}"
-          ${e.gameId?`data-game="${e.gameId}"`:""}>
+        const tag = e.gameId ? "button" : "div";
+        const jump = e.gameId
+          ? ` data-game="${e.gameId}" data-jumphole="${currentHoleFor(GAMES.find(x=>x.id===e.gameId))}"`
+          : "";
+        h += `<${tag} class="gcard" style="cursor:${e.gameId?"pointer":"default"}"${jump}>
           <div class="gcard-top">
             <span class="gtype" style="font-size:14px">${esc(who + e.title)}</span>
             <span class="gstate">${e.time ? fmtTime(e.time) : "TBD"}</span>
@@ -784,7 +791,7 @@ function renderSchedule(){
           ${e.location?`<div class="gteams">${esc(e.location)}</div>`:""}
           <div class="gmeta">${icon}${e.notes?` · ${esc(e.notes)}`:""}${
             e.gameId?" · tap to score":""}</div>
-        </div>`;
+        </${tag}>`;
       });
     });
   } else {
@@ -817,17 +824,290 @@ function renderSchedule(){
 }
 
 /* ---------- players ---------- */
+/* ---------- game ---------- */
+function renderGame(){
+  const g = GAMES.find(x => x.id === view.gameId);
+  const course = courseOf(g);
+  const h = view.hole;
+  let out = "";
+
+  /* score bug — other matches running in this same round */
+  out += renderOtherBug(g);
+
+  /* hole strip */
+  out += `<div class="hstrip">`;
+  for (let i = 0; i < 18; i++){
+    const done = isMatch(g) ? holeComplete(g,i) : (g.holes[i].locked[0] && g.holes[i].locked[1]);
+    out += `<button class="hcell" data-hole="${i}" data-s="${done?"done":(i===h?"cur":"")}"
+      ${done && i===h ? 'data-s2="cur"' : ""}>${i+1}</button>`;
+  }
+  out += `</div>`;
+
+  /* banner */
+  if (isMatch(g)){
+    const st = matchState(g);
+    out += `<div class="banner ${st.closed?"closed":""}">
+      <div class="st">${st.closed ? `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`
+        : st.result ? (st.result.winner==="TIE"?"HALVED":`${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
+        : statusText(g, st)}</div>
+      <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
+        !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
+      ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
+    </div>`;
+  } else {
+    const fs = fbState(g);
+    out += `<div class="banner ${fs.done?"closed":""}">
+      <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
+        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
+        : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
+      <div class="thru">${esc(teamLabel(g,0))} ${fbSpent(g,0)}/40 · ${esc(teamLabel(g,1))} ${fbSpent(g,1)}/40</div>
+    </div>`;
+  }
+
+  /* hole header */
+  const c = course.holes[h];
+  out += `<div class="hhead">
+    <span class="hnum">${h+1}</span>
+    <span class="hinfo">Par ${c.par} · Index ${c.si}</span>
+    <span class="nav">
+      <button id="prev" ${h===0?"disabled":""}>&larr;</button>
+      <button id="next" ${h===17?"disabled":""}>&rarr;</button>
+    </span></div>`;
+
+  out += strokesHereLine(g, h);
+  if (usesHcp(g)){
+    out += `<div class="acts" style="margin-top:8px">
+      <button class="btn ghost" id="togglestrokes">${showStrokes?"Hide":"Show"} all strokes</button>
+    </div>`;
+    if (showStrokes) out += renderStrokeGrid(g, h);
+  }
+
+  const hardLocked = isMatch(g) && matchLocked(g, h);
+  if (hardLocked)
+    out += `<p class="note warn">Match closed out. This hole is locked and not scored.</p>`;
+
+  [0,1].forEach(t => out += renderTeam(g, t, h, hardLocked));
+
+  if (isMatch(g) && !hardLocked){
+    const hole = g.holes[h];
+    out += `<div class="acts">
+      <button class="btn ghost" data-concede="0">${hole.conceded===0?"Undo concede":`${esc(teamLabel(g,0))} concede`}</button>
+      <button class="btn ghost" data-concede="1">${hole.conceded===1?"Undo concede":`${esc(teamLabel(g,1))} concede`}</button>
+    </div>`;
+    if (hole.conceded !== null)
+      out += `<p class="note warn">${esc(teamLabel(g,hole.conceded))} conceded — hole awarded, scoring skipped.</p>`;
+    else if (!holeComplete(g,h))
+      out += `<p class="note">${isScramble(g) ? "Both teams need a score."
+        : "At least one player per side must hole out."}</p>`;
+  }
+
+  out += `<div class="acts" style="margin-top:16px">
+    <button class="btn ghost" id="reset">Reset game</button>
+  </div>`;
+
+  app.innerHTML = out;
+}
+
+/* score bug: sibling games in the same round; long lines scroll like a ticker */
+function renderOtherBug(g){
+  const sibs = GAMES.filter(x => x.round === g.round && x.id !== g.id);
+  if (!sibs.length) return "";
+  return sibs.map(s => {
+    const st = gameStatusLabel(s);
+    const text = `${teamLabel(s,0)} vs ${teamLabel(s,1)} — ${st.text}`;
+    const long = text.length > 34;
+    const dur = Math.max(9, Math.round(text.length / 4));
+    return `<button class="bug" data-game="${s.id}" data-jumphole="${currentHoleFor(s)}">
+      <span class="bug-label">${LABEL[s.type]}</span>
+      <span class="bug-scroll"><span class="bug-ticker ${long?"scrolling":""} ${st.cls}"
+        ${long?`style="animation-duration:${dur}s"`:""}>${esc(text)}</span></span>
+    </button>`;
+  }).join("");
+}
+
+/* who gets strokes on this hole */
+function strokesHereLine(g, h){
+  if (!usesHcp(g)) return "";
+  const gets = [...g.teams[0], ...g.teams[1]]
+    .map(id => ({ id, s: strokesOn(id, g, h) }))
+    .filter(x => x.s > 0);
+  if (!gets.length) return `<p class="hstrokes">No strokes on this hole — everyone plays it level.</p>`;
+  const list = gets.map(x => `<b>${esc(P(x.id).name)}${x.s > 1 ? ` ×${x.s}` : ""}</b>`).join(", ");
+  return `<p class="hstrokes">Strokes here: ${list}</p>`;
+}
+
+/* full stroke allocation — every player, every hole */
+function renderStrokeGrid(g, h){
+  if (!usesHcp(g)) return "";
+  const course = courseOf(g);
+  const ids = [...g.teams[0], ...g.teams[1]];
+  let out = `<div class="sgrid-wrap"><table class="sgrid">
+    <thead><tr><th>Hole</th>`;
+  for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${i+1}</th>`;
+  out += `</tr><tr><th>Index</th>`;
+  for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${course.holes[i].si}</th>`;
+  out += `</tr></thead><tbody>`;
+  ids.forEach(id => {
+    const ph = playingHcp(id, g);
+    out += `<tr><th>${esc(P(id).name)}
+      <i>${esc(teeNameFor(id, course))} · ch ${courseHcp(id, course)} → ${ph}</i></th>`;
+    for (let i = 0; i < 18; i++){
+      const s = strokesOn(id, g, i);
+      out += `<td class="${s?"dot ":""}${i===h?"cur":""}">${s ? "•".repeat(s) : ""}</td>`;
+    }
+    out += `</tr>`;
+  });
+  out += `</tbody></table></div>
+    <p class="sgrid-key">${esc(course.name)}. Each name shows tee, course handicap, then playing
+    handicap ${g.mode === "RELATIVE" ? "(relative — lowest course handicap here plays off scratch)" : "(full)"}.
+    A dot is a stroke on that hole.</p>`;
+  return out;
+}
+
+/* gross → adjustment → net */
+function netCell(id, g, h){
+  const v = g.holes[h].scores[id];
+  const s = strokesOn(id, g, h);
+  if (v === "PU") return `<span class="pnet">picked up</span>`;
+  if (v == null) return `<span class="pnet">${s ? `<span class="adj">−${s}</span>` : ""}</span>`;
+  return `<span class="pnet">${s ? `<span class="adj">−${s}</span> ` : ""}<span class="net">${v - s}</span></span>`;
+}
+
+function renderTeam(g, t, h, hardLocked){
+  const hole = g.holes[h];
+  const name = teamLabel(g, t);
+  const roster = g.teams[t].map(id => P(id).name).join(" · ");
+  let inner = "", winCls = "";
+
+  if (isMatch(g)){
+    const r = resolveHole(g,h);
+    if (r === (t===0?"A":"B")) winCls = "win";
+  }
+
+  if (isScramble(g)){
+    inner += `<div class="prow">
+      <span class="pname">${esc(roster)}</span>
+      ${stepper(`ts-${t}`, hole.teamScore[t], hardLocked || hole.conceded!==null)}
+    </div>`;
+  }
+
+  if (g.type === "BESTBALL"){
+    g.teams[t].forEach(id => {
+      const s = strokesOn(id, g, h);
+      const v = hole.scores[id];
+      inner += `<div class="prow">
+        <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
+        ${stepper(`sc-${id}`, v==="PU"?null:v, hardLocked || hole.conceded!==null)}
+        ${netCell(id, g, h)}
+        <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
+          ${hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
+      </div>`;
+    });
+  }
+
+  if (g.type === "FORTYBALL"){
+    const b = fbBudget(g, t, h);
+    const locked = hole.locked[t];
+    g.teams[t].forEach(id => {
+      const s = strokesOn(id, g, h);
+      const n = netOf(id, g, h);
+      const v = hole.scores[id];
+      const on = hole.selected[t].includes(id);
+      const canPick = !locked && n != null && (on || hole.selected[t].length < b.max);
+      inner += `<div class="prow">
+        <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
+        <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked)}
+        ${netCell(id, g, h)}
+        <button class="pu ${v==="PU"?"on":""}" data-pu="${id}" ${locked?"disabled":""}>PU</button>
+      </div>`;
+    });
+  }
+
+  let head = `<div class="team-head"><span class="team-name">${esc(name)}</span>
+    <span class="team-score">`;
+  if (isMatch(g)){
+    const ts = teamHoleScore(g,t,h);
+    head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "—");
+  } else {
+    head += `${fbTotal(g,t)} · ${fbSpent(g,t)}/40`;
+    if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
+  }
+  head += `</span></div>`;
+
+  const extra = g.type === "FORTYBALL" ? renderCorridor(g, t, h) : "";
+  return `<div class="team ${winCls}">${head}${inner}</div>${extra}`;
+}
+
+function stepper(key, val, disabled){
+  return `<span class="step">
+    <button data-step="${key}:-1" ${disabled?"disabled":""}>−</button>
+    <span class="val ${val==null?"empty":""}">${val==null?"–":val}</span>
+    <button data-step="${key}:1" ${disabled?"disabled":""}>+</button>
+  </span>`;
+}
+
+/* §8.4 / §8.6 — the 40ball budget corridor */
+function renderCorridor(g, t, h){
+  const b = fbBudget(g, t, h);
+  const hole = g.holes[h];
+  const locked = hole.locked[t];
+  const picked = hole.selected[t].length;
+  const pct = Math.min(100, (b.R / QUOTA) * 100);
+  const tight = b.slackHoles < 1;
+
+  let msg, warn = false;
+  if (b.broken){ msg = "Budget unreachable — too many pickups"; warn = true; }
+  else if (b.min === b.max && b.max > 0){ msg = `You must take all ${b.max}`; warn = true; }
+  else if (b.min > 0){ msg = `Must take at least ${b.min} this hole`; warn = true; }
+  else if (tight){ msg = "No slack left — take scores every hole"; warn = true; }
+  else msg = `${b.slackHoles} hole${b.slackHoles===1?"":"s"} of slack`;
+
+  const allIn = g.teams[t].every(id => hole.scores[id] != null);
+  const ok = !locked && allIn && picked >= b.min && picked <= b.max;
+
+  return `<div class="corridor">
+    <div class="cor-row"><span>Remaining <b>${b.R}</b> of 40</span>
+      <span>${b.H} hole${b.H===1?"":"s"} left</span></div>
+    <div class="bar"><i class="${tight?"tight":""}" style="width:${pct}%"></i></div>
+    <div class="cor-msg ${warn?"warn":""}">${msg}</div>
+    <div class="cor-row" style="margin:9px 0 0"><span>Selected <b>${picked}</b></span>
+      <span>Legal range ${b.min}–${b.max}</span></div>
+    ${locked ? `<p class="note">Hole locked. Admin can reopen.</p>
+      <div class="acts"><button class="btn ghost" data-unlock="${t}">Admin unlock</button></div>`
+    : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock ${esc(teamLabel(g,t))}</button></div>
+       ${!allIn ? `<p class="note">All four players need a score or a pickup.</p>` : ""}`}
+  </div>`;
+}
+
 function renderPlayers(){
   const co = C(editCourseId);
-  let h = `<h2 class="sec">Courses</h2>
+  const rounds = GAMES.filter(g => g.courseId === co.id)
+                      .map(g => g.round).filter((v,i,a) => a.indexOf(v)===i);
+
+  /* --- 1. indexes: one number per player, true everywhere --- */
+  let h = `<h2 class="sec">Handicap indexes</h2>
+  <table class="lb ftbl"><thead><tr><th>Player</th><th>Index</th></tr></thead><tbody>`;
+  PLAYERS.forEach(p => {
+    h += `<tr>
+      <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
+      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"></td>
+    </tr>`;
+  });
+  h += `</tbody></table>
+  <p class="note">An index belongs to the player and is the same at every course.
+    Everything below is per course.</p>
+
+  <h2 class="sec">Course setup</h2>
   <div class="acts cwrap">
     ${COURSES.map(c => `<button class="btn ${c.id===editCourseId?"":"ghost"}"
       data-course="${c.id}">${esc(c.name)}</button>`).join("")}
   </div>
-  <p class="note">Pick a course to edit it. Each round is played at one of these.
-    ${GAMES.filter(g=>g.courseId===editCourseId).length} game(s) use this course.</p>
+  <p class="note">${rounds.length
+      ? `Played ${rounds.join(", ")}.`
+      : "No rounds assigned to this course."}</p>
 
-  <h2 class="sec">${esc(co.name)} \u2014 tees</h2>
+  <h3 class="sub3">Tee sets</h3>
   <table class="lb ttbl"><thead><tr>
     <th>Tee</th><th>Rating</th><th>Slope</th><th>Par</th></tr></thead><tbody>`;
   co.tees.forEach((t,i) => {
@@ -842,13 +1122,12 @@ function renderPlayers(){
   <p class="note">Rating and slope come off the card or the tee marker. Slope runs 55\u2013155;
     113 is neutral.</p>
 
-  <h2 class="sec">Field \u2014 at ${esc(co.name)}</h2>
+  <h3 class="sub3">Who plays which tee</h3>
   <table class="lb ftbl"><thead><tr>
-    <th>Player</th><th>Index</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
+    <th>Player</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
     h += `<tr>
-      <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
-      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"></td>
+      <td>${esc(p.name)}</td>
       <td><select class="tee" data-tee="${p.id}">
         ${co.tees.map(x => `<option${x.name===teeNameFor(p.id,co)?" selected":""}>${esc(x.name)}</option>`).join("")}
       </select></td>
@@ -856,12 +1135,11 @@ function renderPlayers(){
     </tr>`;
   });
   h += `</tbody></table>
-  <p class="note">Index belongs to the player and is the same everywhere. <b>Tee</b> and
-    <b>CH</b> are per course \u2014 switch courses above and these change.
-    <span class="mono">CH = index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
-    Scrambles ignore all of it and play gross.</p>
+  <p class="note"><b>CH</b> is the course handicap that player's index is worth off that tee:
+    <span class="mono">index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
+    Scrambles ignore it and play gross.</p>
 
-  <h2 class="sec">${esc(co.name)} \u2014 scorecard</h2>
+  <h3 class="sub3">Scorecard</h3>
   <div class="imp">
     <label for="cname">Course name</label>
     <input id="cname" value="${esc(co.name)}" data-cname>
