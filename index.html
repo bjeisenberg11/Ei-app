@@ -155,7 +155,7 @@ table.sgrid th,table.sgrid td{border-right:1px solid var(--rule-soft);
 table.sgrid thead th{background:var(--paper-3);font-weight:600;color:var(--ink-soft);font-size:9px}
 table.sgrid tbody th{text-align:left;padding:4px 7px 4px 6px;white-space:nowrap;
   font-family:'Barlow',sans-serif;font-size:11.5px;font-weight:500;position:sticky;left:0;
-  background:var(--paper-2);border-right:1px solid var(--rule);min-width:76px}
+  background:var(--paper-2);border-right:1px solid var(--rule);min-width:132px}
 table.sgrid tbody th i{font-family:'IBM Plex Mono',monospace;font-style:normal;
   font-size:10px;color:var(--ink-faint);margin-left:3px}
 table.sgrid td.dot{color:var(--pencil);font-weight:700;font-size:12px}
@@ -220,6 +220,21 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
   animation-iteration-count:infinite}
 @keyframes bugtick{ from{transform:translateX(0)} to{transform:translateX(-100%)} }
 @media (prefers-reduced-motion:reduce){.bug-ticker.scrolling{animation:none;padding-left:0}}
+
+/* field + tee editors */
+table.ftbl td,table.ttbl td{padding:5px 0}
+table.ftbl td:first-child{padding-right:8px}
+input.idx,input.tf{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink);
+  font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500;text-align:right;
+  padding:7px 6px;width:60px;max-width:100%}
+input.tf.wide{width:78px;text-align:left;font-family:'Barlow',sans-serif}
+input.idx:focus,input.tf:focus{outline:none;border-color:var(--brass);background:var(--paper)}
+select.tee{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink);
+  font-family:'Barlow',sans-serif;font-size:14px;padding:7px 4px;max-width:92px}
+select.tee:focus{outline:none;border-color:var(--brass)}
+td.ch{font-weight:600;font-size:15px}
+table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
+table.ftbl td:nth-child(n+2),table.ttbl td:nth-child(n+2){text-align:right}
 
 /* course entry */
 .imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
@@ -310,19 +325,26 @@ const COURSE = {
     {par:4,si:9},{par:3,si:15},{par:4,si:5},{par:5,si:13},
     {par:4,si:8},{par:5,si:4},{par:3,si:18},{par:4,si:12},{par:4,si:2},
     {par:4,si:10},{par:3,si:16},{par:5,si:6},{par:4,si:14}
+  ],
+  /* §T5 — rating and slope are properties of a TEE SET, not the course.
+     This is what makes cross-tee play comparable. */
+  tees: [
+    { name:"Blue",  rating:72.1, slope:135, par:72 },
+    { name:"White", rating:70.2, slope:128, par:72 },
+    { name:"Gold",  rating:68.0, slope:119, par:72 }
   ]
 };
 
 /* ---------- players ---------- */
 const PLAYERS = [
-  {id:"p1",name:"Blake",   hcp:8,  admin:true},
-  {id:"p2",name:"Dan",     hcp:14},
-  {id:"p3",name:"Jason",   hcp:5},
-  {id:"p4",name:"Daniel",  hcp:21},
-  {id:"p5",name:"Howard",  hcp:11},
-  {id:"p6",name:"Luke",    hcp:16},
-  {id:"p7",name:"Jake",    hcp:3},
-  {id:"p8",name:"Adam",    hcp:19}
+  {id:"p1",name:"Blake",   index:8.2,  tee:"Blue",  admin:true},
+  {id:"p2",name:"Dan",     index:14.1, tee:"Blue"},
+  {id:"p3",name:"Jason",   index:5.0,  tee:"Blue"},
+  {id:"p4",name:"Daniel",  index:21.3, tee:"Blue"},
+  {id:"p5",name:"Howard",  index:11.4, tee:"White"},
+  {id:"p6",name:"Luke",    index:16.0, tee:"Blue"},
+  {id:"p7",name:"Jake",    index:3.1,  tee:"Blue"},
+  {id:"p8",name:"Adam",    index:19.2, tee:"Blue"}
 ];
 const P = id => PLAYERS.find(p => p.id === id);
 
@@ -394,13 +416,30 @@ const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
 /* ============================================================
    §1.4–1.5  HANDICAPS
    ============================================================ */
+/* ---------- §T5 course handicap ----------
+   A handicap index is a property of the player. A course handicap is what that
+   index is worth on a specific tee set:
+
+       CH = index × (slope / 113) + (rating − par)
+
+   The (rating − par) term is what makes different tees comparable — playing a
+   shorter tee costs you strokes by exactly the difference in difficulty, so
+   moving up isn't a free advantage. */
+function teeOf(pid){
+  return COURSE.tees.find(t => t.name === P(pid).tee) || COURSE.tees[0];
+}
+function courseHcp(pid){
+  const t = teeOf(pid);
+  if (!t) return Math.round(P(pid).index);
+  return Math.round(P(pid).index * (t.slope / 113) + (t.rating - t.par));
+}
 function baseline(g){
   const all = [...g.teams[0], ...g.teams[1]];
-  return Math.min(...all.map(id => P(id).hcp));
+  return Math.min(...all.map(id => courseHcp(id)));
 }
 function playingHcp(pid, g){
   if (!usesHcp(g)) return 0;
-  return g.mode === "FULL" ? P(pid).hcp : P(pid).hcp - baseline(g);
+  return g.mode === "FULL" ? courseHcp(pid) : courseHcp(pid) - baseline(g);
 }
 function strokesOn(pid, g, h){
   if (!usesHcp(g)) return 0;
@@ -646,7 +685,7 @@ function renderBoard(){
   </tr></thead><tbody>`;
   s.forEach((p,i) => {
     h += `<tr><td><span class="pos">${String(i+1).padStart(2,"0")}</span>${esc(p.name)}
-      <span class="hcp"> ${p.hcp}</span></td>
+      <span class="hcp"> ${p.index.toFixed(1)} · ${esc(p.tee)}</span></td>
       <td class="mono">${p.w}</td><td class="mono">${p.l}</td><td class="mono">${p.t}</td>
       <td class="mono" style="color:var(--ink-faint)">${p.gp}</td>
       <td class="pts">${p.pts % 1 ? p.pts.toFixed(1) : p.pts}</td></tr>`;
@@ -726,18 +765,40 @@ function renderSchedule(){
 
 /* ---------- players ---------- */
 function renderPlayers(){
-  let h = `<h2 class="sec">Field</h2><table class="lb"><thead><tr>
-    <th>Player</th><th>Index</th></tr></thead><tbody>`;
+  let h = `<h2 class="sec">Field</h2>
+  <table class="lb ftbl"><thead><tr>
+    <th>Player</th><th>Index</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
-    h += `<tr><td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
-      <td><span class="step">
-        <button data-hcpstep="${p.id}:-1">\u2212</button>
-        <span class="val">${p.hcp}</span>
-        <button data-hcpstep="${p.id}:1">+</button>
-      </span></td></tr>`;
+    const t = teeOf(p.id);
+    h += `<tr>
+      <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
+      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"></td>
+      <td><select class="tee" data-tee="${p.id}">
+        ${COURSE.tees.map(x => `<option${x.name===p.tee?" selected":""}>${esc(x.name)}</option>`).join("")}
+      </select></td>
+      <td class="mono ch" data-ch="${p.id}">${courseHcp(p.id)}</td>
+    </tr>`;
   });
   h += `</tbody></table>
-  <p class="note">Anyone can edit anyone's handicap \u2014 open by design.</p>
+  <p class="note">Index is the player's handicap index. <b>CH</b> is the course handicap it's
+    worth off their tee \u2014 calculated, not typed:
+    <span class="mono">index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
+    Scrambles ignore all of this and play gross.</p>
+
+  <h2 class="sec">Tees</h2>
+  <table class="lb ttbl"><thead><tr>
+    <th>Tee</th><th>Rating</th><th>Slope</th><th>Par</th></tr></thead><tbody>`;
+  COURSE.tees.forEach((t,i) => {
+    h += `<tr>
+      <td><input class="tf wide" data-tee-f="name:${i}" value="${esc(t.name)}"></td>
+      <td><input class="tf" inputmode="decimal" data-tee-f="rating:${i}" value="${t.rating}"></td>
+      <td><input class="tf" inputmode="numeric" data-tee-f="slope:${i}" value="${t.slope}"></td>
+      <td><input class="tf" inputmode="numeric" data-tee-f="par:${i}" value="${t.par}"></td>
+    </tr>`;
+  });
+  h += `</tbody></table>
+  <p class="note">Read rating and slope off the card or the tee marker. Slope runs 55\u2013155;
+    113 is the neutral value.</p>
 
   <h2 class="sec">Course</h2>
   <div class="imp">
@@ -749,10 +810,17 @@ function renderPlayers(){
   ${cardBlock(0)}
   ${cardBlock(9)}
   <p class="impmsg" id="cardmsg"></p>
-  <div class="footnote">In the real app the course library and rosters are admin-only;
-  handicaps are open to everyone. Both are editable here since this prototype has no login.</div>`;
+  <div class="footnote">In the real app the course library and rosters are admin-only, and
+  handicaps lock once play starts. Everything is editable here since this prototype has no login.</div>`;
   app.innerHTML = h;
   updateCardMsg();
+}
+
+/* recompute the CH column in place, without a re-render that would steal focus */
+function refreshCH(){
+  document.querySelectorAll("[data-ch]").forEach(td => {
+    td.textContent = courseHcp(td.dataset.ch);
+  });
 }
 
 /* nine-hole block of the scorecard, as editable cells */
@@ -943,7 +1011,7 @@ function renderStrokeGrid(g, h){
   out += `</tr></thead><tbody>`;
   ids.forEach(id => {
     const ph = playingHcp(id, g);
-    out += `<tr><th>${esc(P(id).name)} <i>${ph}</i></th>`;
+    out += `<tr><th>${esc(P(id).name)} <i>${esc(P(id).tee)} · ch ${courseHcp(id)} → ${ph}</i></th>`;
     for (let i = 0; i < 18; i++){
       const s = strokesOn(id, g, i);
       out += `<td class="${s?"dot ":""}${i===h?"cur":""}">${s ? "•".repeat(s) : ""}</td>`;
@@ -951,8 +1019,8 @@ function renderStrokeGrid(g, h){
     out += `</tr>`;
   });
   out += `</tbody></table></div>
-    <p class="sgrid-key">Number after each name is that player's playing handicap
-    ${g.mode === "RELATIVE" ? `(relative — lowest in this game plays off scratch)` : `(full)`}.
+    <p class="sgrid-key">Each name shows tee, course handicap, then playing handicap
+    ${g.mode === "RELATIVE" ? `(relative — lowest course handicap in this game plays off scratch)` : `(full)`}.
     A dot means a stroke on that hole, allocated by stroke index.</p>`;
   return out;
 }
@@ -1092,12 +1160,6 @@ document.addEventListener("click", e => {
   if (el.id === "prev"){ view.hole = Math.max(0, h-1); render(); return; }
   if (el.id === "next"){ view.hole = Math.min(17, h+1); render(); return; }
 
-  if (el.dataset.hcpstep){
-    const [pid, dRaw] = el.dataset.hcpstep.split(":");
-    const p = P(pid);
-    p.hcp = Math.max(0, Math.min(54, p.hcp + (+dRaw)));
-    render(); return;
-  }
   if (el.dataset.step){
     const [key, dRaw] = el.dataset.step.split(":");
     const d = +dRaw;
@@ -1163,6 +1225,29 @@ document.addEventListener("click", e => {
 document.addEventListener("input", e => {
   const t = e.target;
 
+  /* handicap index */
+  if (t.dataset && t.dataset.index != null){
+    t.value = t.value.replace(/[^0-9.+]/g, "");
+    const v = parseFloat(t.value);
+    if (!isNaN(v)) { P(t.dataset.index).index = Math.max(0, Math.min(54, v)); refreshCH(); }
+    return;
+  }
+  /* tee rating / slope / par / name */
+  if (t.dataset && t.dataset.teeF != null){
+    const [field, iRaw] = t.dataset.teeF.split(":");
+    const tee = COURSE.tees[+iRaw];
+    if (field === "name"){
+      const old = tee.name, nv = t.value.trim();
+      if (nv){ PLAYERS.forEach(p => { if (p.tee === old) p.tee = nv; }); tee.name = nv; }
+    } else {
+      t.value = t.value.replace(/[^0-9.]/g, "");
+      const v = parseFloat(t.value);
+      if (!isNaN(v)) tee[field] = v;
+    }
+    refreshCH();
+    return;
+  }
+
   if (t.hasAttribute && t.hasAttribute("data-cname")){
     COURSE.name = t.value.trim() || COURSE.name;
     return;
@@ -1196,6 +1281,14 @@ function advanceCell(t){
   const n = all[all.indexOf(t) + 1];
   if (n){ n.focus(); n.select(); }
 }
+
+/* tee assignment */
+document.addEventListener("change", e => {
+  if (e.target.dataset && e.target.dataset.tee != null){
+    P(e.target.dataset.tee).tee = e.target.value;
+    refreshCH();
+  }
+});
 
 /* tapping a cell selects it, so typing replaces rather than appends */
 document.addEventListener("focusin", e => {
