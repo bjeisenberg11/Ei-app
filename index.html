@@ -44,10 +44,11 @@ body{background:var(--paper);color:var(--ink);font-family:'Barlow',system-ui,san
   font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;
   padding-bottom:calc(72px + env(safe-area-inset-bottom))}
 .wrap{max-width:620px;margin:0 auto;padding:0 16px}
-button{font-family:inherit}
+button{font-family:inherit;color:inherit}
 
 /* header */
-.top{border-bottom:1.5px solid var(--ink);background:var(--paper);position:sticky;top:0;z-index:30}
+.top{border-bottom:1.5px solid var(--ink);background:var(--paper);position:sticky;top:0;z-index:30;
+  padding-top:env(safe-area-inset-top)}
 .top-in{display:flex;align-items:center;gap:11px;padding:11px 0 10px}
 .monogram{width:38px;height:38px;flex:none;border:1.5px solid var(--ink);
   display:grid;place-items:center;font-family:'Barlow Condensed',sans-serif;
@@ -82,7 +83,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hcp{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
 
 /* game cards */
-.gcard{display:block;width:100%;text-align:left;background:var(--paper-2);
+.gcard{display:block;width:100%;text-align:left;background:var(--paper-2);color:var(--ink);
   border:1px solid var(--rule);border-left:3px solid var(--ink);
   padding:12px 13px;margin-bottom:9px;cursor:pointer}
 .gcard.live{border-left-color:var(--pencil)}
@@ -616,15 +617,17 @@ function renderHome(){
     h += `<h2 class="sec">${esc(r)}</h2>`;
     GAMES.filter(g => g.round === r).forEach(g => {
       const stt = gameStatusLabel(g);
-      const names = t => g.teams[t].map(id => P(id).name).join(" & ");
+      const meta = usesHcp(g)
+        ? (g.mode === "RELATIVE" ? "Relative handicaps" : "Full handicaps")
+        : "Gross — no handicaps";
       h += `<button class="gcard ${stt.cls==="done"?"done":""}" data-game="${g.id}">
         <div class="gcard-top">
           <span class="gtype">${LABEL[g.type]}</span>
           <span class="gstate ${stt.cls==="live"?"live":""}">${esc(stt.text)}</span>
         </div>
-        <div class="gteams">${esc(names(0))} <b>vs</b> ${esc(names(1))}</div>
-        <div class="gmeta">${g.mode === "RELATIVE" ? "Relative handicaps" : "Full handicaps"}${
-          usesHcp(g) ? "" : " · gross"}${g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
+        <div class="gteams">${esc(teamLabel(g,0))} <b>vs</b> ${esc(teamLabel(g,1))}</div>
+        <div class="gmeta">${meta}${
+          g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
       </button>`;
     });
   });
