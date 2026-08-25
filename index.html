@@ -196,6 +196,19 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 @keyframes bugtick{ from{transform:translateX(0)} to{transform:translateX(-100%)} }
 @media (prefers-reduced-motion:reduce){.bug-ticker.scrolling{animation:none;padding-left:0}}
 
+/* course importer */
+.imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
+.imp label{display:block;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.13em;font-size:10px;font-weight:600;color:var(--ink-soft);margin:9px 0 3px}
+.imp label:first-of-type{margin-top:0}
+.imp input{width:100%;background:var(--paper);border:1px solid var(--rule);color:var(--ink);
+  font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:8px;letter-spacing:.02em}
+.imp input:focus{outline:none;border-color:var(--brass)}
+.imp .hint{font-size:12px;color:var(--ink-faint);margin:5px 0 0}
+.impmsg{font-size:13px;margin:9px 0 0;line-height:1.4}
+.impmsg.bad{color:var(--pencil);font-weight:500}
+.impmsg.good{color:var(--ink);font-weight:500}
+
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
   border-top:1.5px solid var(--ink);display:flex;z-index:40;
@@ -210,8 +223,9 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%) translateY(140%);
   background:var(--ink);color:var(--paper);padding:9px 16px;font-family:'Barlow Condensed',sans-serif;
   text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:600;
-  transition:transform .2s;z-index:60}
-.toast.on{transform:translateX(-50%) translateY(0)}
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:transform .2s,opacity .2s;z-index:60}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 :focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 </style>
@@ -680,7 +694,19 @@ function renderPlayers(){
   h += `</tbody></table>
   <p class="note">Anyone can edit anyone's handicap — open by design.</p>
   <h2 class="sec">${esc(COURSE.name)}</h2>
-  <table class="lb"><thead><tr><th>Hole</th><th>Par</th><th>Index</th></tr></thead><tbody>`;
+  <div class="imp">
+    <label for="cname">Course name</label>
+    <input id="cname" value="${esc(COURSE.name)}">
+    <label for="cpar">Pars — 18 numbers</label>
+    <input id="cpar" inputmode="numeric" value="${COURSE.holes.map(c=>c.par).join(" ")}">
+    <label for="csi">Stroke index — 18 numbers</label>
+    <input id="csi" inputmode="numeric" value="${COURSE.holes.map(c=>c.si).join(" ")}">
+    <p class="hint">Read them straight off the scorecard, left to right, holes 1–18.
+      Spaces, commas or tabs all work.</p>
+    <div class="acts"><button class="btn" id="capply">Apply scorecard</button></div>
+    <p class="impmsg" id="impmsg"></p>
+  </div>
+  <table class="lb" style="margin-top:16px"><thead><tr><th>Hole</th><th>Par</th><th>Index</th></tr></thead><tbody>`;
   const siCounts = {};
   COURSE.holes.forEach(c => siCounts[c.si] = (siCounts[c.si]||0) + 1);
   COURSE.holes.forEach((c,i) => {
@@ -991,6 +1017,35 @@ document.addEventListener("click", e => {
   if (el.dataset.hole != null){ view.hole = +el.dataset.hole; render(); return; }
   if (el.id === "prev"){ view.hole = Math.max(0, h-1); render(); return; }
   if (el.id === "next"){ view.hole = Math.min(17, h+1); render(); return; }
+
+  if (el.id === "capply"){
+    const parseRow = s => (s || "").trim().split(/[\s,;\t]+/).filter(Boolean).map(Number);
+    const pars = parseRow(document.getElementById("cpar").value);
+    const sis  = parseRow(document.getElementById("csi").value);
+    const name = document.getElementById("cname").value.trim();
+    const msg  = document.getElementById("impmsg");
+    const fail = t => { msg.className = "impmsg bad"; msg.textContent = t; };
+
+    if (pars.length !== 18) return fail(`Pars: found ${pars.length} numbers, need exactly 18.`);
+    if (sis.length  !== 18) return fail(`Stroke index: found ${sis.length} numbers, need exactly 18.`);
+    if (pars.some(n => !Number.isInteger(n) || n < 3 || n > 6))
+      return fail("Pars must be whole numbers between 3 and 6.");
+    if (sis.some(n => !Number.isInteger(n) || n < 1 || n > 18))
+      return fail("Stroke index values must be whole numbers between 1 and 18.");
+    const missing = [];
+    for (let i = 1; i <= 18; i++) if (!sis.includes(i)) missing.push(i);
+    if (missing.length)
+      return fail(`Stroke index must use each of 1–18 exactly once. Missing: ${missing.join(", ")}.`);
+
+    COURSE.name = name || COURSE.name;
+    COURSE.holes = pars.map((par, i) => ({ par, si: sis[i] }));
+    const total = pars.reduce((a,b) => a+b, 0);
+    toast("Scorecard applied");
+    render();
+    const m2 = document.getElementById("impmsg");
+    if (m2){ m2.className = "impmsg good"; m2.textContent = `Applied — par ${total}.`; }
+    return;
+  }
 
   if (el.dataset.hcpstep){
     const [pid, dRaw] = el.dataset.hcpstep.split(":");
