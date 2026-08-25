@@ -196,18 +196,36 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 @keyframes bugtick{ from{transform:translateX(0)} to{transform:translateX(-100%)} }
 @media (prefers-reduced-motion:reduce){.bug-ticker.scrolling{animation:none;padding-left:0}}
 
-/* course importer */
+/* course entry */
 .imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
 .imp label{display:block;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.13em;font-size:10px;font-weight:600;color:var(--ink-soft);margin:9px 0 3px}
 .imp label:first-of-type{margin-top:0}
 .imp input{width:100%;background:var(--paper);border:1px solid var(--rule);color:var(--ink);
-  font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:8px;letter-spacing:.02em}
+  font-family:'Barlow',sans-serif;font-size:15px;padding:8px}
 .imp input:focus{outline:none;border-color:var(--brass)}
-.imp .hint{font-size:12px;color:var(--ink-faint);margin:5px 0 0}
-.impmsg{font-size:13px;margin:9px 0 0;line-height:1.4}
+.imp .hint{font-size:12.5px;color:var(--ink-faint);margin:5px 0 0;line-height:1.4}
+.impmsg{font-size:13px;margin:10px 0 0;line-height:1.4}
 .impmsg.bad{color:var(--pencil);font-weight:500}
-.impmsg.good{color:var(--ink);font-weight:500}
+.impmsg.good{color:var(--ink-soft);font-weight:500}
+
+/* editable scorecard */
+.cardwrap{overflow-x:auto;margin-top:11px;-webkit-overflow-scrolling:touch}
+table.card{border-collapse:collapse;width:100%;background:var(--paper-2)}
+table.card th,table.card td{border:1px solid var(--rule);padding:0;text-align:center}
+table.card .hd th{background:var(--ink);color:var(--paper);padding:5px 0;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500}
+table.card th.rl{background:var(--paper-3);color:var(--ink);text-align:left;padding:5px 7px;
+  font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.11em;
+  font-size:10px;font-weight:700;white-space:nowrap;width:1%}
+table.card .hd th.rl{background:var(--ink);color:var(--paper)}
+table.card td.tot,table.card th.tot{background:var(--paper-3);
+  font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;padding:5px 6px}
+input.cc{width:100%;min-width:30px;border:none;background:transparent;text-align:center;
+  font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:500;color:var(--ink);
+  padding:8px 0;-moz-appearance:textfield}
+input.cc:focus{outline:none;background:var(--brass);color:var(--paper)}
+input.cc.bad{background:var(--pencil);color:var(--paper)}
 
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
@@ -686,50 +704,79 @@ function renderPlayers(){
   PLAYERS.forEach(p => {
     h += `<tr><td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
       <td><span class="step">
-        <button data-hcpstep="${p.id}:-1">−</button>
+        <button data-hcpstep="${p.id}:-1">\u2212</button>
         <span class="val">${p.hcp}</span>
         <button data-hcpstep="${p.id}:1">+</button>
       </span></td></tr>`;
   });
   h += `</tbody></table>
-  <p class="note">Anyone can edit anyone's handicap — open by design.</p>
-  <h2 class="sec">${esc(COURSE.name)}</h2>
+  <p class="note">Anyone can edit anyone's handicap \u2014 open by design.</p>
+
+  <h2 class="sec">Course</h2>
   <div class="imp">
     <label for="cname">Course name</label>
-    <input id="cname" value="${esc(COURSE.name)}">
-    <label for="cpar">Pars — 18 numbers</label>
-    <input id="cpar" inputmode="numeric" value="${COURSE.holes.map(c=>c.par).join(" ")}">
-    <label for="csi">Stroke index — 18 numbers</label>
-    <input id="csi" inputmode="numeric" value="${COURSE.holes.map(c=>c.si).join(" ")}">
-    <p class="hint">Read them straight off the scorecard, left to right, holes 1–18.
-      Spaces, commas or tabs all work.</p>
-    <div class="acts"><button class="btn" id="capply">Apply scorecard</button></div>
-    <p class="impmsg" id="impmsg"></p>
+    <input id="cname" value="${esc(COURSE.name)}" data-cname>
+    <p class="hint" style="margin-top:9px">Copy the card straight across. Each box jumps to the
+      next as you fill it, so the number pad never has to close.</p>
   </div>
-  <table class="lb" style="margin-top:16px"><thead><tr><th>Hole</th><th>Par</th><th>Index</th></tr></thead><tbody>`;
-  const siCounts = {};
-  COURSE.holes.forEach(c => siCounts[c.si] = (siCounts[c.si]||0) + 1);
-  COURSE.holes.forEach((c,i) => {
-    const dup = siCounts[c.si] > 1;
-    h += `<tr><td class="mono">${i+1}</td>
-      <td><span class="step">
-        <button data-parstep="${i}:-1">−</button>
-        <span class="val">${c.par}</span>
-        <button data-parstep="${i}:1">+</button>
-      </span></td>
-      <td><span class="step">
-        <button data-sistep="${i}:-1">−</button>
-        <span class="val" style="${dup?"color:var(--pencil)":""}">${c.si}</span>
-        <button data-sistep="${i}:1">+</button>
-      </span></td></tr>`;
-  });
-  h += `</tbody></table>`;
-  if (Object.values(siCounts).some(n => n > 1))
-    h += `<p class="note warn">Stroke index must be a complete 1–18 permutation with no
-      repeats — the red values above collide. Fix before relying on handicap strokes.</p>`;
-  h += `<div class="footnote">In the real app the course library and rosters are admin-only;
+  ${cardBlock(0)}
+  ${cardBlock(9)}
+  <p class="impmsg" id="cardmsg"></p>
+  <div class="footnote">In the real app the course library and rosters are admin-only;
   handicaps are open to everyone. Both are editable here since this prototype has no login.</div>`;
   app.innerHTML = h;
+  updateCardMsg();
+}
+
+/* nine-hole block of the scorecard, as editable cells */
+function cardBlock(off){
+  const nums = [], pars = [], sis = [];
+  for (let i = off; i < off + 9; i++){
+    nums.push(`<th>${i+1}</th>`);
+    pars.push(`<td><input class="cc" inputmode="numeric" maxlength="1"
+      data-cell="par:${i}" value="${COURSE.holes[i].par}"></td>`);
+    sis.push(`<td><input class="cc" inputmode="numeric" maxlength="2"
+      data-cell="si:${i}" value="${COURSE.holes[i].si}"></td>`);
+  }
+  const out = COURSE.holes.slice(off, off+9).reduce((a,c) => a + c.par, 0);
+  return `<div class="cardwrap"><table class="card">
+    <tr class="hd"><th class="rl">Hole</th>${nums.join("")}<th class="tot">${off?"In":"Out"}</th></tr>
+    <tr><th class="rl">Par</th>${pars.join("")}<td class="tot">${out}</td></tr>
+    <tr><th class="rl">Index</th>${sis.join("")}<td class="tot"></td></tr>
+  </table></div>`;
+}
+
+/* live validation under the card */
+function updateCardMsg(){
+  const el = document.getElementById("cardmsg");
+  if (!el) return;
+  const sis = COURSE.holes.map(c => c.si);
+  const missing = [], dupes = [];
+  for (let i = 1; i <= 18; i++){
+    const n = sis.filter(x => x === i).length;
+    if (n === 0) missing.push(i);
+    if (n > 1) dupes.push(i);
+  }
+  const badPar = COURSE.holes.some(c => !(c.par >= 3 && c.par <= 6));
+  document.querySelectorAll('.cc[data-cell^="si:"]').forEach(inp => {
+    const v = +inp.value;
+    inp.classList.toggle("bad", dupes.includes(v) || !(v >= 1 && v <= 18));
+  });
+  document.querySelectorAll('.cc[data-cell^="par:"]').forEach(inp => {
+    const v = +inp.value;
+    inp.classList.toggle("bad", !(v >= 3 && v <= 6));
+  });
+  const bits = [];
+  if (badPar) bits.push("pars must be 3\u20136");
+  if (dupes.length) bits.push(`index repeated: ${dupes.join(", ")}`);
+  if (missing.length) bits.push(`index missing: ${missing.join(", ")}`);
+  if (bits.length){
+    el.className = "impmsg bad";
+    el.textContent = bits.join(" \u00b7 ") + ". Handicap strokes will be wrong until this is fixed.";
+  } else {
+    el.className = "impmsg good";
+    el.textContent = `Par ${COURSE.holes.reduce((a,c)=>a+c.par,0)} \u00b7 stroke index complete.`;
+  }
 }
 
 /* ---------- game ---------- */
@@ -1018,54 +1065,12 @@ document.addEventListener("click", e => {
   if (el.id === "prev"){ view.hole = Math.max(0, h-1); render(); return; }
   if (el.id === "next"){ view.hole = Math.min(17, h+1); render(); return; }
 
-  if (el.id === "capply"){
-    const parseRow = s => (s || "").trim().split(/[\s,;\t]+/).filter(Boolean).map(Number);
-    const pars = parseRow(document.getElementById("cpar").value);
-    const sis  = parseRow(document.getElementById("csi").value);
-    const name = document.getElementById("cname").value.trim();
-    const msg  = document.getElementById("impmsg");
-    const fail = t => { msg.className = "impmsg bad"; msg.textContent = t; };
-
-    if (pars.length !== 18) return fail(`Pars: found ${pars.length} numbers, need exactly 18.`);
-    if (sis.length  !== 18) return fail(`Stroke index: found ${sis.length} numbers, need exactly 18.`);
-    if (pars.some(n => !Number.isInteger(n) || n < 3 || n > 6))
-      return fail("Pars must be whole numbers between 3 and 6.");
-    if (sis.some(n => !Number.isInteger(n) || n < 1 || n > 18))
-      return fail("Stroke index values must be whole numbers between 1 and 18.");
-    const missing = [];
-    for (let i = 1; i <= 18; i++) if (!sis.includes(i)) missing.push(i);
-    if (missing.length)
-      return fail(`Stroke index must use each of 1–18 exactly once. Missing: ${missing.join(", ")}.`);
-
-    COURSE.name = name || COURSE.name;
-    COURSE.holes = pars.map((par, i) => ({ par, si: sis[i] }));
-    const total = pars.reduce((a,b) => a+b, 0);
-    toast("Scorecard applied");
-    render();
-    const m2 = document.getElementById("impmsg");
-    if (m2){ m2.className = "impmsg good"; m2.textContent = `Applied — par ${total}.`; }
-    return;
-  }
-
   if (el.dataset.hcpstep){
     const [pid, dRaw] = el.dataset.hcpstep.split(":");
     const p = P(pid);
     p.hcp = Math.max(0, Math.min(54, p.hcp + (+dRaw)));
     render(); return;
   }
-  if (el.dataset.parstep){
-    const [idxRaw, dRaw] = el.dataset.parstep.split(":");
-    const c = COURSE.holes[+idxRaw];
-    c.par = Math.max(3, Math.min(6, c.par + (+dRaw)));
-    render(); return;
-  }
-  if (el.dataset.sistep){
-    const [idxRaw, dRaw] = el.dataset.sistep.split(":");
-    const c = COURSE.holes[+idxRaw];
-    c.si = Math.max(1, Math.min(18, c.si + (+dRaw)));
-    render(); return;
-  }
-
   if (el.dataset.step){
     const [key, dRaw] = el.dataset.step.split(":");
     const d = +dRaw;
@@ -1125,6 +1130,49 @@ document.addEventListener("click", e => {
 
   if (el.id === "togglestrokes"){ showStrokes = !showStrokes; render(); return; }
   if (el.id === "reset"){ g.holes = blankHoles(); view.hole = 0; render(); toast("Game reset"); return; }
+});
+
+/* scorecard cells: type, auto-advance, validate live (no re-render, so focus survives) */
+document.addEventListener("input", e => {
+  const t = e.target;
+
+  if (t.hasAttribute && t.hasAttribute("data-cname")){
+    COURSE.name = t.value.trim() || COURSE.name;
+    return;
+  }
+  if (!t.classList || !t.classList.contains("cc")) return;
+
+  t.value = t.value.replace(/[^0-9]/g, "");
+  const [kind, idxRaw] = t.dataset.cell.split(":");
+  const i = +idxRaw;
+  const v = +t.value;
+
+  if (kind === "par"){
+    if (t.value !== "") COURSE.holes[i].par = v;
+    if (t.value.length >= 1) advanceCell(t);
+  } else {
+    if (t.value !== "") COURSE.holes[i].si = v;
+    // "1" might be the start of 10-18, so wait; anything else can't be
+    if (t.value.length >= 2 || v >= 2) advanceCell(t);
+  }
+
+  // refresh the Out/In par totals in place
+  document.querySelectorAll("table.card").forEach((tbl, b) => {
+    const cell = tbl.querySelectorAll("td.tot")[0];
+    if (cell) cell.textContent = COURSE.holes.slice(b*9, b*9+9).reduce((a,c)=>a+c.par,0);
+  });
+  updateCardMsg();
+});
+
+function advanceCell(t){
+  const all = [...document.querySelectorAll(".cc")];
+  const n = all[all.indexOf(t) + 1];
+  if (n){ n.focus(); n.select(); }
+}
+
+/* tapping a cell selects it, so typing replaces rather than appends */
+document.addEventListener("focusin", e => {
+  if (e.target.classList && e.target.classList.contains("cc")) e.target.select();
 });
 
 render();
