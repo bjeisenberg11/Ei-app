@@ -236,6 +236,9 @@ td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
 table.ftbl td:nth-child(n+2),table.ttbl td:nth-child(n+2){text-align:right}
 
+.cwrap{flex-wrap:wrap;gap:6px}
+.cwrap .btn{flex:1 1 30%;font-size:12px;padding:11px 6px}
+
 /* course entry */
 .imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
 .imp label{display:block;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
@@ -317,34 +320,75 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
    Implements spec v2 §1–§9 and §11.
    ============================================================ */
 
-/* ---------- course ---------- */
-const COURSE = {
-  name: "Pine Hollow",
-  holes: [
-    {par:4,si:7},{par:4,si:3},{par:3,si:17},{par:5,si:11},{par:4,si:1},
-    {par:4,si:9},{par:3,si:15},{par:4,si:5},{par:5,si:13},
-    {par:4,si:8},{par:5,si:4},{par:3,si:18},{par:4,si:12},{par:4,si:2},
-    {par:4,si:10},{par:3,si:16},{par:5,si:6},{par:4,si:14}
-  ],
-  /* §T5 — rating and slope are properties of a TEE SET, not the course.
-     This is what makes cross-tee play comparable. */
-  tees: [
-    { name:"Blue",  rating:72.1, slope:135, par:72 },
-    { name:"White", rating:70.2, slope:128, par:72 },
-    { name:"Gold",  rating:68.0, slope:119, par:72 }
-  ]
-};
+/* ---------- course library ----------
+   Multiple courses, each with its own holes and its own tee sets. Rounds point
+   at a course; tee names differ from course to course, so a player's tee is
+   stored per course, not globally. */
+const COURSES = [
+  {
+    id:"pine", name:"Pine Hollow",
+    holes:[
+      {par:4,si:7},{par:4,si:3},{par:3,si:17},{par:5,si:11},{par:4,si:1},
+      {par:4,si:9},{par:3,si:15},{par:4,si:5},{par:5,si:13},
+      {par:4,si:8},{par:5,si:4},{par:3,si:18},{par:4,si:12},{par:4,si:2},
+      {par:4,si:10},{par:3,si:16},{par:5,si:6},{par:4,si:14}
+    ],
+    tees:[
+      { name:"Blue",  rating:72.1, slope:135, par:72 },
+      { name:"White", rating:70.2, slope:128, par:72 },
+      { name:"Gold",  rating:68.0, slope:119, par:72 }
+    ]
+  },
+  {
+    id:"marsh", name:"Marsh Ridge",
+    holes:[
+      {par:4,si:5},{par:3,si:15},{par:5,si:1},{par:4,si:11},{par:4,si:7},
+      {par:3,si:17},{par:4,si:3},{par:5,si:9},{par:4,si:13},
+      {par:4,si:2},{par:3,si:18},{par:4,si:8},{par:5,si:6},{par:4,si:12},
+      {par:4,si:4},{par:3,si:16},{par:4,si:14},{par:5,si:10}
+    ],
+    tees:[
+      { name:"Black", rating:73.4, slope:142, par:71 },
+      { name:"Blue",  rating:71.0, slope:131, par:71 },
+      { name:"White", rating:69.1, slope:122, par:71 }
+    ]
+  },
+  {
+    id:"stone", name:"Stonebridge",
+    holes:[
+      {par:5,si:9},{par:4,si:1},{par:4,si:13},{par:3,si:17},{par:4,si:5},
+      {par:5,si:7},{par:4,si:3},{par:3,si:15},{par:4,si:11},
+      {par:4,si:6},{par:4,si:2},{par:5,si:12},{par:3,si:18},{par:4,si:4},
+      {par:4,si:10},{par:5,si:8},{par:3,si:16},{par:4,si:14}
+    ],
+    tees:[
+      { name:"Championship", rating:74.0, slope:144, par:72 },
+      { name:"Members",      rating:71.3, slope:132, par:72 },
+      { name:"Forward",      rating:68.6, slope:120, par:72 }
+    ]
+  }
+];
+const C = id => COURSES.find(c => c.id === id) || COURSES[0];
 
 /* ---------- players ---------- */
 const PLAYERS = [
-  {id:"p1",name:"Blake",   index:8.2,  tee:"Blue",  admin:true},
-  {id:"p2",name:"Dan",     index:14.1, tee:"Blue"},
-  {id:"p3",name:"Jason",   index:5.0,  tee:"Blue"},
-  {id:"p4",name:"Daniel",  index:21.3, tee:"Blue"},
-  {id:"p5",name:"Howard",  index:11.4, tee:"White"},
-  {id:"p6",name:"Luke",    index:16.0, tee:"Blue"},
-  {id:"p7",name:"Jake",    index:3.1,  tee:"Blue"},
-  {id:"p8",name:"Adam",    index:19.2, tee:"Blue"}
+  /* tees is keyed by course id — tee names differ course to course */
+  {id:"p1",name:"Blake",  index:8.2,  admin:true,
+    tees:{pine:"Blue",  marsh:"Blue",  stone:"Members"}},
+  {id:"p2",name:"Dan",    index:14.1,
+    tees:{pine:"Blue",  marsh:"Blue",  stone:"Members"}},
+  {id:"p3",name:"Jason",  index:5.0,
+    tees:{pine:"Blue",  marsh:"Black", stone:"Championship"}},
+  {id:"p4",name:"Daniel", index:21.3,
+    tees:{pine:"Blue",  marsh:"Blue",  stone:"Members"}},
+  {id:"p5",name:"Howard", index:11.4,
+    tees:{pine:"White", marsh:"White", stone:"Forward"}},
+  {id:"p6",name:"Luke",   index:16.0,
+    tees:{pine:"Blue",  marsh:"Blue",  stone:"Members"}},
+  {id:"p7",name:"Jake",   index:3.1,
+    tees:{pine:"Blue",  marsh:"Black", stone:"Championship"}},
+  {id:"p8",name:"Adam",   index:19.2,
+    tees:{pine:"Blue",  marsh:"Blue",  stone:"Members"}}
 ];
 const P = id => PLAYERS.find(p => p.id === id);
 
@@ -360,15 +404,15 @@ function blankHoles(){
 }
 
 let GAMES = [
-  { id:"g1", round:"Saturday AM", type:"BESTBALL", mode:"RELATIVE",
+  { id:"g1", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
     teams:[["p1","p4"],["p2","p5"]], holes:blankHoles() },
-  { id:"g2", round:"Saturday AM", type:"BESTBALL", mode:"RELATIVE",
+  { id:"g2", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
     teams:[["p3","p6"],["p7","p8"]], holes:blankHoles() },
-  { id:"g3", round:"Saturday PM", type:"SCRAMBLE4", mode:"RELATIVE",
+  { id:"g3", round:"Saturday PM", courseId:"marsh", type:"SCRAMBLE4", mode:"RELATIVE",
     teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() },
-  { id:"g4", round:"Sunday AM", type:"SCRAMBLE3", mode:"RELATIVE",
+  { id:"g4", round:"Sunday AM", courseId:"stone", type:"SCRAMBLE3", mode:"RELATIVE",
     teams:[["p1","p4","p3"],["p2","p5","p7"]], holes:blankHoles() },
-  { id:"g5", round:"Sunday PM", type:"FORTYBALL", mode:"RELATIVE", hidden:true,
+  { id:"g5", round:"Sunday PM", courseId:"stone", type:"FORTYBALL", mode:"RELATIVE", hidden:true,
     teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() }
 ];
 
@@ -417,33 +461,41 @@ const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
    §1.4–1.5  HANDICAPS
    ============================================================ */
 /* ---------- §T5 course handicap ----------
-   A handicap index is a property of the player. A course handicap is what that
-   index is worth on a specific tee set:
+   A handicap index belongs to the player. A course handicap is what that index
+   is worth on a specific tee set at a specific course:
 
        CH = index × (slope / 113) + (rating − par)
 
    The (rating − par) term is what makes different tees comparable — playing a
-   shorter tee costs you strokes by exactly the difference in difficulty, so
-   moving up isn't a free advantage. */
-function teeOf(pid){
-  return COURSE.tees.find(t => t.name === P(pid).tee) || COURSE.tees[0];
+   shorter tee costs strokes by exactly the difficulty difference, so moving up
+   isn't free. Because tee names differ course to course, a player's tee is
+   stored per course. */
+const courseOf = g => C(g.courseId);
+
+function teeNameFor(pid, course){
+  return (P(pid).tees && P(pid).tees[course.id]) || course.tees[0].name;
 }
-function courseHcp(pid){
-  const t = teeOf(pid);
+function teeOf(pid, course){
+  return course.tees.find(t => t.name === teeNameFor(pid, course)) || course.tees[0];
+}
+function courseHcp(pid, course){
+  const t = teeOf(pid, course);
   if (!t) return Math.round(P(pid).index);
   return Math.round(P(pid).index * (t.slope / 113) + (t.rating - t.par));
 }
 function baseline(g){
+  const course = courseOf(g);
   const all = [...g.teams[0], ...g.teams[1]];
-  return Math.min(...all.map(id => courseHcp(id)));
+  return Math.min(...all.map(id => courseHcp(id, course)));
 }
 function playingHcp(pid, g){
   if (!usesHcp(g)) return 0;
-  return g.mode === "FULL" ? courseHcp(pid) : courseHcp(pid) - baseline(g);
+  const ch = courseHcp(pid, courseOf(g));
+  return g.mode === "FULL" ? ch : ch - baseline(g);
 }
 function strokesOn(pid, g, h){
   if (!usesHcp(g)) return 0;
-  const ph = playingHcp(pid, g), si = COURSE.holes[h].si;
+  const ph = playingHcp(pid, g), si = courseOf(g).holes[h].si;
   let s = 0;
   if (ph >= si) s = 1;
   if (ph >= si + 18) s = 2;
@@ -616,6 +668,7 @@ function currentHoleFor(g){
    ============================================================ */
 let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
+let editCourseId = COURSES[0].id;
 
 const $ = s => document.querySelector(s);
 const app = $("#app");
@@ -633,7 +686,7 @@ function render(){
   if (inGame){
     const g = GAMES.find(x => x.id === view.gameId);
     $("#ttl").textContent = LABEL[g.type];
-    $("#tsub").textContent = g.round + " · " + COURSE.name;
+    $("#tsub").textContent = g.round + " · " + courseOf(g).name;
   } else {
     $("#ttl").textContent = "Eisenberg Invitational";
     $("#tsub").textContent = "Prototype · scoring engine";
@@ -665,7 +718,7 @@ function renderHome(){
           <span class="gstate ${stt.cls==="live"?"live":""}">${esc(stt.text)}</span>
         </div>
         <div class="gteams">${esc(teamLabel(g,0))} <b>vs</b> ${esc(teamLabel(g,1))}</div>
-        <div class="gmeta">${meta}${
+        <div class="gmeta">${esc(courseOf(g).name)} · ${meta}${
           g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
       </button>`;
     });
@@ -765,30 +818,19 @@ function renderSchedule(){
 
 /* ---------- players ---------- */
 function renderPlayers(){
-  let h = `<h2 class="sec">Field</h2>
-  <table class="lb ftbl"><thead><tr>
-    <th>Player</th><th>Index</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
-  PLAYERS.forEach(p => {
-    const t = teeOf(p.id);
-    h += `<tr>
-      <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
-      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"></td>
-      <td><select class="tee" data-tee="${p.id}">
-        ${COURSE.tees.map(x => `<option${x.name===p.tee?" selected":""}>${esc(x.name)}</option>`).join("")}
-      </select></td>
-      <td class="mono ch" data-ch="${p.id}">${courseHcp(p.id)}</td>
-    </tr>`;
-  });
-  h += `</tbody></table>
-  <p class="note">Index is the player's handicap index. <b>CH</b> is the course handicap it's
-    worth off their tee \u2014 calculated, not typed:
-    <span class="mono">index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
-    Scrambles ignore all of this and play gross.</p>
+  const co = C(editCourseId);
+  let h = `<h2 class="sec">Courses</h2>
+  <div class="acts cwrap">
+    ${COURSES.map(c => `<button class="btn ${c.id===editCourseId?"":"ghost"}"
+      data-course="${c.id}">${esc(c.name)}</button>`).join("")}
+  </div>
+  <p class="note">Pick a course to edit it. Each round is played at one of these.
+    ${GAMES.filter(g=>g.courseId===editCourseId).length} game(s) use this course.</p>
 
-  <h2 class="sec">Tees</h2>
+  <h2 class="sec">${esc(co.name)} \u2014 tees</h2>
   <table class="lb ttbl"><thead><tr>
     <th>Tee</th><th>Rating</th><th>Slope</th><th>Par</th></tr></thead><tbody>`;
-  COURSE.tees.forEach((t,i) => {
+  co.tees.forEach((t,i) => {
     h += `<tr>
       <td><input class="tf wide" data-tee-f="name:${i}" value="${esc(t.name)}"></td>
       <td><input class="tf" inputmode="decimal" data-tee-f="rating:${i}" value="${t.rating}"></td>
@@ -797,13 +839,32 @@ function renderPlayers(){
     </tr>`;
   });
   h += `</tbody></table>
-  <p class="note">Read rating and slope off the card or the tee marker. Slope runs 55\u2013155;
-    113 is the neutral value.</p>
+  <p class="note">Rating and slope come off the card or the tee marker. Slope runs 55\u2013155;
+    113 is neutral.</p>
 
-  <h2 class="sec">Course</h2>
+  <h2 class="sec">Field \u2014 at ${esc(co.name)}</h2>
+  <table class="lb ftbl"><thead><tr>
+    <th>Player</th><th>Index</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
+  PLAYERS.forEach(p => {
+    h += `<tr>
+      <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
+      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"></td>
+      <td><select class="tee" data-tee="${p.id}">
+        ${co.tees.map(x => `<option${x.name===teeNameFor(p.id,co)?" selected":""}>${esc(x.name)}</option>`).join("")}
+      </select></td>
+      <td class="mono ch" data-ch="${p.id}">${courseHcp(p.id, co)}</td>
+    </tr>`;
+  });
+  h += `</tbody></table>
+  <p class="note">Index belongs to the player and is the same everywhere. <b>Tee</b> and
+    <b>CH</b> are per course \u2014 switch courses above and these change.
+    <span class="mono">CH = index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
+    Scrambles ignore all of it and play gross.</p>
+
+  <h2 class="sec">${esc(co.name)} \u2014 scorecard</h2>
   <div class="imp">
     <label for="cname">Course name</label>
-    <input id="cname" value="${esc(COURSE.name)}" data-cname>
+    <input id="cname" value="${esc(co.name)}" data-cname>
     <p class="hint" style="margin-top:9px">Copy the card straight across. Each box jumps to the
       next as you fill it, so the number pad never has to close.</p>
   </div>
@@ -816,24 +877,18 @@ function renderPlayers(){
   updateCardMsg();
 }
 
-/* recompute the CH column in place, without a re-render that would steal focus */
-function refreshCH(){
-  document.querySelectorAll("[data-ch]").forEach(td => {
-    td.textContent = courseHcp(td.dataset.ch);
-  });
-}
-
 /* nine-hole block of the scorecard, as editable cells */
 function cardBlock(off){
+  const co = C(editCourseId);
   const nums = [], pars = [], sis = [];
   for (let i = off; i < off + 9; i++){
     nums.push(`<th>${i+1}</th>`);
     pars.push(`<td><input class="cc" inputmode="numeric" maxlength="1"
-      data-cell="par:${i}" value="${COURSE.holes[i].par}"></td>`);
+      data-cell="par:${i}" value="${co.holes[i].par}"></td>`);
     sis.push(`<td><input class="cc" inputmode="numeric" maxlength="2"
-      data-cell="si:${i}" value="${COURSE.holes[i].si}"></td>`);
+      data-cell="si:${i}" value="${co.holes[i].si}"></td>`);
   }
-  const out = COURSE.holes.slice(off, off+9).reduce((a,c) => a + c.par, 0);
+  const out = co.holes.slice(off, off+9).reduce((a,c) => a + c.par, 0);
   return `<div class="cardwrap"><table class="card">
     <tr class="hd"><th class="rl">Hole</th>${nums.join("")}<th class="tot">${off?"In":"Out"}</th></tr>
     <tr><th class="rl">Par</th>${pars.join("")}<td class="tot">${out}</td></tr>
@@ -845,14 +900,15 @@ function cardBlock(off){
 function updateCardMsg(){
   const el = document.getElementById("cardmsg");
   if (!el) return;
-  const sis = COURSE.holes.map(c => c.si);
+  const co = C(editCourseId);
+  const sis = co.holes.map(c => c.si);
   const missing = [], dupes = [];
   for (let i = 1; i <= 18; i++){
     const n = sis.filter(x => x === i).length;
     if (n === 0) missing.push(i);
     if (n > 1) dupes.push(i);
   }
-  const badPar = COURSE.holes.some(c => !(c.par >= 3 && c.par <= 6));
+  const badPar = co.holes.some(c => !(c.par >= 3 && c.par <= 6));
   document.querySelectorAll('.cc[data-cell^="si:"]').forEach(inp => {
     const v = +inp.value;
     inp.classList.toggle("bad", dupes.includes(v) || !(v >= 1 && v <= 18));
@@ -870,276 +926,16 @@ function updateCardMsg(){
     el.textContent = bits.join(" \u00b7 ") + ". Handicap strokes will be wrong until this is fixed.";
   } else {
     el.className = "impmsg good";
-    el.textContent = `Par ${COURSE.holes.reduce((a,c)=>a+c.par,0)} \u00b7 stroke index complete.`;
+    el.textContent = `Par ${co.holes.reduce((a,c)=>a+c.par,0)} \u00b7 stroke index complete.`;
   }
 }
 
-/* ---------- game ---------- */
-function renderGame(){
-  const g = GAMES.find(x => x.id === view.gameId);
-  const h = view.hole;
-  let out = "";
-
-  /* score bug — other matches running in this same round, always visible */
-  out += renderOtherBug(g);
-
-  /* hole strip */
-  out += `<div class="hstrip">`;
-  for (let i = 0; i < 18; i++){
-    const done = isMatch(g) ? holeComplete(g,i) : (g.holes[i].locked[0] && g.holes[i].locked[1]);
-    out += `<button class="hcell" data-hole="${i}" data-s="${done?"done":(i===h?"cur":"")}"
-      ${done && i===h ? 'data-s2="cur"' : ""}>${i+1}</button>`;
-  }
-  out += `</div>`;
-
-  /* banner */
-  if (isMatch(g)){
-    const st = matchState(g);
-    out += `<div class="banner ${st.closed?"closed":""}">
-      <div class="st">${st.closed ? `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`
-        : st.result ? (st.result.winner==="TIE"?"HALVED":`${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
-        : statusText(g, st)}</div>
-      <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
-        !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
-      ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
-    </div>`;
-  } else {
-    const fs = fbState(g);
-    out += `<div class="banner ${fs.done?"closed":""}">
-      <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
-        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
-        : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
-      <div class="thru">${teamShort(g,0)} ${fbSpent(g,0)}/40 spent · ${teamShort(g,1)} ${fbSpent(g,1)}/40 spent</div>
-    </div>`;
-  }
-
-  /* hole header */
-  const c = COURSE.holes[h];
-  out += `<div class="hhead">
-    <span class="hnum">${h+1}</span>
-    <span class="hinfo">Par ${c.par} · Index ${c.si}</span>
-    <span class="nav">
-      <button id="prev" ${h===0?"disabled":""}>&larr;</button>
-      <button id="next" ${h===17?"disabled":""}>&rarr;</button>
-    </span></div>`;
-
-  out += strokesHereLine(g, h);
-  if (usesHcp(g)){
-    out += `<div class="acts" style="margin-top:8px">
-      <button class="btn ghost" id="togglestrokes">${showStrokes?"Hide":"Show"} all strokes</button>
-    </div>`;
-    if (showStrokes) out += renderStrokeGrid(g, h);
-  }
-
-  const hardLocked = isMatch(g) && matchLocked(g, h);
-  if (hardLocked){
-    out += `<p class="note warn">Match closed out. This hole is locked and not scored.</p>`;
-  }
-
-  /* team blocks */
-  [0,1].forEach(t => out += renderTeam(g, t, h, hardLocked));
-
-  /* actions */
-  if (isMatch(g) && !hardLocked){
-    const hole = g.holes[h];
-    out += `<div class="acts">
-      <button class="btn ghost" data-concede="0">${hole.conceded===0?"Undo concede":`${teamShort(g,0)} concedes`}</button>
-      <button class="btn ghost" data-concede="1">${hole.conceded===1?"Undo concede":`${teamShort(g,1)} concedes`}</button>
-    </div>`;
-    if (hole.conceded !== null)
-      out += `<p class="note warn">${teamLabel(g,hole.conceded)} conceded — hole awarded, scoring skipped.</p>`;
-    else if (!holeComplete(g,h))
-      out += `<p class="note">${isScramble(g) ? "Both teams need a score."
-        : "At least one player per side must hole out."}</p>`;
-  }
-
-  out += `<div class="acts" style="margin-top:16px">
-    <button class="btn ghost" id="reset">Reset game</button>
-  </div>`;
-
-  app.innerHTML = out;
-}
-
-/* score bug: sibling games in the same round, tap to jump straight to their current hole.
-   Long lines auto-scroll like a ticker rather than getting clipped. */
-function renderOtherBug(g){
-  const sibs = GAMES.filter(x => x.round === g.round && x.id !== g.id);
-  if (!sibs.length) return "";
-  return sibs.map(s => {
-    const st = gameStatusLabel(s);
-    const text = `${teamLabel(s,0)} vs ${teamLabel(s,1)} — ${st.text}`;
-    const long = text.length > 34;
-    const dur = Math.max(9, Math.round(text.length / 4));
-    return `<button class="bug" data-game="${s.id}" data-jumphole="${currentHoleFor(s)}">
-      <span class="bug-label">${LABEL[s.type]}</span>
-      <span class="bug-scroll"><span class="bug-ticker ${long?"scrolling":""} ${st.cls}"
-        ${long?`style="animation-duration:${dur}s"`:""}>${esc(text)}</span></span>
-    </button>`;
-  }).join("");
-}
-
-/* gross → adjustment → net, shown inline on every scoring row */
-function netCell(id, g, h){
-  const v = g.holes[h].scores[id];
-  const s = strokesOn(id, g, h);
-  if (v === "PU") return `<span class="pnet">picked up</span>`;
-  if (v == null) return `<span class="pnet">${s ? `<span class="adj">−${s}</span>` : ""}</span>`;
-  const n = v - s;
-  return `<span class="pnet">${s ? `<span class="adj">−${s}</span> ` : ""}<span class="net">${n}</span></span>`;
-}
-
-/* who gets strokes on the current hole — one line under the hole header */
-function strokesHereLine(g, h){
-  if (!usesHcp(g)) return "";
-  const gets = [...g.teams[0], ...g.teams[1]]
-    .map(id => ({ id, s: strokesOn(id, g, h) }))
-    .filter(x => x.s > 0);
-  if (!gets.length) return `<p class="hstrokes">No strokes on this hole — everyone plays it level.</p>`;
-  const list = gets.map(x => `<b>${esc(P(x.id).name)}${x.s > 1 ? ` ×${x.s}` : ""}</b>`).join(", ");
-  return `<p class="hstrokes">Strokes here: ${list}</p>`;
-}
-
-/* full stroke allocation — every player, every hole */
-function renderStrokeGrid(g, h){
-  if (!usesHcp(g)) return "";
-  const ids = [...g.teams[0], ...g.teams[1]];
-  let out = `<div class="sgrid-wrap"><table class="sgrid">
-    <thead><tr><th>Hole</th>`;
-  for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${i+1}</th>`;
-  out += `</tr><tr><th>Index</th>`;
-  for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${COURSE.holes[i].si}</th>`;
-  out += `</tr></thead><tbody>`;
-  ids.forEach(id => {
-    const ph = playingHcp(id, g);
-    out += `<tr><th>${esc(P(id).name)} <i>${esc(P(id).tee)} · ch ${courseHcp(id)} → ${ph}</i></th>`;
-    for (let i = 0; i < 18; i++){
-      const s = strokesOn(id, g, i);
-      out += `<td class="${s?"dot ":""}${i===h?"cur":""}">${s ? "•".repeat(s) : ""}</td>`;
-    }
-    out += `</tr>`;
+/* recompute the CH column in place, without a re-render that would steal focus */
+function refreshCH(){
+  const co = C(editCourseId);
+  document.querySelectorAll("[data-ch]").forEach(td => {
+    td.textContent = courseHcp(td.dataset.ch, co);
   });
-  out += `</tbody></table></div>
-    <p class="sgrid-key">Each name shows tee, course handicap, then playing handicap
-    ${g.mode === "RELATIVE" ? `(relative — lowest course handicap in this game plays off scratch)` : `(full)`}.
-    A dot means a stroke on that hole, allocated by stroke index.</p>`;
-  return out;
-}
-
-function renderTeam(g, t, h, hardLocked){
-  const hole = g.holes[h];
-  const name = teamLabel(g, t);
-  const roster = g.teams[t].map(id => P(id).name).join(" · ");
-  let inner = "";
-  let winCls = "";
-
-  if (isMatch(g)){
-    const r = resolveHole(g,h);
-    if (r === (t===0?"A":"B")) winCls = "win";
-  }
-
-  /* --- scramble: one team score --- */
-  if (isScramble(g)){
-    inner += `<div class="prow">
-      <span class="pname">${esc(roster)}</span>
-      ${stepper(`ts-${t}`, hole.teamScore[t], hardLocked || hole.conceded!==null)}
-    </div>`;
-  }
-
-  /* --- best ball --- */
-  if (g.type === "BESTBALL"){
-    g.teams[t].forEach(id => {
-      const s = strokesOn(id, g, h);
-      const v = hole.scores[id];
-      inner += `<div class="prow">
-        <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${stepper(`sc-${id}`, v==="PU"?null:v, hardLocked || hole.conceded!==null)}
-        ${netCell(id, g, h)}
-        <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
-          ${hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
-      </div>`;
-    });
-  }
-
-  /* --- 40ball --- */
-  if (g.type === "FORTYBALL"){
-    const b = fbBudget(g, t, h);
-    const locked = hole.locked[t];
-    g.teams[t].forEach(id => {
-      const s = strokesOn(id, g, h);
-      const n = netOf(id, g, h);
-      const v = hole.scores[id];
-      const on = hole.selected[t].includes(id);
-      const canPick = !locked && n != null &&
-        (on || hole.selected[t].length < b.max);
-      inner += `<div class="prow">
-        <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
-        <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${stepper(`sc-${id}`, v==="PU"?null:v, locked)}
-        ${netCell(id, g, h)}
-        <button class="pu ${v==="PU"?"on":""}" data-pu="${id}" ${locked?"disabled":""}>PU</button>
-      </div>`;
-    });
-  }
-
-  let head = `<div class="team-head">
-    <span class="team-name">${name}</span>
-    <span class="team-score">`;
-  if (isMatch(g)){
-    const ts = teamHoleScore(g,t,h);
-    head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "—");
-  } else {
-    head += `${fbTotal(g,t)} · ${fbSpent(g,t)}/40`;
-    if (g.holes[h].locked[t]) head += ` <span class="locked-flag">Locked</span>`;
-  }
-  head += `</span></div>`;
-
-  let extra = "";
-  if (g.type === "FORTYBALL") extra = renderCorridor(g, t, h);
-
-  return `<div class="team ${winCls}">${head}${inner}</div>${extra}`;
-}
-
-function stepper(key, val, disabled){
-  return `<span class="step">
-    <button data-step="${key}:-1" ${disabled?"disabled":""}>−</button>
-    <span class="val ${val==null?"empty":""}">${val==null?"–":val}</span>
-    <button data-step="${key}:1" ${disabled?"disabled":""}>+</button>
-  </span>`;
-}
-
-/* §8.4 / §8.6 — the corridor */
-function renderCorridor(g, t, h){
-  const b = fbBudget(g, t, h);
-  const hole = g.holes[h];
-  const locked = hole.locked[t];
-  const picked = hole.selected[t].length;
-  const pct = Math.min(100, (b.R / QUOTA) * 100);
-  const tight = b.slackHoles < 1;
-
-  let msg, warn = false;
-  if (b.broken){ msg = "Budget unreachable — too many pickups"; warn = true; }
-  else if (b.min === b.max && b.max > 0){ msg = `You must take all ${b.max}`; warn = true; }
-  else if (b.min > 0){ msg = `Must take at least ${b.min} this hole`; warn = true; }
-  else if (tight){ msg = "No slack left — take scores every hole"; warn = true; }
-  else msg = `${b.slackHoles} hole${b.slackHoles===1?"":"s"} of slack`;
-
-  const ok = !locked && picked >= b.min && picked <= b.max &&
-             fbAvailable(g,t,h) === g.teams[t].filter(id => hole.scores[id] != null).length &&
-             g.teams[t].every(id => hole.scores[id] != null);
-
-  return `<div class="corridor">
-    <div class="cor-row"><span>Remaining <b>${b.R}</b> of 40</span>
-      <span>${b.H} hole${b.H===1?"":"s"} left</span></div>
-    <div class="bar"><i class="${tight?"tight":""}" style="width:${pct}%"></i></div>
-    <div class="cor-msg ${warn?"warn":""}">${msg}</div>
-    <div class="cor-row" style="margin:9px 0 0"><span>Selected <b>${picked}</b></span>
-      <span>Legal range ${b.min}–${b.max}</span></div>
-    ${locked ? `<p class="note">Hole locked. Admin can reopen.</p>
-      <div class="acts"><button class="btn ghost" data-unlock="${t}">Admin unlock</button></div>`
-    : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock ${esc(teamShort(g,t))}'s picks</button></div>
-       ${!ok && !g.teams[t].every(id => hole.scores[id]!=null)
-         ? `<p class="note">All four players need a score or a pickup.</p>` : ""}`}
-  </div>`;
 }
 
 /* ============================================================
@@ -1151,6 +947,7 @@ document.addEventListener("click", e => {
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
+  if (el.dataset.course){ editCourseId = el.dataset.course; render(); return; }
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
   if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
   if (el.id === "back"){ view.gameId = null; render(); return; }
@@ -1166,11 +963,11 @@ document.addEventListener("click", e => {
     const [kind, ref] = key.split("-");
     const hole = g.holes[h];
     if (kind === "ts"){
-      const t = +ref, cur = hole.teamScore[t] ?? COURSE.holes[h].par - d;
+      const t = +ref, cur = hole.teamScore[t] ?? courseOf(g).holes[h].par - d;
       hole.teamScore[t] = Math.max(1, Math.min(14, cur + d));
     } else {
       const cur = (hole.scores[ref] === "PU" || hole.scores[ref] == null)
-        ? COURSE.holes[h].par - d : hole.scores[ref];
+        ? courseOf(g).holes[h].par - d : hole.scores[ref];
       hole.scores[ref] = Math.max(1, Math.min(14, cur + d));
     }
     render(); return;
@@ -1181,7 +978,6 @@ document.addEventListener("click", e => {
     if (hole.scores[id] === "PU") delete hole.scores[id];
     else {
       hole.scores[id] = "PU";
-      // a picked-up score can't stay selected in 40ball
       [0,1].forEach(t => hole.selected[t] = hole.selected[t].filter(x => x !== id));
     }
     render(); return;
@@ -1207,13 +1003,13 @@ document.addEventListener("click", e => {
     const n = g.holes[h].selected[t].length;
     if (n < b.min || n > b.max){ toast("Outside legal range"); return; }
     g.holes[h].locked[t] = true;
-    toast(`Team ${t===0?"A":"B"} locked hole ${h+1}`);
+    toast(`Locked hole ${h+1}`);
     render(); return;
   }
   if (el.dataset.unlock != null){
     const t = +el.dataset.unlock;
     g.holes[h].locked[t] = false;
-    toast("Hole reopened — visible to all");
+    toast("Hole reopened \u2014 visible to all");
     render(); return;
   }
 
@@ -1221,24 +1017,27 @@ document.addEventListener("click", e => {
   if (el.id === "reset"){ g.holes = blankHoles(); view.hole = 0; render(); toast("Game reset"); return; }
 });
 
-/* scorecard cells: type, auto-advance, validate live (no re-render, so focus survives) */
+/* text inputs: update the model in place so focus and the keyboard survive */
 document.addEventListener("input", e => {
   const t = e.target;
 
-  /* handicap index */
   if (t.dataset && t.dataset.index != null){
-    t.value = t.value.replace(/[^0-9.+]/g, "");
+    t.value = t.value.replace(/[^0-9.]/g, "");
     const v = parseFloat(t.value);
-    if (!isNaN(v)) { P(t.dataset.index).index = Math.max(0, Math.min(54, v)); refreshCH(); }
+    if (!isNaN(v)){ P(t.dataset.index).index = Math.max(0, Math.min(54, v)); refreshCH(); }
     return;
   }
-  /* tee rating / slope / par / name */
+
   if (t.dataset && t.dataset.teeF != null){
     const [field, iRaw] = t.dataset.teeF.split(":");
-    const tee = COURSE.tees[+iRaw];
+    const co = C(editCourseId);
+    const tee = co.tees[+iRaw];
     if (field === "name"){
       const old = tee.name, nv = t.value.trim();
-      if (nv){ PLAYERS.forEach(p => { if (p.tee === old) p.tee = nv; }); tee.name = nv; }
+      if (nv){
+        PLAYERS.forEach(p => { if (p.tees && p.tees[co.id] === old) p.tees[co.id] = nv; });
+        tee.name = nv;
+      }
     } else {
       t.value = t.value.replace(/[^0-9.]/g, "");
       const v = parseFloat(t.value);
@@ -1249,29 +1048,30 @@ document.addEventListener("input", e => {
   }
 
   if (t.hasAttribute && t.hasAttribute("data-cname")){
-    COURSE.name = t.value.trim() || COURSE.name;
+    const co = C(editCourseId);
+    co.name = t.value.trim() || co.name;
     return;
   }
+
   if (!t.classList || !t.classList.contains("cc")) return;
 
   t.value = t.value.replace(/[^0-9]/g, "");
   const [kind, idxRaw] = t.dataset.cell.split(":");
   const i = +idxRaw;
   const v = +t.value;
+  const co = C(editCourseId);
 
   if (kind === "par"){
-    if (t.value !== "") COURSE.holes[i].par = v;
+    if (t.value !== "") co.holes[i].par = v;
     if (t.value.length >= 1) advanceCell(t);
   } else {
-    if (t.value !== "") COURSE.holes[i].si = v;
-    // "1" might be the start of 10-18, so wait; anything else can't be
+    if (t.value !== "") co.holes[i].si = v;
     if (t.value.length >= 2 || v >= 2) advanceCell(t);
   }
 
-  // refresh the Out/In par totals in place
   document.querySelectorAll("table.card").forEach((tbl, b) => {
     const cell = tbl.querySelectorAll("td.tot")[0];
-    if (cell) cell.textContent = COURSE.holes.slice(b*9, b*9+9).reduce((a,c)=>a+c.par,0);
+    if (cell) cell.textContent = co.holes.slice(b*9, b*9+9).reduce((a,c)=>a+c.par,0);
   });
   updateCardMsg();
 });
@@ -1285,7 +1085,9 @@ function advanceCell(t){
 /* tee assignment */
 document.addEventListener("change", e => {
   if (e.target.dataset && e.target.dataset.tee != null){
-    P(e.target.dataset.tee).tee = e.target.value;
+    const pl = P(e.target.dataset.tee);
+    pl.tees = pl.tees || {};
+    pl.tees[editCourseId] = e.target.value;
     refreshCH();
   }
 });
