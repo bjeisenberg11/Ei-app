@@ -771,7 +771,8 @@ const SYNC = {
      local cache is warm, which is wrong. */
   cache: { cfg: true, games: true },
   seen: { cfg: false, games: false },
-  db: null, api: null
+  transport: null,
+  db: null, api: null, appMod: null
 };
 
 function setSync(state, extra){
@@ -797,104 +798,117 @@ function paintSync(){
   el.title = SYNC.lastAt ? "Last synced " + SYNC.lastAt.toLocaleTimeString() : "";
 }
 
+/* Connection strategies, tried in order. iOS standalone (home screen) apps
+   often can't use Firestore's default streaming transport and sit cache-only
+   forever with no error, so we escalate rather than guess. */
+const STRATEGIES = [
+  { name: "stream",           persist: true,  force: false },
+  { name: "long-poll",        persist: true,  force: true  },
+  { name: "long-poll-nocache",persist: false, force: true  }
+];
+let unsubs = [];
+let attempt = 0;
+
 async function initSync(){
   if (!FIREBASE_CONFIG.apiKey){ setSync("local"); return; }
   setSync("connecting");
-  try {
-    const [appMod, fsMod] = await Promise.all([
-      import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
-      import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
-    ]);
-    const app = appMod.initializeApp(FIREBASE_CONFIG);
-    /* Two settings that matter on phones:
-       - multi-tab manager: the persistent cache takes an exclusive lock. With
-         the single-tab default, any second tab holding this site is stuck
-         cache-only forever and looks permanently offline.
-       - auto-detect long polling: Firestore's streaming connection is blocked
-         by some networks and iOS setups. It fails silently and serves cache
-         rather than erroring, which looks identical to being offline. */
-    const db = fsMod.initializeFirestore(app, {
-      localCache: fsMod.persistentLocalCache({
-        tabManager: fsMod.persistentMultipleTabManager()
-      }),
-      experimentalAutoDetectLongPolling: true
-    });
-    SYNC.db = db; SYNC.api = fsMod; SYNC.on = true;
+  const [appMod, fsMod] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
+  ]);
+  SYNC.api = fsMod;
+  SYNC.appMod = appMod;
+  await connectWith(0);
+}
 
-    const cfgRef  = fsMod.doc(db, "tournaments", TID);
+async function connectWith(i){
+  const fsMod = SYNC.api, appMod = SYNC.appMod;
+  const st = STRATEGIES[i];
+  attempt = i;
+  SYNC.transport = st.name;
+
+  unsubs.forEach(u => { try { u(); } catch(e){} });
+  unsubs = [];
+
+  try {
+    // a fresh app name per attempt: Firestore settings are immutable once set
+    const app = appMod.initializeApp(FIREBASE_CONFIG, "ei-" + i + "-" + Date.now());
+    const opts = st.force ? { experimentalForceLongPolling: true }
+                          : { experimentalAutoDetectLongPolling: true };
+    opts.localCache = st.persist
+      ? fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() })
+      : fsMod.memoryLocalCache();
+    const db = fsMod.initializeFirestore(app, opts);
+    SYNC.db = db; SYNC.on = true;
+
+    const cfgRef   = fsMod.doc(db, "tournaments", TID);
     const gamesRef = fsMod.collection(db, "tournaments", TID, "games");
 
-    // seed once if the tournament doesn't exist yet
-    /* Seeding never destroys work you've entered.
-         - Config (players, courses, schedule) is written ONLY if absent.
-           Once it exists it is yours; a new app version won't touch it.
-         - Game docs are repaired only if missing or written in a shape this
-           version can't write to (holes/teams as arrays rather than maps).
-       A deliberate wipe is the admin "Reset tournament" button, nothing else. */
-    try {
-      const snap = await fsMod.getDoc(cfgRef);
-      if (!snap.exists()){
-        await fsMod.setDoc(cfgRef,
-          { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
-        console.log("seeded config");
-      } else if ((snap.data().schema || 1) !== SCHEMA){
-        // structure marker only — the content stays exactly as it is
-        await fsMod.setDoc(cfgRef, { schema: SCHEMA }, { merge: true });
-        console.log("config kept, schema marked " + SCHEMA);
-      }
+    await seedIfNeeded(fsMod, cfgRef, gamesRef);
 
-      const existing = await fsMod.getDocs(gamesRef);
-      const byId = {};
-      existing.forEach(d => byId[d.id] = d.data());
-      for (const g of GAMES){
-        const cur = byId[g.id];
-        const unusable = !cur || Array.isArray(cur.holes) || Array.isArray(cur.teams)
-                         || !cur.holes || !cur.holes["0"];
-        if (unusable){
-          await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
-          console.log("repaired game " + g.id);
-        }
-      }
-    } catch (e){
-      setSync("error", { err: (e.code || e.message) + " (while seeding)" });
-      return;
-    }
-
-    fsMod.onSnapshot(cfgRef, d => {
+    unsubs.push(fsMod.onSnapshot(cfgRef, d => {
       const v = d.data(); if (!v) return;
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
-    }, e => setSync("error", { err: e.code || e.message }));
+    }, e => setSync("error", { err: e.code || e.message })));
 
-    fsMod.onSnapshot(gamesRef, qs => {
+    unsubs.push(fsMod.onSnapshot(gamesRef, qs => {
       qs.forEach(d => {
         const v = d.data();
-        const i = GAMES.findIndex(x => x.id === v.id);
-        if (i >= 0) GAMES[i] = v; else GAMES.push(v);
+        const idx = GAMES.findIndex(x => x.id === v.id);
+        if (idx >= 0) GAMES[idx] = v; else GAMES.push(v);
       });
       SYNC.pending = qs.docs.filter(d => d.metadata.hasPendingWrites).length;
       touchSync("games", qs);
       if (!document.querySelector("input:focus")) render();
-    }, e => setSync("error", { err: e.code || e.message }));
+    }, e => setSync("error", { err: e.code || e.message })));
 
-    startWatchdog();
+    startWatchdog(i);
 
   } catch (err){
     console.error(err);
+    if (i + 1 < STRATEGIES.length) return connectWith(i + 1);
     setSync("error", { err: (err && (err.code || err.message)) || String(err) });
   }
 }
 
+async function seedIfNeeded(fsMod, cfgRef, gamesRef){
+  const snap = await fsMod.getDoc(cfgRef);
+  if (!snap.exists()){
+    await fsMod.setDoc(cfgRef,
+      { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+  } else if ((snap.data().schema || 1) !== SCHEMA){
+    await fsMod.setDoc(cfgRef, { schema: SCHEMA }, { merge: true });
+  }
+  const existing = await fsMod.getDocs(gamesRef);
+  const byId = {};
+  existing.forEach(d => byId[d.id] = d.data());
+  for (const g of GAMES){
+    const cur = byId[g.id];
+    const unusable = !cur || Array.isArray(cur.holes) || Array.isArray(cur.teams)
+                     || !cur.holes || !cur.holes["0"];
+    if (unusable) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+  }
+}
+
 let serverSeen = false;
-function startWatchdog(){
+function startWatchdog(i){
+  serverSeen = false;
+  SYNC.seen = { cfg:false, games:false };
   setTimeout(() => {
-    if (!serverSeen && SYNC.state !== "error"){
-      setSync("error", { err: "no-server-response" });
+    if (serverSeen) return;
+    if (i + 1 < STRATEGIES.length){
+      console.log("no server data on '" + STRATEGIES[i].name + "', trying '"
+                  + STRATEGIES[i+1].name + "'");
+      setSync("connecting");
+      connectWith(i + 1);
+    } else {
+      setSync("error", { err: "no-server-response (all transports)" });
     }
-  }, 12000);
+  }, 8000);
 }
 function touchSync(which, snapOrQs){
   const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
@@ -1594,6 +1608,7 @@ document.addEventListener("click", e => {
     const d = [
       "build: " + BUILD + "  schema " + SCHEMA,
       "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
+      "transport: " + (SYNC.transport || "-") + " (attempt " + (attempt+1) + "/" + STRATEGIES.length + ")",
       "state: " + SYNC.state,
       "configured: " + (SYNC.on ? "yes" : "no"),
       "server data seen: " + (serverSeen ? "yes" : "not yet"),
