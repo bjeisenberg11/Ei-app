@@ -106,7 +106,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .gcard.live{border-left-color:var(--pencil)}
 .gcard.done{opacity:.62}
 .roundwhen{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.14em;font-size:10px;color:var(--ink-faint);margin:-4px 0 9px}
+  letter-spacing:.13em;font-size:11px;font-weight:600;color:var(--ink-soft);
+  margin:14px 0 7px;padding-left:3px;border-left:3px solid var(--brass)}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:16px;line-height:1.1}
 .gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
@@ -945,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1804";
+const BUILD = "2026-08-26.1816";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1491,9 +1492,16 @@ function renderHome(){
   if (!withGames.length)
     h += `<p class="note" style="margin-top:20px">No games set up yet \u2014 add them on the
       Schedule tab.</p>`;
+
+  /* Group by day first. Two rounds at the same course on different days were
+     showing as two identical headings, which read as a duplicate. */
+  let lastDay = null;
   withGames.forEach(r => {
-    h += `<h2 class="sec">${esc(eventName(r))}</h2>
-      <p class="roundwhen">${esc(r.day || "")}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}</p>`;
+    if (r.day !== lastDay){
+      h += `<h2 class="sec">${esc(r.day || "")}</h2>`;
+      lastDay = r.day;
+    }
+    h += `<p class="roundwhen">${esc(eventName(r))}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}</p>`;
     const inRound = GAMES.filter(g => g.roundId === r.id);
     inRound.forEach(g => {
       const stt = gameStatusLabel(g);
@@ -1504,7 +1512,7 @@ function renderHome(){
         <div class="gtype">${LABEL[g.type]}</div>
         <div class="gteams">${esc(teamLabel(g,0))} <b>vs</b> ${esc(teamLabel(g,1))}</div>
         <div class="gstate ${stt.cls}">${esc(stt.text)}</div>
-        <div class="gmeta">${esc(courseOf(g).name)} · ${meta}${
+        <div class="gmeta">${meta}${
           g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
       </button>`;
     });
@@ -1578,18 +1586,19 @@ function renderSchedule(){
     <div class="imp">
       <label>Column order</label>
       <p class="hint" style="margin:0 0 8px"><span class="mono">day, time, type, course, detail,
-        player, notes, teamA, teamB</span></p>
+        player, notes, a1, a2, a3, a4, b1, b2, b3, b4</span></p>
       <label>type</label>
       <p class="hint" style="margin:0 0 8px">ROUND · GAME · MEAL · TRAVEL-IN · TRAVEL-OUT · OTHER</p>
       <label>detail</label>
       <p class="hint" style="margin:0 0 8px">A title \u2014 or for GAME rows the format:
         BESTBALL, SCRAMBLE4, SCRAMBLE3, 40BALL</p>
-      <label>teamA / teamB</label>
-      <p class="hint" style="margin:0 0 10px">Names joined with +, e.g.
-        <span class="mono">Blake+Daniel</span>. They must match the Field tab exactly.</p>
-      <div class="acts">
-        <button class="btn ghost" id="csvtemplate">Copy blank template</button>
-        <button class="btn ghost" id="csvcurrent">Copy current schedule</button>
+      <label>a1\u2013a4 / b1\u2013b4</label>
+      <p class="hint" style="margin:0 0 10px">One player per cell \u2014 a1, a2 for a 2v2;
+        all four for a scramble or 40ball. Names must match the Field tab exactly.</p>
+      <div class="acts cwrap">
+        <button class="btn ghost" id="csvtemplate">Blank template</button>
+        <button class="btn ghost" id="csvexample">Filled example</button>
+        <button class="btn ghost" id="csvcurrent">Current schedule</button>
       </div>
     </div>
 
@@ -1628,6 +1637,10 @@ function renderSchedule(){
     return;
   }
 
+  if (schedMode === "travel" && ro)
+    h = h.replace('<span class="lockbar-t">View only</span>',
+                  '<span class="lockbar-t">Add your own flights below</span>');
+
   if (schedMode === "timeline"){
     DAYS.forEach(day => {
       const evs = SCHEDULE.filter(e => e.day === day);
@@ -1652,6 +1665,8 @@ function renderSchedule(){
       const missing = PLAYERS.filter(p => !listed.includes(p.id));
       if (missing.length)
         h += `<p class="note">No ${dir.toLowerCase()} entered: ${missing.map(p=>esc(p.name)).join(", ")}</p>`;
+      h += `<button class="btn ghost addev" data-addtravel="${dir}">+ Add ${
+        dir === "ARRIVAL" ? "an arrival" : "a departure"}</button>`;
     });
   }
 
@@ -1667,7 +1682,12 @@ const EVMETA = {
   OTHER:  { cls:"ev-other",  tag:"Other" }
 };
 
+/* Spec decision: players enter their own flights, admin can edit anyone's.
+   Everything else on the schedule stays admin-only. */
+const canEdit = e => !SYNC.on || isAdmin || (e && e.type === "TRAVEL");
+
 function eventCard(e, ro, showDay){
+  ro = ro && !canEdit(e);
   const m = EVMETA[e.type] || EVMETA.OTHER;
   const who = e.pid && P(e.pid) ? P(e.pid).name + " \u00b7 " : "";
   const games = e.type === "ROUND" ? GAMES.filter(g => g.roundId === e.id) : [];
@@ -1712,22 +1732,25 @@ function eventCard(e, ro, showDay){
            (BESTBALL / SCRAMBLE4 / SCRAMBLE3 / 40BALL)
    teamA/teamB: names joined with +   e.g.  Blake+Daniel
    ============================================================ */
-const CSV_TEMPLATE =
-`day,time,type,course,detail,player,notes,teamA,teamB
-Friday,14:20,TRAVEL-IN,,United 1442,Jason,ORD,,
-Friday,,TRAVEL-IN,,Driving,Dan,arrives afternoon,,
-Friday,19:30,MEAL,,Welcome dinner,,Reservation under Eisenberg,,
-Saturday,08:10,ROUND,Pine Hollow,,,,,
-Saturday,,GAME,,BESTBALL,,,Blake+Daniel,Dan+Howard
-Saturday,,GAME,,BESTBALL,,,Jason+Luke,Jake+Adam
-Saturday,13:40,ROUND,Marsh Ridge,,,,,
-Saturday,,GAME,,SCRAMBLE4,,,Blake+Daniel+Jason+Luke,Dan+Howard+Jake+Adam
-Saturday,19:00,MEAL,,Steak night,,Bar from 6:15,,
-Sunday,08:30,ROUND,Stonebridge,,,,,
-Sunday,,GAME,,SCRAMBLE3,,,Blake+Daniel+Jason,Dan+Howard+Jake
-Sunday,13:15,ROUND,Stonebridge,,,,,
-Sunday,,GAME,,40BALL,,,Blake+Daniel+Jason+Luke,Dan+Howard+Jake+Adam
-Sunday,20:45,TRAVEL-OUT,,Delta 1190,Jake,ORD,,
+const CSV_HEAD = "day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4";
+
+/* Blank: headers plus empty rows to type into. Nothing pre-filled, so it can't
+   be mistaken for the current schedule. */
+const CSV_TEMPLATE = CSV_HEAD + "\n" + Array(24).fill(",,,,,,,,,,,,,,").join("\n") + "\n";
+
+/* Filled example, for reference rather than pasting back in. */
+const CSV_EXAMPLE =
+`${CSV_HEAD}
+Friday,14:20,TRAVEL-IN,,United 1442,Jason,ORD,,,,,,,,
+Friday,19:30,MEAL,,Welcome dinner,,Reservation under Eisenberg,,,,,,,,
+Saturday,08:10,ROUND,Pine Hollow,,,,,,,,,,,
+Saturday,,GAME,,BESTBALL,,,Blake,Daniel,,,Dan,Howard,,
+Saturday,,GAME,,BESTBALL,,,Jason,Luke,,,Jake,Adam,,
+Saturday,13:40,ROUND,Marsh Ridge,,,,,,,,,,,
+Saturday,,GAME,,SCRAMBLE4,,,Blake,Daniel,Jason,Luke,Dan,Howard,Jake,Adam
+Sunday,13:15,ROUND,Stonebridge,,,,,,,,,,,
+Sunday,,GAME,,40BALL,,,Blake,Daniel,Jason,Luke,Dan,Howard,Jake,Adam
+Sunday,20:45,TRAVEL-OUT,,Delta 1190,Jake,ORD,,,,,,,,
 `;
 
 function splitCSVLine(line){
@@ -1768,8 +1791,10 @@ function parseCSV(text){
   lines.slice(start).forEach((line, i) => {
     const row = splitCSVLine(line);
     const n = i + start + 1;
-    const [day, time, typeRaw, course, detail, player, notes, tA, tB] =
-      [0,1,2,3,4,5,6,7,8].map(k => row[k] || "");
+    const [day, time, typeRaw, course, detail, player, notes] =
+      [0,1,2,3,4,5,6].map(k => row[k] || "");
+    const cellsA = [7,8,9,10].map(k => row[k] || "");
+    const cellsB = [11,12,13,14].map(k => row[k] || "");
     const type = typeRaw.toUpperCase().trim();
     if (!type) return;
 
@@ -1791,12 +1816,16 @@ function parseCSV(text){
       const fmt = FORMATS[detail.toUpperCase().trim()];
       if (!fmt){ errors.push(`Line ${n}: "${detail}" isn't a game format.`); return; }
       if (!currentRound){ errors.push(`Line ${n}: a GAME row needs a ROUND row above it.`); return; }
-      const side = str => str.split("+").map(x => x.trim()).filter(Boolean).map(nm => {
-        const p = byName(nm);
-        if (!p) errors.push(`Line ${n}: no player called "${nm}".`);
-        return p ? p.id : null;
-      }).filter(Boolean);
-      const a = side(tA), b = side(tB);
+      /* one player per cell; a single cell holding "Blake+Daniel" still works */
+      const side = cells => cells
+        .flatMap(c => c.split("+"))
+        .map(x => x.trim()).filter(Boolean)
+        .map(nm => {
+          const p = byName(nm);
+          if (!p) errors.push(`Line ${n}: no player called "${nm}".`);
+          return p ? p.id : null;
+        }).filter(Boolean);
+      const a = side(cellsA), b = side(cellsB);
       const need = NEEDED[fmt];
       if (a.length !== need[0] || b.length !== need[1])
         errors.push(`Line ${n}: ${LABEL[fmt]} needs ${need[0]} v ${need[1]}, got ${a.length} v ${b.length}.`);
@@ -1831,24 +1860,27 @@ function parseCSV(text){
 
 /* the current weekend, in the same shape the importer reads */
 function scheduleToCSV(){
-  const rows = ["day,time,type,course,detail,player,notes,teamA,teamB"];
+  const rows = [CSV_HEAD];
   const esc2 = v => /[",]/.test(v||"") ? '"' + String(v).replace(/"/g,'""') + '"' : (v||"");
   const ordered = SCHEDULE.slice().sort((a,b) =>
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   ordered.forEach(e => {
     if (e.type === "ROUND"){
-      rows.push([e.day, e.time||"", "ROUND", esc2((C(e.courseId)||{}).name), "", "", "", "", ""].join(","));
+      rows.push([e.day, e.time||"", "ROUND", esc2((C(e.courseId)||{}).name),
+        "", "", "", "", "", "", "", "", "", "", ""].join(","));
       GAMES.filter(g => g.roundId === e.id).forEach(g => {
-        const nm = t => g.teams[t].map(id => (P(id)||{}).name).filter(Boolean).join("+");
+        const cells = t => { const a = g.teams[t].map(id => esc2((P(id)||{}).name));
+          while (a.length < 4) a.push(""); return a.slice(0,4); };
         const fmt = g.type === "FORTYBALL" ? "40BALL" : g.type;
-        rows.push([e.day, "", "GAME", "", fmt, "", "", esc2(nm(0)), esc2(nm(1))].join(","));
+        rows.push([e.day, "", "GAME", "", fmt, "", "", ...cells(0), ...cells(1)].join(","));
       });
     } else if (e.type === "TRAVEL"){
       rows.push([e.day, e.time||"", e.dir === "DEPARTURE" ? "TRAVEL-OUT" : "TRAVEL-IN", "",
-        esc2(e.title), esc2((P(e.pid)||{}).name), esc2(e.notes), "", ""].join(","));
+        esc2(e.title), esc2((P(e.pid)||{}).name), esc2(e.notes),
+        "", "", "", "", "", "", "", ""].join(","));
     } else {
       rows.push([e.day, e.time||"", e.type, esc2(e.location), esc2(e.title), "",
-        esc2(e.notes), "", ""].join(","));
+        esc2(e.notes), "", "", "", "", "", "", "", ""].join(","));
     }
   });
   return rows.join("\n");
@@ -1879,15 +1911,18 @@ function applyCSV(plan){
 function renderEventEditor(h, id){
   const e = EV(id);
   if (!e){ editEvent = null; return render(); }
+  if (!canEdit(e)){ editEvent = null; return render(); }
   const isRound = e.type === "ROUND";
+  const travelOnly = SYNC.on && !isAdmin;      // a player editing their own flight
 
   h += `<h2 class="sec">${isRound ? "Round" : "Event"}</h2>
   <div class="imp">
+    ${travelOnly ? "" : `
     <label>Type</label>
     <div class="acts cwrap">
       ${["ROUND","MEAL","TRAVEL","OTHER"].map(t =>
         `<button class="btn ${e.type===t?"":"ghost"}" data-evtype="${t}">${EVMETA[t].tag}</button>`).join("")}
-    </div>
+    </div>`}
 
     ${isRound ? "" : `
     <label for="evtitle">${e.type==="TRAVEL" ? "Flight / how they're getting here" : "Title"}</label>
@@ -1951,6 +1986,9 @@ function renderEventEditor(h, id){
     <button class="btn" id="evdone">Done</button>
     <button class="btn red" data-delev="${e.id}">Delete ${isRound ? "round" : "event"}</button>
   </div>`;
+  if (travelOnly)
+    h += `<div class="footnote">You can add and edit flights without the admin code.
+      Rounds, meals and the rest are admin-only.</div>`;
   app.innerHTML = h;
 }
 
@@ -2618,6 +2656,7 @@ function handleClick(el){
   if (el.id === "evdone"){ editEvent = null; render(); return; }
 
   if (el.id === "csvtemplate"){ copyText(CSV_TEMPLATE, "Template"); return; }
+  if (el.id === "csvexample"){ copyText(CSV_EXAMPLE, "Example"); return; }
   if (el.id === "csvcurrent"){ copyText(scheduleToCSV(), "Schedule"); return; }
   if (el.id === "csvcheck"){
     const txt = (document.getElementById("csvin")||{}).value || "";
@@ -2671,6 +2710,12 @@ function handleClick(el){
     SCHEDULE = SCHEDULE.filter(e => e.day !== day);
     queueConfig(); editEvent = null; render(); toast(day + " cleared"); return;
   }
+  if (el.dataset.addtravel){
+    const id = "e" + Date.now().toString(36);
+    SCHEDULE.push({ id, day: DAYS[0], time:null, type:"TRAVEL",
+                    dir: el.dataset.addtravel, pid: PLAYERS[0].id, title:"" });
+    queueConfig(); editEvent = id; render(); return;
+  }
   if (el.dataset.addev){
     const id = "e" + Date.now().toString(36);
     SCHEDULE.push({ id, day: el.dataset.addev, time:null, type:"OTHER", title:"New event" });
@@ -2678,6 +2723,7 @@ function handleClick(el){
   }
   if (el.dataset.delev){
     const e = EV(el.dataset.delev);
+    if (!canEdit(e)){ toast("Admin only"); return; }
     const kids = GAMES.filter(g => g.roundId === el.dataset.delev);
     if (!confirm("Delete \"" + (e.title||"this event") + "\""
       + (kids.length ? " and its " + kids.length + " game(s)?" : "?"))) return;
