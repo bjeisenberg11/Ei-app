@@ -42,6 +42,13 @@
   --pencil:#A82B1E; --brass:#8A6A22;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* touch-action:manipulation removes the double-tap-to-zoom gesture, which also
+   removes Safari's ~300ms wait on every tap — that delay was swallowing taps
+   on small controls. Pinch zoom is untouched. */
+button,input,select,textarea,a,.ev,.gcard,.hcell,.cell{touch-action:manipulation}
+/* iOS zooms the page whenever a focused field is under 16px. Keeping every
+   input at 16px stops that without disabling zoom for the user. */
+input,select,textarea{font-size:16px}
 html,body{margin:0;padding:0}
 body{background:var(--paper);color:var(--ink);font-family:'Barlow',system-ui,sans-serif;
   font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased;
@@ -259,12 +266,12 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 table.ftbl td,table.ttbl td{padding:5px 0}
 table.ftbl td:first-child{padding-right:8px}
 input.idx,input.tf{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink);
-  font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500;text-align:right;
-  padding:7px 6px;width:60px;max-width:100%}
+  font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;text-align:right;
+  padding:7px 5px;width:66px;max-width:100%}
 input.tf.wide{width:78px;text-align:left;font-family:'Barlow',sans-serif}
 input.idx:focus,input.tf:focus{outline:none;border-color:var(--brass);background:var(--paper)}
 select.tee{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink);
-  font-family:'Barlow',sans-serif;font-size:14px;padding:7px 4px;max-width:92px}
+  font-family:'Barlow',sans-serif;font-size:16px;padding:7px 4px;max-width:104px}
 select.tee:focus{outline:none;border-color:var(--brass)}
 td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
@@ -291,7 +298,7 @@ h3.sub3{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform
   letter-spacing:.12em;font-size:10px;color:var(--pencil);flex:none}
 .lockbar.open .lockbar-t{color:var(--ink)}
 .lockbar input{flex:1;min-width:0;background:var(--paper);border:1px solid var(--rule);
-  color:var(--ink);font-family:'Barlow',sans-serif;font-size:14px;padding:7px 8px}
+  color:var(--ink);font-family:'Barlow',sans-serif;font-size:16px;padding:7px 8px}
 .lockbar input:focus{outline:none;border-color:var(--brass)}
 .lockbar .btn{flex:none;width:auto;padding:8px 14px;font-size:11px}
 input:disabled,select:disabled{opacity:.75;color:var(--ink-soft)}
@@ -303,7 +310,7 @@ input.cc:disabled{background:transparent;color:var(--ink-soft)}
   letter-spacing:.13em;font-size:10px;font-weight:600;color:var(--ink-soft);margin:9px 0 3px}
 .imp label:first-of-type{margin-top:0}
 .imp input{width:100%;background:var(--paper);border:1px solid var(--rule);color:var(--ink);
-  font-family:'Barlow',sans-serif;font-size:15px;padding:8px}
+  font-family:'Barlow',sans-serif;font-size:16px;padding:9px}
 .imp input:focus{outline:none;border-color:var(--brass)}
 .imp .hint{font-size:12.5px;color:var(--ink-faint);margin:5px 0 0;line-height:1.4}
 .impmsg{font-size:13px;margin:10px 0 0;line-height:1.4}
@@ -323,7 +330,7 @@ table.card .hd th.rl{background:var(--ink);color:var(--paper)}
 table.card td.tot,table.card th.tot{background:var(--paper-3);
   font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;padding:5px 6px}
 input.cc{width:100%;min-width:30px;border:none;background:transparent;text-align:center;
-  font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:500;color:var(--ink);
+  font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;color:var(--ink);
   padding:8px 0;-moz-appearance:textfield}
 input.cc:focus{outline:none;background:var(--brass);color:var(--paper)}
 input.cc.bad{background:var(--pencil);color:var(--paper)}
@@ -350,11 +357,12 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
 .ev-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{background:transparent;border:1px solid var(--rule);color:var(--ink);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.1em;font-size:10px;padding:5px 9px;cursor:pointer}
+  letter-spacing:.1em;font-size:11px;padding:9px 13px;cursor:pointer;min-height:36px}
 .chip.edit{border-color:var(--ink)}
 .chip.del{border-color:var(--pencil);color:var(--pencil)}
 .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
-.addev{width:100%;margin:2px 0 6px;font-size:11px;padding:10px}
+.addev{font-size:11px;padding:11px 8px}
+.dayclear{font-size:11px;padding:11px 8px;color:var(--pencil);border-color:var(--pencil)}
 
 /* roster picker */
 .gedit{border:1px solid var(--rule);background:var(--paper-2);padding:11px 12px;margin-top:9px}
@@ -834,7 +842,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1653";
+const BUILD = "2026-08-26.1710";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1373,7 +1381,10 @@ function renderSchedule(){
       const untimed = evs.filter(e => !e.time);
       h += `<h2 class="sec">${day}</h2>`;
       [...timed, ...untimed].forEach(e => h += eventCard(e, ro));
-      if (!ro) h += `<button class="btn ghost addev" data-addev="${day}">+ Add to ${day}</button>`;
+      if (!ro) h += `<div class="acts" style="margin:2px 0 10px">
+        <button class="btn ghost addev" data-addev="${day}">+ Add to ${day}</button>
+        ${evs.length ? `<button class="btn ghost dayclear" data-clearday="${day}">Clear ${day}</button>` : ""}
+      </div>`;
     });
   } else {
     ["ARRIVAL","DEPARTURE"].forEach(dir => {
@@ -1426,7 +1437,8 @@ function eventCard(e, ro, showDay){
     <div class="ev-acts">
       ${games.map(g => `<button class="chip" data-game="${g.id}"
           data-jumphole="${currentHoleFor(g)}">${LABEL[g.type]} \u2192</button>`).join("")}
-      ${ro ? "" : `<button class="chip edit" data-editev="${e.id}">Edit</button>`}
+      ${ro ? "" : `<button class="chip edit" data-editev="${e.id}">Edit</button>
+        <button class="chip del" data-delev="${e.id}">Delete</button>`}
     </div>
   </div>`;
 }
@@ -2099,6 +2111,17 @@ function handleClick(el){
   if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
   if (el.id === "evdone"){ editEvent = null; render(); return; }
 
+  if (el.dataset.clearday){
+    const day = el.dataset.clearday;
+    const evs = SCHEDULE.filter(e => e.day === day);
+    const games = GAMES.filter(g => evs.some(e => e.id === g.roundId));
+    if (!confirm(`Clear everything on ${day}?\n\n${evs.length} event(s)`
+      + (games.length ? ` and ${games.length} game(s) with their scores` : "")
+      + ".\n\nThis can't be undone.")) return;
+    games.forEach(g => removeGame(g.id));
+    SCHEDULE = SCHEDULE.filter(e => e.day !== day);
+    queueConfig(); editEvent = null; render(); toast(day + " cleared"); return;
+  }
   if (el.dataset.addev){
     const id = "e" + Date.now().toString(36);
     SCHEDULE.push({ id, day: el.dataset.addev, time:null, type:"OTHER", title:"New event" });
