@@ -98,14 +98,16 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   padding:12px 13px;margin-bottom:9px;cursor:pointer}
 .gcard.live{border-left-color:var(--pencil)}
 .gcard.done{opacity:.62}
-.gcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px 10px;flex-wrap:wrap}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.05em;font-size:16px}
-.gstate{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+  letter-spacing:.05em;font-size:16px;line-height:1.1}
+.gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
+.gstate{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;
+  margin-top:6px;color:var(--ink-faint);line-height:1.35}
 .gstate.live{color:var(--pencil)}
-.gteams{font-size:13.5px;color:var(--ink-soft);margin-top:3px}
+.gstate.done{color:var(--ink);
+  border-left:2px solid var(--ink);padding-left:7px}
 .gmeta{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.13em;font-size:10px;color:var(--ink-faint);margin-top:5px}
+  letter-spacing:.13em;font-size:10px;color:var(--ink-faint);margin-top:6px}
 
 /* hole strip */
 .hstrip{display:grid;grid-template-columns:repeat(18,1fr);border:1px solid var(--rule);
@@ -335,7 +337,7 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
   letter-spacing:.13em;font-size:11px;color:var(--ink-faint)}
 .tabs button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--ink)}
 
-.testbar{display:flex;align-items:center;gap:7px;margin-top:18px;
+.testbar{display:flex;align-items:center;gap:7px;margin-top:10px;
   border:1px dashed var(--rule);padding:8px 9px;background:var(--paper-2)}
 .testbar-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.14em;font-size:9px;color:var(--ink-faint);flex:none}
@@ -780,7 +782,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1337";
+const BUILD = "2026-08-26.1352";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1235,19 +1237,16 @@ function renderHome(){
         ? (g.mode === "RELATIVE" ? "Relative handicaps" : "Full handicaps")
         : "Gross — no handicaps";
       h += `<button class="gcard ${stt.cls==="done"?"done":""}" data-game="${g.id}">
-        <div class="gcard-top">
-          <span class="gtype">${LABEL[g.type]}</span>
-          <span class="gstate ${stt.cls==="live"?"live":""}">${esc(stt.text)}</span>
-        </div>
+        <div class="gtype">${LABEL[g.type]}</div>
         <div class="gteams">${esc(teamLabel(g,0))} <b>vs</b> ${esc(teamLabel(g,1))}</div>
+        <div class="gstate ${stt.cls}">${esc(stt.text)}</div>
         <div class="gmeta">${esc(courseOf(g).name)} · ${meta}${
           g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
       </button>`;
     });
   });
-  h += `<div class="footnote">Phase 1 prototype. Everything lives in memory and resets when you
-    reload. Handicaps, scoring, match status, close-out and the 40ball budget guard are all real —
-    the data is not.</div>`;
+  h += `<div class="footnote">Scores and setup are shared live across every phone and survive
+    a reload. Players, courses and the schedule are still placeholder data.</div>`;
   app.innerHTML = h;
 }
 
@@ -1410,6 +1409,12 @@ function renderGame(){
       <button id="next" ${h===17?"disabled":""}>&rarr;</button>
     </span></div>`;
 
+  out += `<div class="testbar">
+    <span class="testbar-t">Test</span>
+    <button class="btn ghost" id="randhole">Random scores</button>
+    <button class="btn ghost" id="reset">Reset game</button>
+  </div>`;
+
   out += strokesHereLine(g, h);
   if (usesHcp(g)){
     out += `<div class="acts" style="margin-top:8px">
@@ -1437,11 +1442,7 @@ function renderGame(){
         : "At least one player per side must hole out."}</p>`;
   }
 
-  out += `<div class="testbar">
-    <span class="testbar-t">Testing</span>
-    <button class="btn ghost" id="randhole">Random scores, this hole</button>
-    <button class="btn ghost" id="reset">Reset game</button>
-  </div>`;
+
 
   app.innerHTML = out;
 }
