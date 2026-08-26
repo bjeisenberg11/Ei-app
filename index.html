@@ -250,6 +250,13 @@ h3.sub3{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform
   letter-spacing:.13em;font-size:13px;color:var(--ink-soft);margin:20px 0 7px;
   padding-bottom:4px;border-bottom:1px solid var(--rule)}
 
+.syncerr{border:1.5px solid var(--pencil);background:var(--paper-2);padding:12px;margin-top:16px}
+.syncerr-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;font-size:12px;color:var(--pencil)}
+.syncerr-c{font-family:'IBM Plex Mono',monospace;font-size:12px;margin:5px 0 7px;
+  word-break:break-word;color:var(--ink)}
+.syncerr-h{font-size:13px;color:var(--ink-soft);line-height:1.45;margin-top:4px}
+
 /* course entry */
 .imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
 .imp label{display:block;font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
@@ -721,13 +728,16 @@ const SYNC = {
   state: "local",     // local | connecting | live | offline | error
   pending: 0,         // writes not yet acknowledged
   lastAt: null,       // last successful sync
+  err: null,          // last error code, shown on screen
   db: null, api: null
 };
 
 function setSync(state, extra){
   SYNC.state = state;
   if (extra && extra.lastAt) SYNC.lastAt = extra.lastAt;
+  if (extra && extra.err) SYNC.err = extra.err;
   paintSync();
+  if (state === "error" && !view.gameId) render();
 }
 
 function paintSync(){
@@ -764,10 +774,15 @@ async function initSync(){
     const gamesRef = fsMod.collection(db, "tournaments", TID, "games");
 
     // seed once if the tournament doesn't exist yet
-    const snap = await fsMod.getDoc(cfgRef);
-    if (!snap.exists()){
-      await fsMod.setDoc(cfgRef, { players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
-      for (const g of GAMES) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+    try {
+      const snap = await fsMod.getDoc(cfgRef);
+      if (!snap.exists()){
+        await fsMod.setDoc(cfgRef, { players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+        for (const g of GAMES) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+      }
+    } catch (e){
+      setSync("error", { err: (e.code || e.message) + " (while seeding)" });
+      return;
     }
 
     fsMod.onSnapshot(cfgRef, d => {
@@ -777,7 +792,7 @@ async function initSync(){
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
       touchSync(d);
       if (!document.querySelector("input:focus")) render();
-    }, () => setSync("error"));
+    }, e => setSync("error", { err: e.code || e.message }));
 
     fsMod.onSnapshot(gamesRef, qs => {
       qs.forEach(d => {
@@ -788,11 +803,11 @@ async function initSync(){
       SYNC.pending = qs.docs.filter(d => d.metadata.hasPendingWrites).length;
       touchSync(qs);
       if (!document.querySelector("input:focus")) render();
-    }, () => setSync("error"));
+    }, e => setSync("error", { err: e.code || e.message }));
 
   } catch (err){
     console.error(err);
-    setSync("error");
+    setSync("error", { err: (err && (err.code || err.message)) || String(err) });
   }
 }
 
@@ -874,6 +889,24 @@ function render(){
 function renderHome(){
   const rounds = [...new Set(GAMES.map(g => g.round))];
   let h = "";
+  if (SYNC.state === "error"){
+    const code = SYNC.err || "unknown";
+    let hint = "Open the browser console for the full error.";
+    if (/permission|insufficient/i.test(code))
+      hint = "Firestore rules are blocking access. Publish the open rules from the setup guide.";
+    else if (/not-found|NOT_FOUND/i.test(code))
+      hint = "No Firestore database found for this project. Create one, then reload.";
+    else if (/unavailable|network|Failed to fetch/i.test(code))
+      hint = "Couldn't reach Firebase. Check the connection and reload.";
+    else if (/api-key|invalid|auth/i.test(code))
+      hint = "The config values look wrong. Re-check apiKey and projectId.";
+    h += `<div class="syncerr">
+      <div class="syncerr-t">Sync error</div>
+      <div class="syncerr-c">${esc(code)}</div>
+      <div class="syncerr-h">${esc(hint)}</div>
+      <div class="syncerr-h">Scoring still works on this device meanwhile — it just won't share.</div>
+    </div>`;
+  }
   rounds.forEach(r => {
     h += `<h2 class="sec">${esc(r)}</h2>`;
     GAMES.filter(g => g.round === r).forEach(g => {
