@@ -751,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1148";
+const BUILD = "2026-08-26.1153";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -811,7 +811,14 @@ const STRATEGIES = [
    waiting out failed attempts. */
 const TKEY = "ei-transport";
 function rememberTransport(name){
-  try { localStorage.setItem(TKEY, name); } catch(e){}
+  /* Only remember transports that keep offline queueing. Remembering the
+     no-cache fallback would make every future open skip the better options
+     and silently give up offline support for good. */
+  const st = STRATEGIES.find(x => x.name === name);
+  try {
+    if (st && st.offline) localStorage.setItem(TKEY, name);
+    else localStorage.removeItem(TKEY);
+  } catch(e){}
 }
 function preferredStart(){
   try {
@@ -1638,7 +1645,14 @@ document.addEventListener("click", e => {
       "last sync: " + (SYNC.lastAt ? SYNC.lastAt.toLocaleTimeString() : "never"),
       "last error: " + (SYNC.err || "none")
     ].join("\n");
-    alert("Sync diagnostics\n\n" + d);
+    const again = confirm("Sync diagnostics\n\n" + d
+      + "\n\nOK = retry the connection from scratch (clears the remembered transport).");
+    if (again){
+      try { localStorage.removeItem(TKEY); } catch(e){}
+      tried = 0; serverSeen = false;
+      setSync("connecting");
+      connectWith(0);
+    }
     return;
   }
   if (el.id === "clearscores"){
