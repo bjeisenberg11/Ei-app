@@ -105,6 +105,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   padding:12px 13px;margin-bottom:9px;cursor:pointer}
 .gcard.live{border-left-color:var(--pencil)}
 .gcard.done{opacity:.62}
+.roundwhen{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.14em;font-size:10px;color:var(--ink-faint);margin:-4px 0 9px}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:16px;line-height:1.1}
 .gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
@@ -583,9 +585,20 @@ let SCHEDULE = [
 const EV = id => SCHEDULE.find(e => e.id === id);
 const ROUNDS = () => SCHEDULE.filter(e => e.type === "ROUND");
 function roundOf(g){ return EV(g.roundId) || ROUNDS()[0]; }
-function roundLabel(g){ const r = roundOf(g); return r ? r.title : "Round"; }
+/* A round doesn't need a name — it's "the course, on this day at this time".
+   A title is optional and only used if someone bothers to set one. */
+function eventName(e){
+  if (!e) return "Round";
+  if (e.type === "ROUND") return e.title || (C(e.courseId) || {}).name || "Round";
+  return e.title || "Untitled";
+}
+function roundLabel(g){
+  const r = roundOf(g);
+  if (!r) return "Round";
+  return eventName(r) + (r.time ? " \u00b7 " + fmtTime(r.time) : "");
+}
 
-const DAYS = ["Friday","Saturday","Sunday","Monday"];
+let DAYS = ["Friday","Saturday","Sunday","Monday"];
 
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
                 SCRAMBLE3:"3v3 Scramble", FORTYBALL:"40ball" };
@@ -842,7 +855,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1721";
+const BUILD = "2026-08-26.1754";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -977,6 +990,7 @@ async function connectWith(i){
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
+      if (v.days && v.days.length) { DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
       migrateLoaded();
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
@@ -1009,7 +1023,7 @@ async function seedIfNeeded(fsMod, cfgRef, gamesRef){
   const snap = await fsMod.getDoc(cfgRef);
   if (!snap.exists()){
     await fsMod.setDoc(cfgRef,
-      { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+      { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS });
   } else if ((snap.data().schema || 1) !== SCHEMA){
     await fsMod.setDoc(cfgRef, { schema: SCHEMA }, { merge: true });
   }
@@ -1159,17 +1173,21 @@ function migrateLoaded(){
     if (!e.day){ e.day = DAYS[0]; changed = true; }
   });
 
-  // 2. games written with a round NAME need a matching round event
+  // 2. attach orphaned games to a round, without inventing junk rounds.
+  //    Match on the course first — that's what actually identifies a round —
+  //    and only create one if nothing suitable exists.
   GAMES.forEach(g => {
     if (g.roundId && EV(g.roundId)) return;
-    const label = g.round || "Round";
-    let r = SCHEDULE.find(e => e.type === "ROUND" && e.title === label);
+    const cid = g.courseId || COURSES[0].id;
+    let r = SCHEDULE.find(e => e.type === "ROUND" && e.courseId === cid);
+    if (!r) r = SCHEDULE.find(e => e.type === "ROUND" && e.title === g.round);
     if (!r){
-      r = { id: uid("r"), type:"ROUND", title: label,
+      const label = g.round || "";
+      r = { id: uid("r"), type:"ROUND",
             day: /sunday/i.test(label) ? "Sunday" : /monday/i.test(label) ? "Monday"
-               : /friday/i.test(label) ? "Friday" : "Saturday",
+               : /friday/i.test(label) ? "Friday" : (DAYS[1] || DAYS[0]),
             time: /pm/i.test(label) ? "13:00" : "08:00",
-            courseId: g.courseId || COURSES[0].id,
+            courseId: cid,
             mode: g.mode || "RELATIVE" };
       SCHEDULE.push(r); changed = true;
     }
@@ -1178,14 +1196,28 @@ function migrateLoaded(){
     pushGame(g);
   });
 
-  // 3. rounds must carry a course and a handicap mode
+  // 3. a ROUND whose title is really a game description is left over from an
+  //    older shape — drop the title so it takes the course's name instead
+  SCHEDULE.forEach(e => {
+    if (e.type === "ROUND" && e.title &&
+        /best ball|scramble|40ball|two matches/i.test(e.title)){
+      delete e.title; changed = true;
+    }
+  });
+
+  // 4. any day referenced by an event must exist in the day list
+  SCHEDULE.forEach(e => {
+    if (e.day && !DAYS.includes(e.day)){ DAYS.push(e.day); changed = true; }
+  });
+
+  // 5. rounds must carry a course and a handicap mode
   SCHEDULE.forEach(e => {
     if (e.type !== "ROUND") return;
     if (!e.courseId || !C(e.courseId)){ e.courseId = COURSES[0].id; changed = true; }
     if (!e.mode){ e.mode = "RELATIVE"; changed = true; }
   });
 
-  // 4. teams stored as an array can't be written to Firestore
+  // 6. teams stored as an array can't be written to Firestore
   GAMES.forEach(g => {
     if (Array.isArray(g.teams)){
       g.teams = { 0: g.teams[0] || [], 1: g.teams[1] || [] };
@@ -1269,7 +1301,7 @@ async function resetTournament(){
   const { doc, setDoc, collection, getDocs } = SYNC.api;
   const cfgRef = doc(SYNC.db, "tournaments", TID);
   const gamesRef = collection(SYNC.db, "tournaments", TID, "games");
-  await setDoc(cfgRef, { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+  await setDoc(cfgRef, { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS });
   const snap = await getDocs(gamesRef);
   const ids = new Set(GAMES.map(g => g.id));
   for (const g of GAMES) await setDoc(doc(gamesRef, g.id), g);
@@ -1280,7 +1312,7 @@ function pushConfig(){
   if (!SYNC.on || !SYNC.api) return;
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID),
-    { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE }, { merge:true })
+    { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS }, { merge:true })
     .then(() => setSync("live", {lastAt:new Date()}))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (config write failed)" }));
 }
@@ -1332,7 +1364,8 @@ function render(){
 
 /* ---------- home ---------- */
 function renderHome(){
-  const rounds = ROUNDS();
+  const rounds = ROUNDS().slice().sort((a,b) =>
+    DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   let h = "";
   if (SYNC.state === "error" && SYNC.err){
     const code = SYNC.err;
@@ -1362,10 +1395,14 @@ function renderHome(){
       <div class="syncerr-h">Scoring still works on this device meanwhile — it just won't share.</div>
     </div>`;
   }
-  rounds.forEach(r => {
-    h += `<h2 class="sec">${esc(r.title)}</h2>`;
+  const withGames = rounds.filter(r => GAMES.some(g => g.roundId === r.id));
+  if (!withGames.length)
+    h += `<p class="note" style="margin-top:20px">No games set up yet \u2014 add them on the
+      Schedule tab.</p>`;
+  withGames.forEach(r => {
+    h += `<h2 class="sec">${esc(eventName(r))}</h2>
+      <p class="roundwhen">${esc(r.day || "")}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}</p>`;
     const inRound = GAMES.filter(g => g.roundId === r.id);
-    if (!inRound.length) h += `<p class="note">No games set for this round yet.</p>`;
     inRound.forEach(g => {
       const stt = gameStatusLabel(g);
       const meta = usesHcp(g)
@@ -1433,7 +1470,31 @@ function renderSchedule(){
   h += `<div class="acts cwrap" style="margin-top:12px">
     <button class="btn ${schedMode==="timeline"?"":"ghost"}" data-sched="timeline">Timeline</button>
     <button class="btn ${schedMode==="travel"?"":"ghost"}" data-sched="travel">Travel</button>
+    ${ro ? "" : `<button class="btn ${schedMode==="days"?"":"ghost"}" data-sched="days">Days</button>`}
   </div>`;
+
+  if (schedMode === "days" && !ro){
+    h += `<h2 class="sec">Days</h2>
+    <p class="note">These are the days the weekend runs. Rename them to real dates if you like
+      \u2014 events keep their day as you rename it.</p>
+    <table class="lb ttbl"><tbody>`;
+    DAYS.forEach((d,i) => {
+      const n = SCHEDULE.filter(e => e.day === d).length;
+      h += `<tr>
+        <td><input class="tf wide" data-dayname="${i}" value="${esc(d)}"></td>
+        <td class="mono" style="color:var(--ink-faint)">${n} event${n===1?"":"s"}</td>
+        <td><button class="chip" data-daymove="${i}:-1" ${i===0?"disabled":""}>\u2191</button></td>
+        <td><button class="chip del" data-dayrm="${i}">Remove</button></td>
+      </tr>`;
+    });
+    h += `</tbody></table>
+    <div class="acts" style="margin-top:10px">
+      <button class="btn ghost" id="dayadd">+ Add a day</button>
+    </div>
+    <div class="footnote">Removing a day also removes everything scheduled on it.</div>`;
+    app.innerHTML = h;
+    return;
+  }
 
   if (schedMode === "timeline"){
     DAYS.forEach(day => {
@@ -1489,7 +1550,7 @@ function eventCard(e, ro, showDay){
 
   return `<div class="ev ${m.cls}">
     <div class="ev-top">
-      <span class="ev-title">${esc(who + (e.title || "Untitled"))}</span>
+      <span class="ev-title">${esc(who + eventName(e))}</span>
       <span class="ev-time">${showDay ? e.day + " " : ""}${e.time ? fmtTime(e.time) : "TBD"}</span>
     </div>
     ${sub ? `<div class="ev-sub">${esc(sub)}</div>` : ""}
@@ -1519,8 +1580,9 @@ function renderEventEditor(h, id){
         `<button class="btn ${e.type===t?"":"ghost"}" data-evtype="${t}">${EVMETA[t].tag}</button>`).join("")}
     </div>
 
+    ${isRound ? "" : `
     <label for="evtitle">${e.type==="TRAVEL" ? "Flight / how they're getting here" : "Title"}</label>
-    <input id="evtitle" data-evf="title" value="${esc(e.title||"")}">
+    <input id="evtitle" data-evf="title" value="${esc(e.title||"")}">`}
 
     <label>Day</label>
     <div class="acts cwrap">
@@ -1531,8 +1593,9 @@ function renderEventEditor(h, id){
     <input id="evtime" data-evf="time" inputmode="numeric" placeholder="14:20"
       value="${esc(e.time||"")}">
 
-    <label for="evloc">${isRound ? "Where (shown on the card)" : "Location"}</label>
-    <input id="evloc" data-evf="location" value="${esc(e.location||"")}">
+    ${isRound ? "" : `
+    <label for="evloc">Location</label>
+    <input id="evloc" data-evf="location" value="${esc(e.location||"")}">`}
 
     <label for="evnotes">Notes</label>
     <input id="evnotes" data-evf="notes" value="${esc(e.notes||"")}">`;
@@ -1550,7 +1613,7 @@ function renderEventEditor(h, id){
   }
 
   if (isRound){
-    h += `<label>Course</label>
+    h += `<label>Course \u2014 this also names the round</label>
     <div class="acts cwrap">
       ${COURSES.map(c => `<button class="btn ${e.courseId===c.id?"":"ghost"}"
         data-evcourse="${c.id}">${esc(c.name)}</button>`).join("")}
@@ -2173,6 +2236,24 @@ function handleClick(el){
   if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
   if (el.id === "evdone"){ editEvent = null; render(); return; }
 
+  if (el.id === "dayadd"){
+    DAYS.push("New day"); queueConfig(); render(); return;
+  }
+  if (el.dataset.daymove){
+    const [iRaw, dRaw] = el.dataset.daymove.split(":");
+    const i = +iRaw, j = i + (+dRaw);
+    if (j >= 0 && j < DAYS.length){ const t = DAYS[i]; DAYS[i] = DAYS[j]; DAYS[j] = t; queueConfig(); render(); }
+    return;
+  }
+  if (el.dataset.dayrm){
+    const i = +el.dataset.dayrm, day = DAYS[i];
+    const evs = SCHEDULE.filter(e => e.day === day);
+    if (!confirm(`Remove "${day}"?` + (evs.length ? `\n\nIts ${evs.length} event(s) go too.` : ""))) return;
+    GAMES.filter(g => evs.some(e => e.id === g.roundId)).forEach(g => removeGame(g.id));
+    SCHEDULE = SCHEDULE.filter(e => e.day !== day);
+    DAYS.splice(i,1);
+    queueConfig(); render(); return;
+  }
   if (el.dataset.clearday){
     const day = el.dataset.clearday;
     const evs = SCHEDULE.filter(e => e.day === day);
@@ -2339,6 +2420,16 @@ function handleClick(el){
 /* text inputs: update the model in place so focus and the keyboard survive */
 document.addEventListener("input", e => {
   const t = e.target;
+
+  if (t.dataset && t.dataset.dayname != null){
+    const i = +t.dataset.dayname, old = DAYS[i], nv = t.value;
+    if (nv.trim()){
+      SCHEDULE.forEach(e => { if (e.day === old) e.day = nv; });
+      DAYS[i] = nv;
+      queueConfig();
+    }
+    return;
+  }
 
   if (t.dataset && t.dataset.evf != null && editEvent){
     const e = EV(editEvent);
