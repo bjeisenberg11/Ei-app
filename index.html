@@ -751,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1135";
+const BUILD = "2026-08-26.1148";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -802,10 +802,24 @@ function paintSync(){
    often can't use Firestore's default streaming transport and sit cache-only
    forever with no error, so we escalate rather than guess. */
 const STRATEGIES = [
-  { name: "stream",           persist: true,  force: false },
-  { name: "long-poll",        persist: true,  force: true  },
-  { name: "long-poll-nocache",persist: false, force: true  }
+  { name: "stream",            persist: "multi",  force: false, offline: true  },
+  { name: "long-poll",         persist: "multi",  force: true,  offline: true  },
+  { name: "long-poll-single",  persist: "single", force: true,  offline: true  },
+  { name: "long-poll-nocache", persist: false,    force: true,  offline: false }
 ];
+/* Remember what worked so the next open connects immediately instead of
+   waiting out failed attempts. */
+const TKEY = "ei-transport";
+function rememberTransport(name){
+  try { localStorage.setItem(TKEY, name); } catch(e){}
+}
+function preferredStart(){
+  try {
+    const n = localStorage.getItem(TKEY);
+    const i = STRATEGIES.findIndex(s => s.name === n);
+    return i >= 0 ? i : 0;
+  } catch(e){ return 0; }
+}
 let unsubs = [];
 let attempt = 0;
 
@@ -818,7 +832,7 @@ async function initSync(){
   ]);
   SYNC.api = fsMod;
   SYNC.appMod = appMod;
-  await connectWith(0);
+  await connectWith(preferredStart());
 }
 
 async function connectWith(i){
@@ -835,9 +849,10 @@ async function connectWith(i){
     const app = appMod.initializeApp(FIREBASE_CONFIG, "ei-" + i + "-" + Date.now());
     const opts = st.force ? { experimentalForceLongPolling: true }
                           : { experimentalAutoDetectLongPolling: true };
-    opts.localCache = st.persist
-      ? fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() })
-      : fsMod.memoryLocalCache();
+    opts.localCache =
+      st.persist === "multi"  ? fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() }) :
+      st.persist === "single" ? fsMod.persistentLocalCache({}) :
+                                fsMod.memoryLocalCache();
     const db = fsMod.initializeFirestore(app, opts);
     SYNC.db = db; SYNC.on = true;
 
@@ -895,20 +910,21 @@ async function seedIfNeeded(fsMod, cfgRef, gamesRef){
 }
 
 let serverSeen = false;
+let tried = 0;
 function startWatchdog(i){
   serverSeen = false;
   SYNC.seen = { cfg:false, games:false };
   setTimeout(() => {
     if (serverSeen) return;
-    if (i + 1 < STRATEGIES.length){
-      console.log("no server data on '" + STRATEGIES[i].name + "', trying '"
-                  + STRATEGIES[i+1].name + "'");
-      setSync("connecting");
-      connectWith(i + 1);
-    } else {
+    tried++;
+    if (tried >= STRATEGIES.length){
       setSync("error", { err: "no-server-response (all transports)" });
+      return;
     }
-  }, 8000);
+    const next = (i + 1) % STRATEGIES.length;   // wrap, so a stale remembered
+    setSync("connecting");                      // preference still recovers
+    connectWith(next);
+  }, 5000);
 }
 function touchSync(which, snapOrQs){
   const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
@@ -916,7 +932,10 @@ function touchSync(which, snapOrQs){
   SYNC.seen[which] = true;
   // only the listeners we've actually heard from count
   const live = Object.keys(SYNC.seen).some(k => SYNC.seen[k] && !SYNC.cache[k]);
-  if (live) serverSeen = true;
+  if (live && !serverSeen){
+    serverSeen = true;
+    rememberTransport(SYNC.transport);
+  }
   setSync(live ? "live" : "offline", live ? { lastAt: new Date() } : {});
 }
 
@@ -1608,7 +1627,8 @@ document.addEventListener("click", e => {
     const d = [
       "build: " + BUILD + "  schema " + SCHEMA,
       "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
-      "transport: " + (SYNC.transport || "-") + " (attempt " + (attempt+1) + "/" + STRATEGIES.length + ")",
+      "transport: " + (SYNC.transport || "-"),
+      "offline queueing: " + (STRATEGIES[attempt] && STRATEGIES[attempt].offline ? "yes" : "NO — scores need signal"),
       "state: " + SYNC.state,
       "configured: " + (SYNC.on ? "yes" : "no"),
       "server data seen: " + (serverSeen ? "yes" : "not yet"),
