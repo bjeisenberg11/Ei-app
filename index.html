@@ -166,6 +166,11 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   width:58px;text-align:right;flex:none;line-height:1.25}
 .pnet .adj{color:var(--pencil);font-weight:600}
 .pnet .net{color:var(--ink);font-weight:600;font-size:13px}
+.pnet .par{font-size:11px;font-weight:600}
+.pnet .par.under{color:var(--pencil)}
+.pnet .par.over{color:var(--ink-faint)}
+.pnet .par.even{color:var(--ink-soft)}
+.pnet{width:78px}
 
 /* strokes grid */
 .sgrid-wrap{overflow-x:auto;border:1px solid var(--rule);background:var(--paper-2);margin-top:10px;
@@ -218,6 +223,11 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .cor-row{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;
   font-size:12px;margin-bottom:7px}
 .cor-row b{font-weight:600}
+.cor-row .par{font-weight:600}
+.cor-row .par.under{color:var(--pencil)}
+.cor-row .par.over{color:var(--ink-faint)}
+.team-score .par{font-size:12px}
+.team-score .par.under{color:var(--pencil)}
 .bar{height:9px;background:var(--paper-3);border:1px solid var(--rule);position:relative;overflow:hidden}
 .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ink)}
 .bar i.tight{background:var(--pencil)}
@@ -324,6 +334,12 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
   font-family:'Barlow Condensed',sans-serif;font-weight:600;text-transform:uppercase;
   letter-spacing:.13em;font-size:11px;color:var(--ink-faint)}
 .tabs button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--ink)}
+
+.testbar{display:flex;align-items:center;gap:7px;margin-top:18px;
+  border:1px dashed var(--rule);padding:8px 9px;background:var(--paper-2)}
+.testbar-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.14em;font-size:9px;color:var(--ink-faint);flex:none}
+.testbar .btn{padding:9px 6px;font-size:11px}
 
 .footnote{border-top:1px solid var(--rule);margin-top:26px;padding:14px 0 8px;
   font-size:12.5px;color:var(--ink-faint);line-height:1.5}
@@ -655,6 +671,17 @@ function fbBudget(g, t, h){
   return { R, H, A, min, max, slack, slackHoles: Math.floor(slack/4),
            broken: R > 4*(H-1) + A };
 }
+/* Sum of par for the holes where a team spent a score — the fair baseline to
+   read a 40ball total against, since you only count 40 of 72 scores. */
+function fbParBasis(g, t){
+  const course = courseOf(g);
+  let p = 0;
+  holeList(g).forEach((hole, h) => {
+    if (!hole.locked[t]) return;
+    hole.selected[t].forEach(() => { p += course.holes[h].par; });
+  });
+  return p;
+}
 function fbTotal(g, t){
   let sum = 0;
   holeList(g).forEach((hole, h) => {
@@ -712,7 +739,9 @@ function gameStatusLabel(g){
   }
   const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
   if (la + lb === 0) return { text:"Not started", cls:"" };
-  return { text:`${teamShort(g,0)} ${fbSpent(g,0)}/40 · ${teamShort(g,1)} ${fbSpent(g,1)}/40`, cls:"live" };
+  const r0 = fbTotal(g,0) - fbParBasis(g,0), r1 = fbTotal(g,1) - fbParBasis(g,1);
+  return { text:`${fbTotal(g,0)} (${toPar(r0)}) \u2013 ${fbTotal(g,1)} (${toPar(r1)}) · ` +
+                `${fbSpent(g,0)}/40 & ${fbSpent(g,1)}/40 spent`, cls:"live" };
 }
 /* which hole to land on when jumping into a game — the next one needing action */
 function currentHoleFor(g){
@@ -751,7 +780,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1316";
+const BUILD = "2026-08-26.1337";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1361,11 +1390,13 @@ function renderGame(){
     </div>`;
   } else {
     const fs = fbState(g);
+    const rel0 = fbTotal(g,0) - fbParBasis(g,0), rel1 = fbTotal(g,1) - fbParBasis(g,1);
     out += `<div class="banner ${fs.done?"closed":""}">
       <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
         : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
         : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
-      <div class="thru">${esc(teamLabel(g,0))} ${fbSpent(g,0)}/40 · ${esc(teamLabel(g,1))} ${fbSpent(g,1)}/40</div>
+      <div class="thru">${esc(teamLabel(g,0))} ${fbSpent(g,0)}/40 (${toPar(rel0)}) ·
+        ${esc(teamLabel(g,1))} ${fbSpent(g,1)}/40 (${toPar(rel1)})</div>
     </div>`;
   }
 
@@ -1406,11 +1437,51 @@ function renderGame(){
         : "At least one player per side must hole out."}</p>`;
   }
 
-  out += `<div class="acts" style="margin-top:16px">
+  out += `<div class="testbar">
+    <span class="testbar-t">Testing</span>
+    <button class="btn ghost" id="randhole">Random scores, this hole</button>
     <button class="btn ghost" id="reset">Reset game</button>
   </div>`;
 
   app.innerHTML = out;
+}
+
+/* Testing helper: plausible scores for the current hole. Not part of play —
+   it exists so the 40ball budget can be exercised quickly. */
+function randomHole(g, h){
+  const par = courseOf(g).holes[h].par;
+  const roll = () => Math.max(2, par + [-1,0,0,0,1,1,2][Math.floor(Math.random()*7)]);
+  const hole = g.holes[h];
+  hole.conceded = null;
+
+  if (isScramble(g)){
+    [0,1].forEach(t => {
+      hole.teamScore[t] = Math.max(2, roll() - 1);
+      pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
+    });
+    return;
+  }
+
+  [0,1].forEach(t => {
+    if (g.type === "FORTYBALL" && hole.locked[t]) return;
+    g.teams[t].forEach(id => {
+      hole.scores[id] = roll();
+      pushHole(g, h, `scores.${id}`, hole.scores[id]);
+    });
+  });
+
+  if (g.type === "FORTYBALL"){
+    [0,1].forEach(t => {
+      if (hole.locked[t]) return;
+      const b = fbBudget(g, t, h);
+      const ranked = g.teams[t].slice().sort((a,c) => netOf(a,g,h) - netOf(c,g,h));
+      const take = Math.max(b.min, Math.min(b.max, 2));
+      hole.selected[t] = ranked.slice(0, take);
+      hole.locked[t] = true;
+      pushHole(g, h, `selected.${t}`, hole.selected[t]);
+      pushHole(g, h, `locked.${t}`, true);
+    });
+  }
 }
 
 /* score bug: sibling games in the same round; long lines scroll like a ticker */
@@ -1470,12 +1541,20 @@ function renderStrokeGrid(g, h){
 }
 
 /* gross → adjustment → net */
+/* gross → handicap adjustment → net, with the net shown against par */
+function toPar(n){ return n === 0 ? "E" : (n > 0 ? "+" + n : String(n)); }
+function parClass(n){ return n < 0 ? "under" : n > 0 ? "over" : "even"; }
+
 function netCell(id, g, h){
   const v = g.holes[h].scores[id];
-  const s = strokesOn(id, g, h);
+  const st = strokesOn(id, g, h);
   if (v === "PU") return `<span class="pnet">picked up</span>`;
-  if (v == null) return `<span class="pnet">${s ? `<span class="adj">−${s}</span>` : ""}</span>`;
-  return `<span class="pnet">${s ? `<span class="adj">−${s}</span> ` : ""}<span class="net">${v - s}</span></span>`;
+  if (v == null) return `<span class="pnet">${st ? `<span class="adj">−${st}</span>` : ""}</span>`;
+  const net = v - st;
+  const rel = net - courseOf(g).holes[h].par;
+  return `<span class="pnet">${st ? `<span class="adj">−${st}</span> ` : ""}` +
+         `<span class="net">${net}</span> ` +
+         `<span class="par ${parClass(rel)}">${toPar(rel)}</span></span>`;
 }
 
 function renderTeam(g, t, h, hardLocked){
@@ -1535,7 +1614,8 @@ function renderTeam(g, t, h, hardLocked){
     const ts = teamHoleScore(g,t,h);
     head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "—");
   } else {
-    head += `${fbTotal(g,t)} · ${fbSpent(g,t)}/40`;
+    const relT = fbTotal(g,t) - fbParBasis(g,t);
+    head += `${fbTotal(g,t)} <span class="par ${parClass(relT)}">${toPar(relT)}</span> · ${fbSpent(g,t)}/40`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   }
   head += `</span></div>`;
@@ -1568,6 +1648,10 @@ function renderCorridor(g, t, h){
   else if (tight){ msg = "No slack left — take scores every hole"; warn = true; }
   else msg = `${b.slackHoles} hole${b.slackHoles===1?"":"s"} of slack`;
 
+  const total = fbTotal(g, t);
+  const basis = fbParBasis(g, t);
+  const rel = total - basis;
+
   const allIn = g.teams[t].every(id => hole.scores[id] != null);
   const ok = !locked && allIn && picked >= b.min && picked <= b.max;
 
@@ -1576,8 +1660,12 @@ function renderCorridor(g, t, h){
       <span>${b.H} hole${b.H===1?"":"s"} left</span></div>
     <div class="bar"><i class="${tight?"tight":""}" style="width:${pct}%"></i></div>
     <div class="cor-msg ${warn?"warn":""}">${msg}</div>
-    <div class="cor-row" style="margin:9px 0 0"><span>Selected <b>${picked}</b></span>
-      <span>Legal range ${b.min}–${b.max}</span></div>
+    <div class="cor-row" style="margin:9px 0 0"><span>Taken this hole <b>${picked}</b></span>
+      <span>${b.min === b.max
+        ? `must take ${b.min}`
+        : `can take ${b.min}\u2013${b.max}`}</span></div>
+    <div class="cor-row" style="margin:4px 0 0"><span>Running total <b>${total}</b></span>
+      <span class="par ${parClass(rel)}">${basis ? toPar(rel) + " vs par" : "—"}</span></div>
     ${locked ? `<p class="note">Hole locked. Admin can reopen.</p>
       <div class="acts"><button class="btn ghost" data-unlock="${t}">Admin unlock</button></div>`
     : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock ${esc(teamLabel(g,t))}</button></div>
@@ -1886,6 +1974,11 @@ document.addEventListener("click", e => {
     render(); return;
   }
 
+  if (el.id === "randhole"){
+    randomHole(g, h);
+    render(); toast("Hole " + (h+1) + " filled");
+    return;
+  }
   if (el.id === "togglestrokes"){ showStrokes = !showStrokes; render(); return; }
   if (el.id === "reset"){
     if (SYNC.on && !isAdmin){ toast("Admin only"); return; }
