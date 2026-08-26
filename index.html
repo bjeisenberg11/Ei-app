@@ -736,8 +736,12 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.0457";
+const BUILD = "2026-08-26.0526";
 const TID = "ei-2026";
+/* Bump when the stored shape changes. Data seeded under an older schema is
+   wiped and rewritten — e.g. `holes` used to be an array, and field-path
+   writes like `holes.5.scores.p1` silently fail against arrays. */
+const SCHEMA = 2;
 const ADMIN_CODE = "eagle";
 
 const SYNC = {
@@ -808,9 +812,12 @@ async function initSync(){
     // seed once if the tournament doesn't exist yet
     try {
       const snap = await fsMod.getDoc(cfgRef);
-      if (!snap.exists()){
-        await fsMod.setDoc(cfgRef, { players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+      const stale = !snap.exists() || (snap.data().schema || 1) !== SCHEMA;
+      if (stale){
+        await fsMod.setDoc(cfgRef,
+          { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
         for (const g of GAMES) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+        console.log("seeded tournament at schema " + SCHEMA);
       }
     } catch (e){
       setSync("error", { err: (e.code || e.message) + " (while seeding)" });
@@ -866,26 +873,42 @@ function touchSync(which, snapOrQs){
 /* write a single field on a single hole — the merge-safe unit */
 function pushHole(g, h, path, value){
   if (!SYNC.on) return;
-  const { doc, updateDoc } = SYNC.api;
+  const { doc, updateDoc, setDoc } = SYNC.api;
+  const ref = doc(SYNC.db, "tournaments", TID, "games", g.id);
   SYNC.pending++; paintSync();
-  updateDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), { [`holes.${h}.${path}`]: value })
-    .then(() => { SYNC.pending = Math.max(0, SYNC.pending-1); setSync("live", {lastAt:new Date()}); })
-    .catch(() => { SYNC.pending = Math.max(0, SYNC.pending-1); setSync("offline"); });
+  const done = () => { SYNC.pending = Math.max(0, SYNC.pending-1); };
+  updateDoc(ref, { [`holes.${h}.${path}`]: value })
+    .then(() => { done(); setSync("live", { lastAt: new Date() }); })
+    .catch(err => {
+      const code = err && (err.code || err.message) || String(err);
+      /* A missing doc, or one written under an older shape, can't take a
+         field-path update. Rewrite the whole game once, then carry on. */
+      if (/not-found|invalid-argument/i.test(code)){
+        setDoc(ref, g)
+          .then(() => { done(); setSync("live", { lastAt: new Date() }); })
+          .catch(e2 => { done(); setSync("error", { err: (e2.code||e2.message) + " (repair failed)" }); });
+      } else {
+        done();
+        setSync("error", { err: code + " (write failed)" });
+      }
+    });
 }
 /* replace a whole game (reset) */
 function pushGame(g){
   if (!SYNC.on) return;
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), g)
-    .then(() => setSync("live", {lastAt:new Date()})).catch(() => setSync("offline"));
+    .then(() => setSync("live", {lastAt:new Date()}))
+    .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
 /* config: players, courses, schedule — admin edits, low contention */
 function pushConfig(){
   if (!SYNC.on) return;
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID),
-    { players: PLAYERS, courses: COURSES, schedule: SCHEDULE }, { merge:true })
-    .then(() => setSync("live", {lastAt:new Date()})).catch(() => setSync("offline"));
+    { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE }, { merge:true })
+    .then(() => setSync("live", {lastAt:new Date()}))
+    .catch(e => setSync("error", { err: (e.code||e.message) + " (config write failed)" }));
 }
 
 /* ============================================================
@@ -1491,7 +1514,7 @@ document.addEventListener("click", e => {
 
   if (el.id === "syncdot"){
     const d = [
-      "build: " + BUILD,
+      "build: " + BUILD + "  schema " + SCHEMA,
       "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
       "state: " + SYNC.state,
       "configured: " + (SYNC.on ? "yes" : "no"),
