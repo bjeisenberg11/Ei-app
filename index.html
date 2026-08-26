@@ -328,6 +328,49 @@ input.cc{width:100%;min-width:30px;border:none;background:transparent;text-align
 input.cc:focus{outline:none;background:var(--brass);color:var(--paper)}
 input.cc.bad{background:var(--pencil);color:var(--paper)}
 
+/* schedule events, colour-coded by kind */
+.ev{border:1px solid var(--rule);border-left:4px solid var(--rule);
+  background:var(--paper-2);padding:11px 12px;margin-bottom:8px}
+.ev-round {border-left-color:var(--ink);   background:#EFEBDD}
+.ev-meal  {border-left-color:var(--brass); background:#F2ECDC}
+.ev-travel{border-left-color:#4A6E8A;      background:#E9EDEF}
+.ev-other {border-left-color:var(--rule);  background:var(--paper-2)}
+.ev-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.ev-title{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.04em;font-size:16px;line-height:1.1}
+.ev-time{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+  color:var(--ink-soft);flex:none}
+.ev-sub{font-size:14px;color:var(--ink);margin-top:3px}
+.ev-meta{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.12em;font-size:10px;color:var(--ink-faint);margin-top:5px}
+.ev-tag{font-weight:700}
+.ev-round .ev-tag{color:var(--ink)}
+.ev-meal .ev-tag{color:var(--brass)}
+.ev-travel .ev-tag{color:#3C5C74}
+.ev-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{background:transparent;border:1px solid var(--rule);color:var(--ink);
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.1em;font-size:10px;padding:5px 9px;cursor:pointer}
+.chip.edit{border-color:var(--ink)}
+.chip.del{border-color:var(--pencil);color:var(--pencil)}
+.chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.addev{width:100%;margin:2px 0 6px;font-size:11px;padding:10px}
+
+/* roster picker */
+.gedit{border:1px solid var(--rule);background:var(--paper-2);padding:11px 12px;margin-top:9px}
+table.rost{width:100%;border-collapse:collapse;margin-top:8px}
+table.rost td{padding:3px 0;border-top:1px solid var(--rule-soft)}
+table.rost td.rn{text-align:left;font-size:14px;width:40%}
+.side{width:100%;min-width:38px;border:1px solid var(--rule);background:var(--paper);
+  color:var(--ink-faint);font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  font-size:11px;letter-spacing:.08em;padding:7px 2px;cursor:pointer}
+.side.on.a{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.side.on.b{background:var(--brass);color:var(--paper);border-color:var(--brass)}
+.side.on.out{background:var(--paper-3);color:var(--ink-soft)}
+.rost-sum{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:9px;
+  font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
+.rost-sum .bad{color:var(--pencil);font-weight:600}
+
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
   border-top:1.5px solid var(--ink);display:flex;z-index:40;
@@ -481,51 +524,59 @@ const holeList = g => Array.from({length:18}, (_,i) => g.holes[i]);
 /* teams is keyed 0/1 rather than a two-element array: Firestore rejects any
    array whose elements are themselves arrays, which silently fails seeding. */
 let GAMES = [
-  { id:"g1", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
+  { id:"g1", roundId:"r1", type:"BESTBALL",
     teams:{0:["p1","p4"],1:["p2","p5"]}, holes:blankHoles() },
-  { id:"g2", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
+  { id:"g2", roundId:"r1", type:"BESTBALL",
     teams:{0:["p3","p6"],1:["p7","p8"]}, holes:blankHoles() },
-  { id:"g3", round:"Saturday PM", courseId:"marsh", type:"SCRAMBLE4", mode:"RELATIVE",
+  { id:"g3", roundId:"r2", type:"SCRAMBLE4",
     teams:{0:["p1","p4","p3","p6"],1:["p2","p5","p7","p8"]}, holes:blankHoles() },
-  { id:"g4", round:"Sunday AM", courseId:"stone", type:"SCRAMBLE3", mode:"RELATIVE",
+  { id:"g4", roundId:"r3", type:"SCRAMBLE3",
     teams:{0:["p1","p4","p3"],1:["p2","p5","p7"]}, holes:blankHoles() },
-  { id:"g5", round:"Sunday PM", courseId:"stone", type:"FORTYBALL", mode:"RELATIVE", hidden:true,
+  { id:"g5", roundId:"r4", type:"FORTYBALL", hidden:true,
     teams:{0:["p1","p4","p3","p6"],1:["p2","p5","p7","p8"]}, holes:blankHoles() }
 ];
 
 /* ---------- §10 weekend schedule ---------- */
 let SCHEDULE = [
-  {day:"Friday", time:"14:20", type:"TRAVEL", dir:"ARRIVAL", pid:"p3",
+  {id:"e1", day:"Friday", time:"14:20", type:"TRAVEL", dir:"ARRIVAL", pid:"p3",
    title:"United 1442", notes:"ORD"},
-  {day:"Friday", time:"15:05", type:"TRAVEL", dir:"ARRIVAL", pid:"p7",
+  {id:"e2", day:"Friday", time:"15:05", type:"TRAVEL", dir:"ARRIVAL", pid:"p7",
    title:"Delta 883", notes:"ORD"},
-  {day:"Friday", time:"16:40", type:"TRAVEL", dir:"ARRIVAL", pid:"p8",
+  {id:"e3", day:"Friday", time:"16:40", type:"TRAVEL", dir:"ARRIVAL", pid:"p8",
    title:"Southwest 212", notes:"MDW"},
-  {day:"Friday", time:null, type:"TRAVEL", dir:"ARRIVAL", pid:"p2",
+  {id:"e4", day:"Friday", time:null, type:"TRAVEL", dir:"ARRIVAL", pid:"p2",
    title:"Driving", notes:"Sometime afternoon"},
-  {day:"Friday", time:"17:30", type:"OTHER", title:"Hotel check-in",
+  {id:"e5", day:"Friday", time:"17:30", type:"OTHER", title:"Hotel check-in",
    location:"The Lodge"},
-  {day:"Friday", time:"19:30", type:"MEAL", title:"Welcome dinner",
+  {id:"e6", day:"Friday", time:"19:30", type:"MEAL", title:"Welcome dinner",
    location:"Grill Room", notes:"Reservation under Eisenberg, 8 people"},
-  {day:"Saturday", time:"08:10", type:"ROUND", title:"2v2 Best Ball — two matches",
-   location:"Pine Hollow", gameId:"g1"},
-  {day:"Saturday", time:"13:40", type:"ROUND", title:"4v4 Scramble",
-   location:"Pine Hollow", gameId:"g3"},
-  {day:"Saturday", time:"19:00", type:"MEAL", title:"Steak night",
+
+  {id:"r1", day:"Saturday", time:"08:10", type:"ROUND", title:"Saturday AM",
+   location:"Pine Hollow", courseId:"pine", mode:"RELATIVE"},
+  {id:"r2", day:"Saturday", time:"13:40", type:"ROUND", title:"Saturday PM",
+   location:"Marsh Ridge", courseId:"marsh", mode:"RELATIVE"},
+  {id:"e7", day:"Saturday", time:"19:00", type:"MEAL", title:"Steak night",
    location:"Halcyon Tavern", notes:"Reservation 7:00, bar from 6:15"},
-  {day:"Sunday", time:"08:30", type:"ROUND", title:"3v3 Scramble",
-   location:"Pine Hollow", gameId:"g4"},
-  {day:"Sunday", time:"13:15", type:"ROUND", title:"40ball",
-   location:"Pine Hollow", gameId:"g5"},
-  {day:"Sunday", time:"18:00", type:"MEAL", title:"Closing dinner & trophy",
+
+  {id:"r3", day:"Sunday", time:"08:30", type:"ROUND", title:"Sunday AM",
+   location:"Stonebridge", courseId:"stone", mode:"RELATIVE"},
+  {id:"r4", day:"Sunday", time:"13:15", type:"ROUND", title:"Sunday PM",
+   location:"Stonebridge", courseId:"stone", mode:"RELATIVE"},
+  {id:"e8", day:"Sunday", time:"18:00", type:"MEAL", title:"Closing dinner & trophy",
    location:"Grill Room"},
-  {day:"Sunday", time:"20:45", type:"TRAVEL", dir:"DEPARTURE", pid:"p7",
+  {id:"e9", day:"Sunday", time:"20:45", type:"TRAVEL", dir:"DEPARTURE", pid:"p7",
    title:"Delta 1190", notes:"ORD"},
-  {day:"Monday", time:"06:50", type:"TRAVEL", dir:"DEPARTURE", pid:"p3",
+
+  {id:"e10", day:"Monday", time:"06:50", type:"TRAVEL", dir:"DEPARTURE", pid:"p3",
    title:"United 610", notes:"ORD"},
-  {day:"Monday", time:"09:15", type:"TRAVEL", dir:"DEPARTURE", pid:"p8",
+  {id:"e11", day:"Monday", time:"09:15", type:"TRAVEL", dir:"DEPARTURE", pid:"p8",
    title:"Southwest 401", notes:"MDW"}
 ];
+const EV = id => SCHEDULE.find(e => e.id === id);
+const ROUNDS = () => SCHEDULE.filter(e => e.type === "ROUND");
+function roundOf(g){ return EV(g.roundId) || ROUNDS()[0]; }
+function roundLabel(g){ const r = roundOf(g); return r ? r.title : "Round"; }
+
 const DAYS = ["Friday","Saturday","Sunday","Monday"];
 
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
@@ -547,7 +598,8 @@ const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
    shorter tee costs strokes by exactly the difficulty difference, so moving up
    isn't free. Because tee names differ course to course, a player's tee is
    stored per course. */
-const courseOf = g => C(g.courseId);
+const courseOf = g => C((roundOf(g)||{}).courseId);
+const modeOf   = g => (roundOf(g)||{}).mode || "RELATIVE";
 
 function teeNameFor(pid, course){
   return (P(pid).tees && P(pid).tees[course.id]) || course.tees[0].name;
@@ -568,7 +620,7 @@ function baseline(g){
 function playingHcp(pid, g){
   if (!usesHcp(g)) return 0;
   const ch = courseHcp(pid, courseOf(g));
-  return g.mode === "FULL" ? ch : ch - baseline(g);
+  return modeOf(g) === "FULL" ? ch : ch - baseline(g);
 }
 function strokesOn(pid, g, h){
   if (!usesHcp(g)) return 0;
@@ -782,12 +834,12 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1352";
+const BUILD = "2026-08-26.1653";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
    writes like `holes.5.scores.p1` silently fail against arrays. */
-const SCHEMA = 3;
+const SCHEMA = 4;
 const ADMIN_CODE = "eagle";
 
 const SYNC = {
@@ -1091,7 +1143,7 @@ function applyQueueLocally(){
 
 let flushing = false;
 async function flushQueue(){
-  if (flushing || !SYNC.on || !queue.length) return;
+  if (flushing || !SYNC.on || !SYNC.api || !queue.length) return;
   flushing = true;
   const { doc, updateDoc, setDoc } = SYNC.api;
   for (const it of queue.slice()){
@@ -1116,20 +1168,30 @@ setInterval(() => { if (queue.length) flushQueue(); }, 8000);
 window.addEventListener("online", flushQueue);
 
 /* write a single field on a single hole — the merge-safe unit */
+/* Sync must never block the interface. If any of this throws, the local state
+   and the screen are already correct — only the send is affected. */
 function pushHole(g, h, path, value){
   if (!SYNC.on) return;
-  enqueue(g.id, h, path, value);
-  flushQueue();
+  try { enqueue(g.id, h, path, value); flushQueue(); }
+  catch (e){ console.error("pushHole", e); }
 }
 
 /* replace a whole game (reset) */
 function pushGame(g){
-  if (!SYNC.on) return;
+  if (!SYNC.on || !SYNC.api) return;
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), g)
     .then(() => setSync("live", {lastAt:new Date()}))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
+function removeGame(gid){
+  GAMES = GAMES.filter(g => g.id !== gid);
+  if (!SYNC.on || !SYNC.api) return;
+  const { doc, deleteDoc } = SYNC.api;
+  deleteDoc(doc(SYNC.db, "tournaments", TID, "games", gid))
+    .catch(e => setSync("error", { err: (e.code||e.message) + " (delete failed)" }));
+}
+
 /* config: players, courses, schedule — admin edits, low contention */
 /* deliberate, admin-only wipe back to the built-in defaults */
 async function resetTournament(){
@@ -1145,7 +1207,7 @@ async function resetTournament(){
 }
 
 function pushConfig(){
-  if (!SYNC.on) return;
+  if (!SYNC.on || !SYNC.api) return;
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID),
     { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE }, { merge:true })
@@ -1159,6 +1221,7 @@ function pushConfig(){
 let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
 let editCourseId = COURSES[0].id;
+let editEvent = null;
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
 function queueConfig(){
@@ -1182,7 +1245,7 @@ function render(){
   if (inGame){
     const g = GAMES.find(x => x.id === view.gameId);
     $("#ttl").textContent = LABEL[g.type];
-    $("#tsub").textContent = g.round + " · " + courseOf(g).name;
+    $("#tsub").textContent = roundLabel(g) + " · " + courseOf(g).name;
   } else {
     $("#ttl").textContent = "Eisenberg Invitational";
     $("#tsub").textContent = "Prototype · scoring engine";
@@ -1199,7 +1262,7 @@ function render(){
 
 /* ---------- home ---------- */
 function renderHome(){
-  const rounds = [...new Set(GAMES.map(g => g.round))];
+  const rounds = ROUNDS();
   let h = "";
   if (SYNC.state === "error" && SYNC.err){
     const code = SYNC.err;
@@ -1230,11 +1293,13 @@ function renderHome(){
     </div>`;
   }
   rounds.forEach(r => {
-    h += `<h2 class="sec">${esc(r)}</h2>`;
-    GAMES.filter(g => g.round === r).forEach(g => {
+    h += `<h2 class="sec">${esc(r.title)}</h2>`;
+    const inRound = GAMES.filter(g => g.roundId === r.id);
+    if (!inRound.length) h += `<p class="note">No games set for this round yet.</p>`;
+    inRound.forEach(g => {
       const stt = gameStatusLabel(g);
       const meta = usesHcp(g)
-        ? (g.mode === "RELATIVE" ? "Relative handicaps" : "Full handicaps")
+        ? (modeOf(g) === "RELATIVE" ? "Relative handicaps" : "Full handicaps")
         : "Gross — no handicaps";
       h += `<button class="gcard ${stt.cls==="done"?"done":""}" data-game="${g.id}">
         <div class="gtype">${LABEL[g.type]}</div>
@@ -1280,7 +1345,22 @@ function fmtTime(t){
   return `${h}:${String(m).padStart(2,"0")}${ap}`;
 }
 function renderSchedule(){
-  let h = `<div class="acts" style="margin-top:18px">
+  const ro = SYNC.on && !isAdmin;
+
+  let h = ro
+    ? `<div class="lockbar">
+         <span class="lockbar-t">View only</span>
+         <input id="acode" type="password" autocomplete="off" placeholder="admin code">
+         <button class="btn" id="aunlock">Unlock</button>
+       </div><p class="impmsg" id="amsg"></p>`
+    : `<div class="lockbar open">
+         <span class="lockbar-t">Editing unlocked</span>
+         <button class="btn ghost" id="alock">Lock</button>
+       </div>`;
+
+  if (editEvent) return renderEventEditor(h, editEvent);
+
+  h += `<div class="acts cwrap" style="margin-top:12px">
     <button class="btn ${schedMode==="timeline"?"":"ghost"}" data-sched="timeline">Timeline</button>
     <button class="btn ${schedMode==="travel"?"":"ghost"}" data-sched="travel">Travel</button>
   </div>`;
@@ -1288,56 +1368,179 @@ function renderSchedule(){
   if (schedMode === "timeline"){
     DAYS.forEach(day => {
       const evs = SCHEDULE.filter(e => e.day === day);
-      if (!evs.length) return;
+      if (!evs.length && ro) return;
       const timed = evs.filter(e => e.time).sort((a,b) => a.time.localeCompare(b.time));
       const untimed = evs.filter(e => !e.time);
       h += `<h2 class="sec">${day}</h2>`;
-      [...timed, ...untimed].forEach(e => {
-        const icon = { TRAVEL: e.dir === "ARRIVAL" ? "IN" : "OUT",
-                       ROUND:"GOLF", MEAL:"EAT", OTHER:"—" }[e.type];
-        const who = e.pid ? P(e.pid).name + " · " : "";
-        const tag = e.gameId ? "button" : "div";
-        const jump = e.gameId
-          ? ` data-game="${e.gameId}" data-jumphole="${currentHoleFor(GAMES.find(x=>x.id===e.gameId))}"`
-          : "";
-        h += `<${tag} class="gcard" style="cursor:${e.gameId?"pointer":"default"}"${jump}>
-          <div class="gcard-top">
-            <span class="gtype" style="font-size:14px">${esc(who + e.title)}</span>
-            <span class="gstate">${e.time ? fmtTime(e.time) : "TBD"}</span>
-          </div>
-          ${e.location?`<div class="gteams">${esc(e.location)}</div>`:""}
-          <div class="gmeta">${icon}${e.notes?` · ${esc(e.notes)}`:""}${
-            e.gameId?" · tap to score":""}</div>
-        </${tag}>`;
-      });
+      [...timed, ...untimed].forEach(e => h += eventCard(e, ro));
+      if (!ro) h += `<button class="btn ghost addev" data-addev="${day}">+ Add to ${day}</button>`;
     });
   } else {
     ["ARRIVAL","DEPARTURE"].forEach(dir => {
       h += `<h2 class="sec">${dir === "ARRIVAL" ? "Arrivals" : "Departures"}</h2>`;
-      const evs = SCHEDULE.filter(e => e.type === "TRAVEL" && e.dir === dir);
+      const evs = SCHEDULE.filter(e => e.type === "TRAVEL" && e.dir === dir)
+        .sort((a,b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) ||
+                       (a.time||"zz").localeCompare(b.time||"zz"));
+      evs.forEach(e => h += eventCard(e, ro, true));
       const listed = evs.map(e => e.pid);
-      evs.sort((a,b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) ||
-                        (a.time||"zz").localeCompare(b.time||"zz"));
-      evs.forEach(e => {
-        h += `<div class="gcard" style="cursor:default">
-          <div class="gcard-top">
-            <span class="gtype" style="font-size:15px">${esc(P(e.pid).name)}</span>
-            <span class="gstate">${e.day} ${e.time?fmtTime(e.time):"TBD"}</span>
-          </div>
-          <div class="gteams">${esc(e.title)}${e.notes?` · ${esc(e.notes)}`:""}</div>
-        </div>`;
-      });
       const missing = PLAYERS.filter(p => !listed.includes(p.id));
       if (missing.length)
-        h += `<p class="note">No ${dir.toLowerCase()} entered: ${
-          missing.map(p => esc(p.name)).join(", ")}</p>`;
+        h += `<p class="note">No ${dir.toLowerCase()} entered: ${missing.map(p=>esc(p.name)).join(", ")}</p>`;
     });
   }
 
-  h += `<div class="footnote">In the real app the admin enters rounds, meals and anything else;
-    each player adds his own flights, and the admin can add or edit any of them. Rounds link
-    straight to the live scorecard.</div>`;
+  h += `<div class="footnote">Rounds live on this schedule \u2014 open one to set its course and
+    who's playing whom. Players, courses and tees are on the Field tab.</div>`;
   app.innerHTML = h;
+}
+
+const EVMETA = {
+  ROUND:  { cls:"ev-round",  tag:"Golf" },
+  MEAL:   { cls:"ev-meal",   tag:"Meal" },
+  TRAVEL: { cls:"ev-travel", tag:"Travel" },
+  OTHER:  { cls:"ev-other",  tag:"Other" }
+};
+
+function eventCard(e, ro, showDay){
+  const m = EVMETA[e.type] || EVMETA.OTHER;
+  const who = e.pid && P(e.pid) ? P(e.pid).name + " \u00b7 " : "";
+  const games = e.type === "ROUND" ? GAMES.filter(g => g.roundId === e.id) : [];
+  const tag = e.type === "TRAVEL" ? (e.dir === "ARRIVAL" ? "Arrives" : "Departs") : m.tag;
+
+  let sub = "";
+  if (e.type === "ROUND"){
+    sub = games.length
+      ? games.map(g => LABEL[g.type]).join(" + ")
+      : "No games set";
+  } else if (e.location) sub = e.location;
+
+  return `<div class="ev ${m.cls}">
+    <div class="ev-top">
+      <span class="ev-title">${esc(who + (e.title || "Untitled"))}</span>
+      <span class="ev-time">${showDay ? e.day + " " : ""}${e.time ? fmtTime(e.time) : "TBD"}</span>
+    </div>
+    ${sub ? `<div class="ev-sub">${esc(sub)}</div>` : ""}
+    <div class="ev-meta"><span class="ev-tag">${tag}</span>${
+      e.location && e.type === "ROUND" ? " \u00b7 " + esc(e.location) : ""}${
+      e.notes ? " \u00b7 " + esc(e.notes) : ""}</div>
+    <div class="ev-acts">
+      ${games.map(g => `<button class="chip" data-game="${g.id}"
+          data-jumphole="${currentHoleFor(g)}">${LABEL[g.type]} \u2192</button>`).join("")}
+      ${ro ? "" : `<button class="chip edit" data-editev="${e.id}">Edit</button>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- event editor ---------- */
+function renderEventEditor(h, id){
+  const e = EV(id);
+  if (!e){ editEvent = null; return render(); }
+  const isRound = e.type === "ROUND";
+
+  h += `<h2 class="sec">${isRound ? "Round" : "Event"}</h2>
+  <div class="imp">
+    <label>Type</label>
+    <div class="acts cwrap">
+      ${["ROUND","MEAL","TRAVEL","OTHER"].map(t =>
+        `<button class="btn ${e.type===t?"":"ghost"}" data-evtype="${t}">${EVMETA[t].tag}</button>`).join("")}
+    </div>
+
+    <label for="evtitle">${e.type==="TRAVEL" ? "Flight / how they're getting here" : "Title"}</label>
+    <input id="evtitle" data-evf="title" value="${esc(e.title||"")}">
+
+    <label>Day</label>
+    <div class="acts cwrap">
+      ${DAYS.map(d => `<button class="btn ${e.day===d?"":"ghost"}" data-evday="${d}">${d.slice(0,3)}</button>`).join("")}
+    </div>
+
+    <label for="evtime">Time (blank = TBD)</label>
+    <input id="evtime" data-evf="time" inputmode="numeric" placeholder="14:20"
+      value="${esc(e.time||"")}">
+
+    <label for="evloc">${isRound ? "Where (shown on the card)" : "Location"}</label>
+    <input id="evloc" data-evf="location" value="${esc(e.location||"")}">
+
+    <label for="evnotes">Notes</label>
+    <input id="evnotes" data-evf="notes" value="${esc(e.notes||"")}">`;
+
+  if (e.type === "TRAVEL"){
+    h += `<label>Who</label>
+    <div class="acts cwrap">
+      ${PLAYERS.map(p => `<button class="btn ${e.pid===p.id?"":"ghost"}" data-evpid="${p.id}">${esc(p.name)}</button>`).join("")}
+    </div>
+    <label>Direction</label>
+    <div class="acts">
+      <button class="btn ${e.dir!=="DEPARTURE"?"":"ghost"}" data-evdir="ARRIVAL">Arriving</button>
+      <button class="btn ${e.dir==="DEPARTURE"?"":"ghost"}" data-evdir="DEPARTURE">Departing</button>
+    </div>`;
+  }
+
+  if (isRound){
+    h += `<label>Course</label>
+    <div class="acts cwrap">
+      ${COURSES.map(c => `<button class="btn ${e.courseId===c.id?"":"ghost"}"
+        data-evcourse="${c.id}">${esc(c.name)}</button>`).join("")}
+    </div>
+    <label>Handicaps</label>
+    <div class="acts">
+      <button class="btn ${e.mode!=="FULL"?"":"ghost"}" data-evmode="RELATIVE">Relative</button>
+      <button class="btn ${e.mode==="FULL"?"":"ghost"}" data-evmode="FULL">Full</button>
+    </div>`;
+  }
+
+  h += `</div>`;
+
+  if (isRound){
+    h += `<h3 class="sub3">Games in this round</h3>`;
+    const games = GAMES.filter(g => g.roundId === e.id);
+    if (!games.length) h += `<p class="note">None yet. Two best ball matches usually run together.</p>`;
+    games.forEach(g => h += gameEditor(g));
+    h += `<div class="acts cwrap" style="margin-top:10px">
+      ${["BESTBALL","SCRAMBLE4","SCRAMBLE3","FORTYBALL"].map(t =>
+        `<button class="btn ghost" data-addgame="${e.id}:${t}">+ ${LABEL[t]}</button>`).join("")}
+    </div>`;
+  }
+
+  h += `<div class="acts" style="margin-top:18px">
+    <button class="btn" id="evdone">Done</button>
+    <button class="btn red" data-delev="${e.id}">Delete ${isRound ? "round" : "event"}</button>
+  </div>`;
+  app.innerHTML = h;
+}
+
+/* ---------- per-game roster editor ---------- */
+const NEEDED = { BESTBALL:[2,2], SCRAMBLE4:[4,4], SCRAMBLE3:[3,3], FORTYBALL:[4,4] };
+
+function gameEditor(g){
+  const need = NEEDED[g.type];
+  const a = g.teams[0].length, b = g.teams[1].length;
+  const okA = a === need[0], okB = b === need[1];
+  const played = holeList(g).some(hl => Object.keys(hl.scores||{}).length || hl.teamScore[0] != null);
+
+  return `<div class="gedit">
+    <div class="ev-top">
+      <span class="ev-title">${LABEL[g.type]}</span>
+      <button class="chip del" data-delgame="${g.id}">Remove</button>
+    </div>
+    ${played ? `<p class="note warn">This game already has scores. Changing teams now will
+      re-score holes already played.</p>` : ""}
+    <table class="rost"><tbody>
+      ${PLAYERS.map(p => {
+        const t = g.teams[0].includes(p.id) ? 0 : g.teams[1].includes(p.id) ? 1 : -1;
+        return `<tr><td class="rn">${esc(p.name)}</td>
+          <td><button class="side ${t===0?"on a":""}" data-side="${g.id}:${p.id}:0">A</button></td>
+          <td><button class="side ${t===1?"on b":""}" data-side="${g.id}:${p.id}:1">B</button></td>
+          <td><button class="side ${t===-1?"on out":""}" data-side="${g.id}:${p.id}:-1">Out</button></td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>
+    <div class="rost-sum">
+      <span class="${okA?"":"bad"}">A: ${a}/${need[0]}</span>
+      <span class="${okB?"":"bad"}">B: ${b}/${need[1]}</span>
+      ${g.type==="FORTYBALL" ? `<button class="chip ${g.hidden?"on":""}"
+        data-hidden="${g.id}">Hidden selections: ${g.hidden?"on":"off"}</button>` : ""}
+    </div>
+  </div>`;
 }
 
 /* ---------- players ---------- */
@@ -1487,7 +1690,7 @@ function randomHole(g, h){
 
 /* score bug: sibling games in the same round; long lines scroll like a ticker */
 function renderOtherBug(g){
-  const sibs = GAMES.filter(x => x.round === g.round && x.id !== g.id);
+  const sibs = GAMES.filter(x => x.roundId === g.roundId && x.id !== g.id);
   if (!sibs.length) return "";
   return sibs.map(s => {
     const st = gameStatusLabel(s);
@@ -1536,7 +1739,7 @@ function renderStrokeGrid(g, h){
   });
   out += `</tbody></table></div>
     <p class="sgrid-key">${esc(course.name)}. Each name shows tee, course handicap, then playing
-    handicap ${g.mode === "RELATIVE" ? "(relative — lowest course handicap here plays off scratch)" : "(full)"}.
+    handicap ${modeOf(g) === "RELATIVE" ? "(relative — lowest course handicap here plays off scratch)" : "(full)"}.
     A dot is a stroke on that hole.</p>`;
   return out;
 }
@@ -1678,8 +1881,7 @@ function renderPlayers(){
   const co = C(editCourseId);
   const ro = SYNC.on && !isAdmin;          // read-only for non-admins
   const dis = ro ? " disabled" : "";
-  const rounds = GAMES.filter(g => g.courseId === co.id)
-                      .map(g => g.round).filter((v,i,a) => a.indexOf(v)===i);
+  const rounds = ROUNDS().filter(r => r.courseId === co.id).map(r => r.title);
 
   /* --- 1. indexes: one number per player, true everywhere --- */
   let h = ro
@@ -1844,6 +2046,11 @@ function refreshCH(){
 document.addEventListener("click", e => {
   const el = e.target.closest("button");
   if (!el) return;
+  try { handleClick(el); }
+  catch (err){ console.error("click handler", err); render(); }
+});
+
+function handleClick(el){
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
@@ -1888,6 +2095,64 @@ document.addEventListener("click", e => {
     return;
   }
   if (el.id === "alock"){ isAdmin = false; toast("Setup locked"); render(); return; }
+  /* ---------- schedule / admin editing ---------- */
+  if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
+  if (el.id === "evdone"){ editEvent = null; render(); return; }
+
+  if (el.dataset.addev){
+    const id = "e" + Date.now().toString(36);
+    SCHEDULE.push({ id, day: el.dataset.addev, time:null, type:"OTHER", title:"New event" });
+    queueConfig(); editEvent = id; render(); return;
+  }
+  if (el.dataset.delev){
+    const e = EV(el.dataset.delev);
+    const kids = GAMES.filter(g => g.roundId === el.dataset.delev);
+    if (!confirm("Delete \"" + (e.title||"this event") + "\""
+      + (kids.length ? " and its " + kids.length + " game(s)?" : "?"))) return;
+    kids.forEach(g => removeGame(g.id));
+    SCHEDULE = SCHEDULE.filter(x => x.id !== el.dataset.delev);
+    queueConfig(); editEvent = null; render(); return;
+  }
+  if (el.dataset.evtype){
+    const e = EV(editEvent); e.type = el.dataset.evtype;
+    if (e.type === "TRAVEL" && !e.pid) e.pid = PLAYERS[0].id;
+    if (e.type === "ROUND"){
+      if (!e.courseId) e.courseId = COURSES[0].id;
+      if (!e.mode) e.mode = "RELATIVE";
+    }
+    queueConfig(); render(); return;
+  }
+  if (el.dataset.evday){ EV(editEvent).day = el.dataset.evday; queueConfig(); render(); return; }
+  if (el.dataset.evpid){ EV(editEvent).pid = el.dataset.evpid; queueConfig(); render(); return; }
+  if (el.dataset.evdir){ EV(editEvent).dir = el.dataset.evdir; queueConfig(); render(); return; }
+  if (el.dataset.evcourse){ EV(editEvent).courseId = el.dataset.evcourse; queueConfig(); render(); return; }
+  if (el.dataset.evmode){ EV(editEvent).mode = el.dataset.evmode; queueConfig(); render(); return; }
+
+  if (el.dataset.addgame){
+    const [rid, type] = el.dataset.addgame.split(":");
+    const g = { id:"g" + Date.now().toString(36), roundId:rid, type,
+                teams:{0:[],1:[]}, holes:blankHoles() };
+    if (type === "FORTYBALL") g.hidden = true;
+    GAMES.push(g); pushGame(g); render(); return;
+  }
+  if (el.dataset.delgame){
+    if (!confirm("Remove this game and its scores?")) return;
+    removeGame(el.dataset.delgame); render(); return;
+  }
+  if (el.dataset.hidden){
+    const g = GAMES.find(x => x.id === el.dataset.hidden);
+    g.hidden = !g.hidden; pushGame(g); render(); return;
+  }
+  if (el.dataset.side){
+    const [gid, pid, tRaw] = el.dataset.side.split(":");
+    const g = GAMES.find(x => x.id === gid);
+    const t = +tRaw;
+    g.teams[0] = g.teams[0].filter(x => x !== pid);
+    g.teams[1] = g.teams[1].filter(x => x !== pid);
+    if (t >= 0) g.teams[t].push(pid);
+    pushGame(g); render(); return;
+  }
+
   if (el.id === "aunlock"){
     const v = (document.getElementById("acode")||{}).value || "";
     const m = document.getElementById("amsg");
@@ -1984,11 +2249,24 @@ document.addEventListener("click", e => {
   if (el.id === "reset"){
     if (SYNC.on && !isAdmin){ toast("Admin only"); return; }
     g.holes = blankHoles(); pushGame(g); view.hole = 0; render(); toast("Game reset"); return; }
-});
+}
 
 /* text inputs: update the model in place so focus and the keyboard survive */
 document.addEventListener("input", e => {
   const t = e.target;
+
+  if (t.dataset && t.dataset.evf != null && editEvent){
+    const e = EV(editEvent);
+    let v = t.value;
+    if (t.dataset.evf === "time"){
+      v = v.replace(/[^0-9:]/g, "");
+      e.time = v.trim() === "" ? null : v;
+    } else {
+      e[t.dataset.evf] = v;
+    }
+    queueConfig();
+    return;
+  }
 
   if (t.dataset && t.dataset.index != null){
     t.value = t.value.replace(/[^0-9.]/g, "");
