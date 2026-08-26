@@ -314,6 +314,10 @@ input.cc:disabled{background:transparent;color:var(--ink-soft)}
 .imp input{width:100%;background:var(--paper);border:1px solid var(--rule);color:var(--ink);
   font-family:'Barlow',sans-serif;font-size:16px;padding:9px}
 .imp input:focus{outline:none;border-color:var(--brass)}
+.imp textarea{width:100%;background:var(--paper);border:1px solid var(--rule);color:var(--ink);
+  font-family:'IBM Plex Mono',monospace;font-size:16px;padding:9px;line-height:1.45}
+.imp textarea:focus{outline:none;border-color:var(--brass)}
+.csverr{margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--pencil);line-height:1.5}
 .imp .hint{font-size:12.5px;color:var(--ink-faint);margin:5px 0 0;line-height:1.4}
 .impmsg{font-size:13px;margin:10px 0 0;line-height:1.4}
 .impmsg.bad{color:var(--pencil);font-weight:500}
@@ -380,6 +384,20 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
 .rost-sum{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:9px;
   font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
 .rost-sum .bad{color:var(--pencil);font-weight:600}
+
+/* pairing matrix */
+.pmwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px}
+table.pm{border-collapse:collapse;width:100%;font-family:'IBM Plex Mono',monospace;font-size:12px}
+table.pm th,table.pm td{border:1px solid var(--rule-soft);text-align:center;padding:6px 3px;min-width:30px}
+table.pm thead th{background:var(--ink);color:var(--paper);font-size:10px;font-weight:500}
+table.pm tbody th{background:var(--paper-3);text-align:left;padding:6px 8px;white-space:nowrap;
+  font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;position:sticky;left:0;min-width:74px}
+table.pm td.self{background:var(--paper-3)}
+table.pm td.v.z{background:var(--pencil);color:var(--paper);font-weight:700}
+table.pm td.v.lo{background:var(--paper-2);color:var(--ink-soft)}
+table.pm td.v.mid{background:#DCD8C8}
+table.pm td.v.hi{background:var(--ink);color:var(--paper);font-weight:600}
+table.pm .tot{background:var(--paper-3);font-weight:600}
 
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
@@ -489,6 +507,78 @@ const COURSES = [
   }
 ];
 const C = id => COURSES.find(c => c.id === id) || COURSES[0];
+
+/* ---------- pairings ----------
+   How often each pair ends up together and against each other. Worth looking
+   at before pairings are final: an even spread is usually the goal, and the
+   zeroes are the ones to notice. */
+function pairMatrix(){
+  const withC = {}, agC = {}, played = {};
+  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; played[a.id] = 0;
+    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; }); });
+
+  GAMES.forEach(g => {
+    const A = g.teams[0] || [], B = g.teams[1] || [];
+    [...A, ...B].forEach(id => { if (played[id] != null) played[id]++; });
+    [A, B].forEach(team => team.forEach(a => team.forEach(b => {
+      if (a !== b && withC[a]) withC[a][b]++;
+    })));
+    A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
+  });
+  return { withC, agC, played };
+}
+
+function renderPairs(){
+  const { withC, agC, played } = pairMatrix();
+  const ids = PLAYERS.map(p => p.id);
+
+  const grid = (title, m, note) => {
+    const vals = [];
+    ids.forEach(a => ids.forEach(b => { if (a !== b) vals.push(m[a][b]); }));
+    const max = Math.max(1, ...vals);
+    const avg = vals.length ? vals.reduce((x,y)=>x+y,0) / vals.length : 0;
+    let h = `<h2 class="sec">${title}</h2><p class="note">${note}</p>
+      <div class="pmwrap"><table class="pm"><thead><tr><th></th>`;
+    ids.forEach(b => h += `<th>${esc(P(b).name.slice(0,4))}</th>`);
+    h += `<th class="tot">Tot</th></tr></thead><tbody>`;
+    ids.forEach(a => {
+      h += `<tr><th>${esc(P(a).name)}</th>`;
+      let rowTot = 0;
+      ids.forEach(b => {
+        if (a === b){ h += `<td class="self"></td>`; return; }
+        const v = m[a][b]; rowTot += v;
+        const lvl = v === 0 ? "z" : v > avg ? "hi" : v < avg ? "lo" : "mid";
+        h += `<td class="v ${lvl}">${v}</td>`;
+      });
+      h += `<td class="tot">${rowTot}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+    return h;
+  };
+
+  let h = `<div class="acts cwrap" style="margin-top:16px">
+    <button class="btn ghost" data-board="table">Standings</button>
+    <button class="btn" data-board="pairs">Pairings</button>
+  </div>`;
+
+  const anyGames = GAMES.some(g => (g.teams[0]||[]).length);
+  if (!anyGames){
+    h += `<p class="note" style="margin-top:20px">No teams set yet \u2014 build the rounds on the
+      Schedule tab and this fills in.</p>`;
+    app.innerHTML = h; return;
+  }
+
+  h += grid("Playing with", withC, "How many games each pair is on the same team.");
+  h += grid("Playing against", agC, "How many games each pair is on opposite sides.");
+
+  h += `<h2 class="sec">Games each</h2><table class="lb"><tbody>`;
+  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p =>
+    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td></tr>`);
+  h += `</tbody></table>
+    <div class="footnote">Red means never paired, dark means more often than average.
+    Check this before the pairings are final \u2014 it's harder to fix later.</div>`;
+  app.innerHTML = h;
+}
 
 /* ---------- players ---------- */
 const PLAYERS = [
@@ -855,7 +945,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1754";
+const BUILD = "2026-08-26.1804";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1324,6 +1414,8 @@ let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
 let editCourseId = COURSES[0].id;
 let editEvent = null;
+let csvPlan = null;
+let boardMode = "table";
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
 function queueConfig(){
@@ -1424,8 +1516,13 @@ function renderHome(){
 
 /* ---------- leaderboard ---------- */
 function renderBoard(){
+  if (boardMode === "pairs") return renderPairs();
   const s = standings();
-  let h = `<h2 class="sec">Standings</h2>
+  let h = `<div class="acts cwrap" style="margin-top:16px">
+    <button class="btn" data-board="table">Standings</button>
+    <button class="btn ghost" data-board="pairs">Pairings</button>
+  </div>
+  <h2 class="sec">Standings</h2>
   <table class="lb"><thead><tr>
     <th>Player</th><th>W</th><th>L</th><th>T</th><th>GP</th><th>Pts</th>
   </tr></thead><tbody>`;
@@ -1470,8 +1567,43 @@ function renderSchedule(){
   h += `<div class="acts cwrap" style="margin-top:12px">
     <button class="btn ${schedMode==="timeline"?"":"ghost"}" data-sched="timeline">Timeline</button>
     <button class="btn ${schedMode==="travel"?"":"ghost"}" data-sched="travel">Travel</button>
-    ${ro ? "" : `<button class="btn ${schedMode==="days"?"":"ghost"}" data-sched="days">Days</button>`}
+    ${ro ? "" : `<button class="btn ${schedMode==="days"?"":"ghost"}" data-sched="days">Days</button>
+      <button class="btn ${schedMode==="import"?"":"ghost"}" data-sched="import">Import</button>`}
   </div>`;
+
+  if (schedMode === "import" && !ro){
+    h += `<h2 class="sec">Import a schedule</h2>
+    <p class="note">Build the weekend in a spreadsheet, then paste it here. One row per thing
+      that happens. A <b>GAME</b> row belongs to the <b>ROUND</b> row above it.</p>
+    <div class="imp">
+      <label>Column order</label>
+      <p class="hint" style="margin:0 0 8px"><span class="mono">day, time, type, course, detail,
+        player, notes, teamA, teamB</span></p>
+      <label>type</label>
+      <p class="hint" style="margin:0 0 8px">ROUND · GAME · MEAL · TRAVEL-IN · TRAVEL-OUT · OTHER</p>
+      <label>detail</label>
+      <p class="hint" style="margin:0 0 8px">A title \u2014 or for GAME rows the format:
+        BESTBALL, SCRAMBLE4, SCRAMBLE3, 40BALL</p>
+      <label>teamA / teamB</label>
+      <p class="hint" style="margin:0 0 10px">Names joined with +, e.g.
+        <span class="mono">Blake+Daniel</span>. They must match the Field tab exactly.</p>
+      <div class="acts">
+        <button class="btn ghost" id="csvtemplate">Copy blank template</button>
+        <button class="btn ghost" id="csvcurrent">Copy current schedule</button>
+      </div>
+    </div>
+
+    <div class="imp" style="margin-top:12px">
+      <label for="csvin">Paste your rows</label>
+      <textarea id="csvin" rows="8" placeholder="day,time,type,course,detail,player,notes,teamA,teamB"></textarea>
+      <div class="acts"><button class="btn" id="csvcheck">Check it</button></div>
+      <div id="csvout"></div>
+    </div>
+    <div class="footnote">Nothing changes until you press Replace. Importing swaps out the whole
+      schedule and all games \u2014 handicaps, courses and tees are untouched.</div>`;
+    app.innerHTML = h;
+    return;
+  }
 
   if (schedMode === "days" && !ro){
     h += `<h2 class="sec">Days</h2>
@@ -1564,6 +1696,183 @@ function eventCard(e, ro, showDay){
         <button class="chip del" data-delev="${e.id}">Delete</button>`}
     </div>
   </div>`;
+}
+
+/* ============================================================
+   CSV IMPORT
+
+   One row per thing that happens. Rows are read in order, and a GAME row
+   attaches to the ROUND row above it — which is how a spreadsheet naturally
+   reads anyway.
+
+   day, time, type, course, detail, player, notes, teamA, teamB
+
+   type:   ROUND | GAME | MEAL | TRAVEL-IN | TRAVEL-OUT | OTHER
+   detail: the title, or for a GAME row the format
+           (BESTBALL / SCRAMBLE4 / SCRAMBLE3 / 40BALL)
+   teamA/teamB: names joined with +   e.g.  Blake+Daniel
+   ============================================================ */
+const CSV_TEMPLATE =
+`day,time,type,course,detail,player,notes,teamA,teamB
+Friday,14:20,TRAVEL-IN,,United 1442,Jason,ORD,,
+Friday,,TRAVEL-IN,,Driving,Dan,arrives afternoon,,
+Friday,19:30,MEAL,,Welcome dinner,,Reservation under Eisenberg,,
+Saturday,08:10,ROUND,Pine Hollow,,,,,
+Saturday,,GAME,,BESTBALL,,,Blake+Daniel,Dan+Howard
+Saturday,,GAME,,BESTBALL,,,Jason+Luke,Jake+Adam
+Saturday,13:40,ROUND,Marsh Ridge,,,,,
+Saturday,,GAME,,SCRAMBLE4,,,Blake+Daniel+Jason+Luke,Dan+Howard+Jake+Adam
+Saturday,19:00,MEAL,,Steak night,,Bar from 6:15,,
+Sunday,08:30,ROUND,Stonebridge,,,,,
+Sunday,,GAME,,SCRAMBLE3,,,Blake+Daniel+Jason,Dan+Howard+Jake
+Sunday,13:15,ROUND,Stonebridge,,,,,
+Sunday,,GAME,,40BALL,,,Blake+Daniel+Jason+Luke,Dan+Howard+Jake+Adam
+Sunday,20:45,TRAVEL-OUT,,Delta 1190,Jake,ORD,,
+`;
+
+function splitCSVLine(line){
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++){
+    const c = line[i];
+    if (q){
+      if (c === '"' && line[i+1] === '"'){ cur += '"'; i++; }
+      else if (c === '"') q = false;
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ","){ out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out.map(x => x.trim());
+}
+
+const FORMATS = { BESTBALL:"BESTBALL", "2V2":"BESTBALL", "BEST BALL":"BESTBALL",
+  SCRAMBLE4:"SCRAMBLE4", "4V4":"SCRAMBLE4", SCRAMBLE3:"SCRAMBLE3", "3V3":"SCRAMBLE3",
+  "40BALL":"FORTYBALL", FORTYBALL:"FORTYBALL" };
+
+/* Parse without touching live data — returns a plan plus any problems, so the
+   import can be previewed before anything is replaced. */
+function parseCSV(text){
+  const errors = [], events = [], games = [], days = [];
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  if (!lines.length) return { errors:["Nothing to import."], events, games, days };
+
+  let start = 0;
+  if (/day\s*,\s*time/i.test(lines[0])) start = 1;
+
+  const byName = n => PLAYERS.find(p => p.name.toLowerCase() === n.trim().toLowerCase());
+  const courseByName = n => COURSES.find(c => c.name.toLowerCase() === n.trim().toLowerCase());
+  let currentRound = null;
+  const uid = p => p + Math.random().toString(36).slice(2,8);
+
+  lines.slice(start).forEach((line, i) => {
+    const row = splitCSVLine(line);
+    const n = i + start + 1;
+    const [day, time, typeRaw, course, detail, player, notes, tA, tB] =
+      [0,1,2,3,4,5,6,7,8].map(k => row[k] || "");
+    const type = typeRaw.toUpperCase().trim();
+    if (!type) return;
+
+    if (day && !days.includes(day)) days.push(day);
+
+    const t = time.trim() ? time.trim() : null;
+    if (t && !/^\d{1,2}:\d{2}$/.test(t)) errors.push(`Line ${n}: time "${t}" should look like 08:10.`);
+
+    if (type === "ROUND"){
+      const c = courseByName(course);
+      if (!c) errors.push(`Line ${n}: no course called "${course}". Add it on the Field tab first.`);
+      currentRound = { id: uid("r"), type:"ROUND", day: day || days[0], time: t,
+                       courseId: c ? c.id : (COURSES[0]||{}).id, mode:"RELATIVE" };
+      events.push(currentRound);
+      return;
+    }
+
+    if (type === "GAME"){
+      const fmt = FORMATS[detail.toUpperCase().trim()];
+      if (!fmt){ errors.push(`Line ${n}: "${detail}" isn't a game format.`); return; }
+      if (!currentRound){ errors.push(`Line ${n}: a GAME row needs a ROUND row above it.`); return; }
+      const side = str => str.split("+").map(x => x.trim()).filter(Boolean).map(nm => {
+        const p = byName(nm);
+        if (!p) errors.push(`Line ${n}: no player called "${nm}".`);
+        return p ? p.id : null;
+      }).filter(Boolean);
+      const a = side(tA), b = side(tB);
+      const need = NEEDED[fmt];
+      if (a.length !== need[0] || b.length !== need[1])
+        errors.push(`Line ${n}: ${LABEL[fmt]} needs ${need[0]} v ${need[1]}, got ${a.length} v ${b.length}.`);
+      const g = { id: uid("g"), roundId: currentRound.id, type: fmt,
+                  teams:{0:a,1:b}, holes: blankHoles() };
+      if (fmt === "FORTYBALL") g.hidden = true;
+      games.push(g);
+      return;
+    }
+
+    if (type === "MEAL" || type === "OTHER"){
+      events.push({ id: uid("e"), type, day: day || days[0], time: t,
+                    title: detail || (type === "MEAL" ? "Meal" : "Event"),
+                    location: course || "", notes });
+      return;
+    }
+
+    if (type === "TRAVEL-IN" || type === "TRAVEL-OUT"){
+      const p = byName(player);
+      if (!p) errors.push(`Line ${n}: no player called "${player}".`);
+      events.push({ id: uid("e"), type:"TRAVEL", day: day || days[0], time: t,
+                    dir: type === "TRAVEL-OUT" ? "DEPARTURE" : "ARRIVAL",
+                    pid: p ? p.id : PLAYERS[0].id, title: detail || "Travel", notes });
+      return;
+    }
+
+    errors.push(`Line ${n}: unknown type "${typeRaw}".`);
+  });
+
+  return { errors, events, games, days };
+}
+
+/* the current weekend, in the same shape the importer reads */
+function scheduleToCSV(){
+  const rows = ["day,time,type,course,detail,player,notes,teamA,teamB"];
+  const esc2 = v => /[",]/.test(v||"") ? '"' + String(v).replace(/"/g,'""') + '"' : (v||"");
+  const ordered = SCHEDULE.slice().sort((a,b) =>
+    DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
+  ordered.forEach(e => {
+    if (e.type === "ROUND"){
+      rows.push([e.day, e.time||"", "ROUND", esc2((C(e.courseId)||{}).name), "", "", "", "", ""].join(","));
+      GAMES.filter(g => g.roundId === e.id).forEach(g => {
+        const nm = t => g.teams[t].map(id => (P(id)||{}).name).filter(Boolean).join("+");
+        const fmt = g.type === "FORTYBALL" ? "40BALL" : g.type;
+        rows.push([e.day, "", "GAME", "", fmt, "", "", esc2(nm(0)), esc2(nm(1))].join(","));
+      });
+    } else if (e.type === "TRAVEL"){
+      rows.push([e.day, e.time||"", e.dir === "DEPARTURE" ? "TRAVEL-OUT" : "TRAVEL-IN", "",
+        esc2(e.title), esc2((P(e.pid)||{}).name), esc2(e.notes), "", ""].join(","));
+    } else {
+      rows.push([e.day, e.time||"", e.type, esc2(e.location), esc2(e.title), "",
+        esc2(e.notes), "", ""].join(","));
+    }
+  });
+  return rows.join("\n");
+}
+
+function copyText(txt, label){
+  const done = () => toast(label + " copied");
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(txt).then(done).catch(() => showFallback(txt));
+  else showFallback(txt);
+}
+function showFallback(txt){
+  const o = document.getElementById("csvout");
+  if (o){ o.innerHTML = `<p class="note">Select and copy:</p>
+    <textarea rows="8" readonly>${esc(txt)}</textarea>`; }
+}
+
+function applyCSV(plan){
+  GAMES.slice().forEach(g => removeGame(g.id));
+  SCHEDULE = plan.events;
+  GAMES = plan.games.slice();
+  if (plan.days.length){ DAYS.length = 0; plan.days.forEach(d => DAYS.push(d)); }
+  GAMES.forEach(g => pushGame(g));
+  queueConfig();
 }
 
 /* ---------- event editor ---------- */
@@ -1678,6 +1987,78 @@ function gameEditor(g){
         data-hidden="${g.id}">Hidden selections: ${g.hidden?"on":"off"}</button>` : ""}
     </div>
   </div>`;
+}
+
+/* ---------- pairings ----------
+   How often each pair ends up together and against each other. Worth looking
+   at before pairings are final: an even spread is usually the goal, and the
+   zeroes are the ones to notice. */
+function pairMatrix(){
+  const withC = {}, agC = {}, played = {};
+  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; played[a.id] = 0;
+    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; }); });
+
+  GAMES.forEach(g => {
+    const A = g.teams[0] || [], B = g.teams[1] || [];
+    [...A, ...B].forEach(id => { if (played[id] != null) played[id]++; });
+    [A, B].forEach(team => team.forEach(a => team.forEach(b => {
+      if (a !== b && withC[a]) withC[a][b]++;
+    })));
+    A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
+  });
+  return { withC, agC, played };
+}
+
+function renderPairs(){
+  const { withC, agC, played } = pairMatrix();
+  const ids = PLAYERS.map(p => p.id);
+
+  const grid = (title, m, note) => {
+    const vals = [];
+    ids.forEach(a => ids.forEach(b => { if (a !== b) vals.push(m[a][b]); }));
+    const max = Math.max(1, ...vals);
+    const avg = vals.length ? vals.reduce((x,y)=>x+y,0) / vals.length : 0;
+    let h = `<h2 class="sec">${title}</h2><p class="note">${note}</p>
+      <div class="pmwrap"><table class="pm"><thead><tr><th></th>`;
+    ids.forEach(b => h += `<th>${esc(P(b).name.slice(0,4))}</th>`);
+    h += `<th class="tot">Tot</th></tr></thead><tbody>`;
+    ids.forEach(a => {
+      h += `<tr><th>${esc(P(a).name)}</th>`;
+      let rowTot = 0;
+      ids.forEach(b => {
+        if (a === b){ h += `<td class="self"></td>`; return; }
+        const v = m[a][b]; rowTot += v;
+        const lvl = v === 0 ? "z" : v > avg ? "hi" : v < avg ? "lo" : "mid";
+        h += `<td class="v ${lvl}">${v}</td>`;
+      });
+      h += `<td class="tot">${rowTot}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+    return h;
+  };
+
+  let h = `<div class="acts cwrap" style="margin-top:16px">
+    <button class="btn ghost" data-board="table">Standings</button>
+    <button class="btn" data-board="pairs">Pairings</button>
+  </div>`;
+
+  const anyGames = GAMES.some(g => (g.teams[0]||[]).length);
+  if (!anyGames){
+    h += `<p class="note" style="margin-top:20px">No teams set yet \u2014 build the rounds on the
+      Schedule tab and this fills in.</p>`;
+    app.innerHTML = h; return;
+  }
+
+  h += grid("Playing with", withC, "How many games each pair is on the same team.");
+  h += grid("Playing against", agC, "How many games each pair is on opposite sides.");
+
+  h += `<h2 class="sec">Games each</h2><table class="lb"><tbody>`;
+  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p =>
+    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td></tr>`);
+  h += `</tbody></table>
+    <div class="footnote">Red means never paired, dark means more often than average.
+    Check this before the pairings are final \u2014 it's harder to fix later.</div>`;
+  app.innerHTML = h;
 }
 
 /* ---------- players ---------- */
@@ -2236,6 +2617,31 @@ function handleClick(el){
   if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
   if (el.id === "evdone"){ editEvent = null; render(); return; }
 
+  if (el.id === "csvtemplate"){ copyText(CSV_TEMPLATE, "Template"); return; }
+  if (el.id === "csvcurrent"){ copyText(scheduleToCSV(), "Schedule"); return; }
+  if (el.id === "csvcheck"){
+    const txt = (document.getElementById("csvin")||{}).value || "";
+    const plan = parseCSV(txt);
+    csvPlan = plan.errors.length ? null : plan;
+    const o = document.getElementById("csvout");
+    if (plan.errors.length){
+      o.innerHTML = `<p class="impmsg bad">${plan.errors.length} problem(s) \u2014 nothing imported:</p>
+        <ul class="csverr">${plan.errors.slice(0,12).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`;
+    } else {
+      const rounds = plan.events.filter(e=>e.type==="ROUND").length;
+      o.innerHTML = `<p class="impmsg good">Looks good: ${plan.days.length} day(s),
+        ${plan.events.length} event(s), ${rounds} round(s), ${plan.games.length} game(s).</p>
+        <div class="acts"><button class="btn red" id="csvapply">Replace schedule</button></div>`;
+    }
+    return;
+  }
+  if (el.id === "csvapply"){
+    if (!csvPlan) return;
+    if (!confirm("Replace the whole schedule and every game with this import?\n\n"
+      + "Scores in existing games are discarded. Handicaps, courses and tees are kept.")) return;
+    applyCSV(csvPlan); csvPlan = null; schedMode = "timeline"; render();
+    toast("Schedule imported"); return;
+  }
   if (el.id === "dayadd"){
     DAYS.push("New day"); queueConfig(); render(); return;
   }
@@ -2328,6 +2734,7 @@ function handleClick(el){
   }
   if (el.dataset.course){ editCourseId = el.dataset.course; render(); return; }
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
+  if (el.dataset.board){ boardMode = el.dataset.board; render(); return; }
   if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
   if (el.id === "back"){ view.gameId = null; render(); return; }
   if (el.dataset.game){ view.gameId = el.dataset.game;
