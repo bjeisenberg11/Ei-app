@@ -751,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1309";
+const BUILD = "2026-08-26.1316";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -904,6 +904,7 @@ async function connectWith(i){
 
     startWatchdog(i);
     flushQueue();
+    kickServer(myGen, cfgRef);
 
   } catch (err){
     console.error(err);
@@ -932,6 +933,30 @@ async function seedIfNeeded(fsMod, cfgRef, gamesRef){
 }
 
 let serverSeen = false;
+/* Firestore serves cached data immediately and may not open a network
+   connection until something forces it — which is why scoring a hole "woke
+   it up". A direct server read on startup does that deliberately. */
+async function kickServer(myGen, cfgRef){
+  const { getDocFromServer } = SYNC.api;
+  for (let n = 0; n < 6; n++){
+    if (myGen !== gen || serverSeen) return;
+    try {
+      await getDocFromServer(cfgRef);
+      if (myGen !== gen) return;
+      serverSeen = true;
+      SYNC.cache.cfg = false;
+      SYNC.seen.cfg = true;
+      SYNC.err = null;
+      rememberTransport(SYNC.transport);
+      setSync("live", { lastAt: new Date() });
+      flushQueue();
+      return;
+    } catch (e){
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+}
+
 function startWatchdog(i){
   const myGen = gen;
   serverSeen = false;
@@ -968,6 +993,13 @@ function touchSync(which, snapOrQs){
   SYNC.seen[which] = true;
   // only the listeners we've actually heard from count
   const live = Object.keys(SYNC.seen).some(k => SYNC.seen[k] && !SYNC.cache[k]);
+  if (!live && !serverSeen){
+    /* Cached data before we've ever reached the server isn't "offline" —
+       it's simply still connecting. Claiming offline here is what made a
+       working app look broken on first open. */
+    setSync("connecting");
+    return;
+  }
   if (live && !serverSeen){
     serverSeen = true;
     rememberTransport(SYNC.transport);
