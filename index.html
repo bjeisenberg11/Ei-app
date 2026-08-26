@@ -448,17 +448,19 @@ function blankHoles(){
 }
 const holeList = g => Array.from({length:18}, (_,i) => g.holes[i]);
 
+/* teams is keyed 0/1 rather than a two-element array: Firestore rejects any
+   array whose elements are themselves arrays, which silently fails seeding. */
 let GAMES = [
   { id:"g1", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
-    teams:[["p1","p4"],["p2","p5"]], holes:blankHoles() },
+    teams:{0:["p1","p4"],1:["p2","p5"]}, holes:blankHoles() },
   { id:"g2", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
-    teams:[["p3","p6"],["p7","p8"]], holes:blankHoles() },
+    teams:{0:["p3","p6"],1:["p7","p8"]}, holes:blankHoles() },
   { id:"g3", round:"Saturday PM", courseId:"marsh", type:"SCRAMBLE4", mode:"RELATIVE",
-    teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() },
+    teams:{0:["p1","p4","p3","p6"],1:["p2","p5","p7","p8"]}, holes:blankHoles() },
   { id:"g4", round:"Sunday AM", courseId:"stone", type:"SCRAMBLE3", mode:"RELATIVE",
-    teams:[["p1","p4","p3"],["p2","p5","p7"]], holes:blankHoles() },
+    teams:{0:["p1","p4","p3"],1:["p2","p5","p7"]}, holes:blankHoles() },
   { id:"g5", round:"Sunday PM", courseId:"stone", type:"FORTYBALL", mode:"RELATIVE", hidden:true,
-    teams:[["p1","p4","p3","p6"],["p2","p5","p7","p8"]], holes:blankHoles() }
+    teams:{0:["p1","p4","p3","p6"],1:["p2","p5","p7","p8"]}, holes:blankHoles() }
 ];
 
 /* ---------- §10 weekend schedule ---------- */
@@ -672,7 +674,8 @@ function standings(){
   GAMES.forEach(g => {
     const r = gameResult(g);
     if (!r) return;
-    g.teams.forEach((team, t) => {
+    [0,1].forEach(t => {
+      const team = g.teams[t];
       const side = t === 0 ? "A" : "B";
       team.forEach(id => {
         rec[id].gp++;
@@ -736,12 +739,12 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.0526";
+const BUILD = "2026-08-26.0529";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
    writes like `holes.5.scores.p1` silently fail against arrays. */
-const SCHEMA = 2;
+const SCHEMA = 3;
 const ADMIN_CODE = "eagle";
 
 const SYNC = {
