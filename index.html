@@ -842,7 +842,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1710";
+const BUILD = "2026-08-26.1721";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -977,6 +977,7 @@ async function connectWith(i){
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
+      migrateLoaded();
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
     }, e => reportListenerError(myGen, e)));
@@ -1133,6 +1134,67 @@ function dequeue(item){
   queue = queue.filter(x => !(x.k === item.k && x.t === item.t));
   saveQueue();
   paintSync();
+}
+
+/* ============================================================
+   MIGRATION
+
+   Config is never overwritten by seeding — that's what keeps real handicaps
+   and courses safe across app updates. The flip side is that data written by
+   an older version keeps loading from the server, so anything the new code
+   relies on has to be repaired here instead.
+
+   Rounds used to be a string on each game; they're now schedule events with
+   ids. Without this, an event has no id, EV() finds nothing, and Edit/Delete
+   appear to do nothing at all.
+   ============================================================ */
+function migrateLoaded(){
+  let changed = false;
+  const uid = p => p + Math.random().toString(36).slice(2,8);
+
+  // 1. every schedule event needs an id
+  SCHEDULE.forEach(e => {
+    if (!e.id){ e.id = uid(e.type === "ROUND" ? "r" : "e"); changed = true; }
+    if (!e.type){ e.type = "OTHER"; changed = true; }
+    if (!e.day){ e.day = DAYS[0]; changed = true; }
+  });
+
+  // 2. games written with a round NAME need a matching round event
+  GAMES.forEach(g => {
+    if (g.roundId && EV(g.roundId)) return;
+    const label = g.round || "Round";
+    let r = SCHEDULE.find(e => e.type === "ROUND" && e.title === label);
+    if (!r){
+      r = { id: uid("r"), type:"ROUND", title: label,
+            day: /sunday/i.test(label) ? "Sunday" : /monday/i.test(label) ? "Monday"
+               : /friday/i.test(label) ? "Friday" : "Saturday",
+            time: /pm/i.test(label) ? "13:00" : "08:00",
+            courseId: g.courseId || COURSES[0].id,
+            mode: g.mode || "RELATIVE" };
+      SCHEDULE.push(r); changed = true;
+    }
+    g.roundId = r.id;
+    delete g.round; delete g.courseId; delete g.mode;
+    pushGame(g);
+  });
+
+  // 3. rounds must carry a course and a handicap mode
+  SCHEDULE.forEach(e => {
+    if (e.type !== "ROUND") return;
+    if (!e.courseId || !C(e.courseId)){ e.courseId = COURSES[0].id; changed = true; }
+    if (!e.mode){ e.mode = "RELATIVE"; changed = true; }
+  });
+
+  // 4. teams stored as an array can't be written to Firestore
+  GAMES.forEach(g => {
+    if (Array.isArray(g.teams)){
+      g.teams = { 0: g.teams[0] || [], 1: g.teams[1] || [] };
+      pushGame(g);
+    }
+  });
+
+  if (changed) queueConfig();
+  return changed;
 }
 
 /* re-apply anything not yet acknowledged on top of server data, so a pending
@@ -2378,6 +2440,7 @@ document.addEventListener("focusin", e => {
   if (c && (c.contains("cc") || c.contains("cc-like") || c.contains("tf"))) e.target.select();
 });
 
+migrateLoaded();
 applyQueueLocally();
 render();
 paintSync();
