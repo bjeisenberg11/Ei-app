@@ -57,7 +57,14 @@ button{font-family:inherit;color:inherit}
   text-transform:uppercase;letter-spacing:.03em;font-size:19px;line-height:1}
 .top .sub{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.15em;font-size:10px;font-weight:600;color:var(--ink-soft);margin-top:2px}
-.back{margin-left:auto;background:none;border:1px solid var(--ink);color:var(--ink);
+.topright{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
+.syncdot{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.1em;font-size:9.5px;font-weight:700;padding:3px 7px;white-space:nowrap;
+  border:1px solid var(--rule);color:var(--ink-soft);background:var(--paper-2)}
+.syncdot.live{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+.syncdot.offline,.syncdot.error{border-color:var(--pencil);background:var(--pencil);color:var(--paper)}
+.syncdot.connecting,.syncdot.pending{border-color:var(--brass);background:var(--brass);color:var(--paper)}
+.back{background:none;border:1px solid var(--ink);color:var(--ink);
   font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.11em;
   font-size:11px;font-weight:700;padding:6px 11px;cursor:pointer}
 
@@ -303,7 +310,10 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
     <h1 id="ttl">Eisenberg Invitational</h1>
     <div class="sub" id="tsub">Prototype · scoring engine</div>
   </div>
-  <button class="back" id="back" style="display:none">Back</button>
+  <span class="topright">
+    <span class="syncdot local" id="syncdot">On this device</span>
+    <button class="back" id="back" style="display:none">Back</button>
+  </span>
 </div></div></header>
 
 <div class="wrap"><main id="app"></main></div>
@@ -397,15 +407,23 @@ const PLAYERS = [
 const P = id => PLAYERS.find(p => p.id === id);
 
 /* ---------- games ---------- */
-function blankHoles(){
-  return Array.from({length:18}, () => ({
-    scores:{},               // playerId -> number | "PU"
-    teamScore:[null,null],   // scrambles
-    conceded:null,           // 0 | 1 = team index that GAVE the hole
-    selected:[[],[]],        // 40ball: playerIds spent, per team
-    locked:[false,false]     // 40ball
-  }));
+function blankHole(){
+  return {
+    scores:{},                   // playerId -> number | "PU"
+    teamScore:{},                // scrambles: 0 / 1 -> number
+    conceded:null,               // 0 | 1 = team index that GAVE the hole
+    selected:{0:[],1:[]},        // 40ball: playerIds spent, per team
+    locked:{0:false,1:false}     // 40ball
+  };
 }
+/* keyed by hole number as an object, not an array, so two phones editing
+   different holes merge instead of overwriting each other */
+function blankHoles(){
+  const o = {};
+  for (let i = 0; i < 18; i++) o[i] = blankHole();
+  return o;
+}
+const holeList = g => Array.from({length:18}, (_,i) => g.holes[i]);
 
 let GAMES = [
   { id:"g1", round:"Saturday AM", courseId:"pine", type:"BESTBALL", mode:"RELATIVE",
@@ -581,9 +599,9 @@ const matchLocked = (g, h) => { const s = matchState(g); return s.closed && h >=
    ============================================================ */
 const QUOTA = 40;
 function fbSpent(g, t){
-  return g.holes.reduce((n,hole) => n + (hole.locked[t] ? hole.selected[t].length : 0), 0);
+  return holeList(g).reduce((n,hole) => n + (hole.locked[t] ? hole.selected[t].length : 0), 0);
 }
-function fbHolesLocked(g, t){ return g.holes.filter(hole => hole.locked[t]).length; }
+function fbHolesLocked(g, t){ return holeList(g).filter(hole => hole.locked[t]).length; }
 function fbAvailable(g, t, h){
   return g.teams[t].filter(id => {
     const v = g.holes[h].scores[id];
@@ -602,7 +620,7 @@ function fbBudget(g, t, h){
 }
 function fbTotal(g, t){
   let sum = 0;
-  g.holes.forEach((hole, h) => {
+  holeList(g).forEach((hole, h) => {
     if (!hole.locked[t]) return;
     hole.selected[t].forEach(id => { const n = netOf(id, g, h); if (n != null) sum += n; });
   });
@@ -668,11 +686,158 @@ function currentHoleFor(g){
 }
 
 /* ============================================================
+   SYNC LAYER  (Phase 2)
+
+   Paste your Firebase config below and every phone shares one live
+   tournament. Leave it blank and the app runs exactly as before, all in
+   memory on this device — useful for testing scoring without a network.
+
+   Data shape in Firestore:
+     tournaments/{TID}                     config: players, courses, schedule
+     tournaments/{TID}/games/{gameId}      one doc per game
+
+   Scores are written as single fields — e.g. `holes.7.scores.p3` — so two
+   people entering different scores at the same time merge cleanly instead
+   of overwriting each other's work. Whole-document writes would not.
+
+   NOTE ON ACCESS: this is a public page with an open database. Anyone with
+   the link can score. That's deliberate for eight friends and no personal
+   data. The admin code below is in the page source, so treat it as a guard
+   against mis-taps, not as security.
+   ============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBsUVDTLlYSODuwBi_mCBNtxuSm8DyM8pU",
+  authDomain: "ei-app-81bf4.firebaseapp.com",
+  projectId: "ei-app-81bf4",
+  storageBucket: "ei-app-81bf4.firebasestorage.app",
+  messagingSenderId: "499802253483",
+  appId: "1:499802253483:web:5ac27bc1501e8319962fee"
+};
+const TID = "ei-2026";
+const ADMIN_CODE = "eagle";
+
+const SYNC = {
+  on: false,          // Firebase configured and running
+  state: "local",     // local | connecting | live | offline | error
+  pending: 0,         // writes not yet acknowledged
+  lastAt: null,       // last successful sync
+  db: null, api: null
+};
+
+function setSync(state, extra){
+  SYNC.state = state;
+  if (extra && extra.lastAt) SYNC.lastAt = extra.lastAt;
+  paintSync();
+}
+
+function paintSync(){
+  const el = document.getElementById("syncdot");
+  if (!el) return;
+  const label = {
+    local:      "On this device",
+    connecting: "Connecting…",
+    live:       SYNC.pending ? `Saving ${SYNC.pending}…` : "Live",
+    offline:    "Offline — will sync",
+    error:      "Sync error"
+  }[SYNC.state] || SYNC.state;
+  el.className = "syncdot " + SYNC.state + (SYNC.pending ? " pending" : "");
+  el.textContent = label;
+  el.title = SYNC.lastAt ? "Last synced " + SYNC.lastAt.toLocaleTimeString() : "";
+}
+
+async function initSync(){
+  if (!FIREBASE_CONFIG.apiKey){ setSync("local"); return; }
+  setSync("connecting");
+  try {
+    const [appMod, fsMod] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
+    ]);
+    const app = appMod.initializeApp(FIREBASE_CONFIG);
+    // offline persistence: scores entered without signal queue and send later
+    const db = fsMod.initializeFirestore(app, {
+      localCache: fsMod.persistentLocalCache({})
+    });
+    SYNC.db = db; SYNC.api = fsMod; SYNC.on = true;
+
+    const cfgRef  = fsMod.doc(db, "tournaments", TID);
+    const gamesRef = fsMod.collection(db, "tournaments", TID, "games");
+
+    // seed once if the tournament doesn't exist yet
+    const snap = await fsMod.getDoc(cfgRef);
+    if (!snap.exists()){
+      await fsMod.setDoc(cfgRef, { players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+      for (const g of GAMES) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+    }
+
+    fsMod.onSnapshot(cfgRef, d => {
+      const v = d.data(); if (!v) return;
+      if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
+      if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
+      if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
+      touchSync(d);
+      if (!document.querySelector("input:focus")) render();
+    }, () => setSync("error"));
+
+    fsMod.onSnapshot(gamesRef, qs => {
+      qs.forEach(d => {
+        const v = d.data();
+        const i = GAMES.findIndex(x => x.id === v.id);
+        if (i >= 0) GAMES[i] = v; else GAMES.push(v);
+      });
+      SYNC.pending = qs.docs.filter(d => d.metadata.hasPendingWrites).length;
+      touchSync(qs);
+      if (!document.querySelector("input:focus")) render();
+    }, () => setSync("error"));
+
+  } catch (err){
+    console.error(err);
+    setSync("error");
+  }
+}
+
+function touchSync(snapOrQs){
+  const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
+  setSync(fromCache ? "offline" : "live", { lastAt: fromCache ? SYNC.lastAt : new Date() });
+}
+
+/* write a single field on a single hole — the merge-safe unit */
+function pushHole(g, h, path, value){
+  if (!SYNC.on) return;
+  const { doc, updateDoc } = SYNC.api;
+  SYNC.pending++; paintSync();
+  updateDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), { [`holes.${h}.${path}`]: value })
+    .then(() => { SYNC.pending = Math.max(0, SYNC.pending-1); setSync("live", {lastAt:new Date()}); })
+    .catch(() => { SYNC.pending = Math.max(0, SYNC.pending-1); setSync("offline"); });
+}
+/* replace a whole game (reset) */
+function pushGame(g){
+  if (!SYNC.on) return;
+  const { doc, setDoc } = SYNC.api;
+  setDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), g)
+    .then(() => setSync("live", {lastAt:new Date()})).catch(() => setSync("offline"));
+}
+/* config: players, courses, schedule — admin edits, low contention */
+function pushConfig(){
+  if (!SYNC.on) return;
+  const { doc, setDoc } = SYNC.api;
+  setDoc(doc(SYNC.db, "tournaments", TID),
+    { players: PLAYERS, courses: COURSES, schedule: SCHEDULE }, { merge:true })
+    .then(() => setSync("live", {lastAt:new Date()})).catch(() => setSync("offline"));
+}
+
+/* ============================================================
    VIEW STATE
    ============================================================ */
 let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
 let editCourseId = COURSES[0].id;
+let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
+let cfgTimer = null;
+function queueConfig(){
+  clearTimeout(cfgTimer);
+  cfgTimer = setTimeout(pushConfig, 700);   // debounce typing
+}
 
 const $ = s => document.querySelector(s);
 const app = $("#app");
@@ -1082,6 +1247,18 @@ function renderCorridor(g, t, h){
 
 function renderPlayers(){
   const co = C(editCourseId);
+  if (SYNC.on && !isAdmin){
+    app.innerHTML = `<h2 class="sec">Setup</h2>
+      <div class="imp">
+        <label for="acode">Admin code</label>
+        <input id="acode" type="password" inputmode="text" autocomplete="off" placeholder="\u2022\u2022\u2022\u2022\u2022">
+        <div class="acts"><button class="btn" id="aunlock">Unlock setup</button></div>
+        <p class="impmsg" id="amsg"></p>
+        <p class="hint">Scoring needs no code \u2014 anyone can enter scores from any phone.
+          This only guards course, tee and handicap settings so they don't get changed by mistake.</p>
+      </div>`;
+    return;
+  }
   const rounds = GAMES.filter(g => g.courseId === co.id)
                       .map(g => g.round).filter((v,i,a) => a.indexOf(v)===i);
 
@@ -1225,6 +1402,13 @@ document.addEventListener("click", e => {
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
+  if (el.id === "aunlock"){
+    const v = (document.getElementById("acode")||{}).value || "";
+    const m = document.getElementById("amsg");
+    if (v.trim().toLowerCase() === ADMIN_CODE){ isAdmin = true; toast("Setup unlocked"); render(); }
+    else if (m){ m.className = "impmsg bad"; m.textContent = "Wrong code."; }
+    return;
+  }
   if (el.dataset.course){ editCourseId = el.dataset.course; render(); return; }
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
   if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
@@ -1243,20 +1427,29 @@ document.addEventListener("click", e => {
     if (kind === "ts"){
       const t = +ref, cur = hole.teamScore[t] ?? courseOf(g).holes[h].par - d;
       hole.teamScore[t] = Math.max(1, Math.min(14, cur + d));
+      pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
     } else {
       const cur = (hole.scores[ref] === "PU" || hole.scores[ref] == null)
         ? courseOf(g).holes[h].par - d : hole.scores[ref];
       hole.scores[ref] = Math.max(1, Math.min(14, cur + d));
+      pushHole(g, h, `scores.${ref}`, hole.scores[ref]);
     }
     render(); return;
   }
 
   if (el.dataset.pu){
     const hole = g.holes[h], id = el.dataset.pu;
-    if (hole.scores[id] === "PU") delete hole.scores[id];
-    else {
+    if (hole.scores[id] === "PU"){
+      delete hole.scores[id];
+      pushHole(g, h, `scores.${id}`, null);
+    } else {
       hole.scores[id] = "PU";
-      [0,1].forEach(t => hole.selected[t] = hole.selected[t].filter(x => x !== id));
+      pushHole(g, h, `scores.${id}`, "PU");
+      [0,1].forEach(t => {
+        const before = hole.selected[t].length;
+        hole.selected[t] = hole.selected[t].filter(x => x !== id);
+        if (hole.selected[t].length !== before) pushHole(g, h, `selected.${t}`, hole.selected[t]);
+      });
     }
     render(); return;
   }
@@ -1264,6 +1457,7 @@ document.addEventListener("click", e => {
   if (el.dataset.concede != null){
     const t = +el.dataset.concede, hole = g.holes[h];
     hole.conceded = hole.conceded === t ? null : t;
+    pushHole(g, h, "conceded", hole.conceded);
     render(); return;
   }
 
@@ -1273,6 +1467,7 @@ document.addEventListener("click", e => {
     const i = hole.selected[t].indexOf(id);
     if (i >= 0) hole.selected[t].splice(i,1);
     else hole.selected[t].push(id);
+    pushHole(g, h, `selected.${t}`, hole.selected[t]);
     render(); return;
   }
 
@@ -1281,18 +1476,23 @@ document.addEventListener("click", e => {
     const n = g.holes[h].selected[t].length;
     if (n < b.min || n > b.max){ toast("Outside legal range"); return; }
     g.holes[h].locked[t] = true;
+    pushHole(g, h, `locked.${t}`, true);
     toast(`Locked hole ${h+1}`);
     render(); return;
   }
   if (el.dataset.unlock != null){
+    if (!isAdmin){ toast("Admin only"); return; }
     const t = +el.dataset.unlock;
     g.holes[h].locked[t] = false;
+    pushHole(g, h, `locked.${t}`, false);
     toast("Hole reopened \u2014 visible to all");
     render(); return;
   }
 
   if (el.id === "togglestrokes"){ showStrokes = !showStrokes; render(); return; }
-  if (el.id === "reset"){ g.holes = blankHoles(); view.hole = 0; render(); toast("Game reset"); return; }
+  if (el.id === "reset"){
+    if (SYNC.on && !isAdmin){ toast("Admin only"); return; }
+    g.holes = blankHoles(); pushGame(g); view.hole = 0; render(); toast("Game reset"); return; }
 });
 
 /* text inputs: update the model in place so focus and the keyboard survive */
@@ -1302,7 +1502,7 @@ document.addEventListener("input", e => {
   if (t.dataset && t.dataset.index != null){
     t.value = t.value.replace(/[^0-9.]/g, "");
     const v = parseFloat(t.value);
-    if (!isNaN(v)){ P(t.dataset.index).index = Math.max(0, Math.min(54, v)); refreshCH(); }
+    if (!isNaN(v)){ P(t.dataset.index).index = Math.max(0, Math.min(54, v)); refreshCH(); queueConfig(); }
     return;
   }
 
@@ -1321,13 +1521,13 @@ document.addEventListener("input", e => {
       const v = parseFloat(t.value);
       if (!isNaN(v)) tee[field] = v;
     }
-    refreshCH();
+    refreshCH(); queueConfig();
     return;
   }
 
   if (t.hasAttribute && t.hasAttribute("data-cname")){
     const co = C(editCourseId);
-    co.name = t.value.trim() || co.name;
+    co.name = t.value.trim() || co.name; queueConfig();
     return;
   }
 
@@ -1351,7 +1551,7 @@ document.addEventListener("input", e => {
     const cell = tbl.querySelectorAll("td.tot")[0];
     if (cell) cell.textContent = co.holes.slice(b*9, b*9+9).reduce((a,c)=>a+c.par,0);
   });
-  updateCardMsg();
+  updateCardMsg(); queueConfig();
 });
 
 function advanceCell(t){
@@ -1366,7 +1566,7 @@ document.addEventListener("change", e => {
     const pl = P(e.target.dataset.tee);
     pl.tees = pl.tees || {};
     pl.tees[editCourseId] = e.target.value;
-    refreshCH();
+    refreshCH(); queueConfig();
   }
 });
 
@@ -1376,6 +1576,11 @@ document.addEventListener("focusin", e => {
 });
 
 render();
+paintSync();
+/* If the Firebase SDK can't load — no signal on first open, CDN blocked —
+   the app keeps working locally instead of dying at boot. */
+try { initSync().catch(() => setSync("error")); }
+catch (e) { setSync("error"); }
 </script>
 </body>
 </html>
