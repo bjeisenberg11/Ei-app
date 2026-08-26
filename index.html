@@ -111,11 +111,22 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hstrip{display:grid;grid-template-columns:repeat(18,1fr);border:1px solid var(--rule);
   border-right:none;background:var(--paper-2);margin:10px 0 0}
 .hcell{border:none;border-right:1px solid var(--rule);background:transparent;
-  padding:5px 0 4px;font-family:'IBM Plex Mono',monospace;font-size:9px;
-  color:var(--ink-faint);cursor:pointer;position:relative}
-.hcell[data-s="done"]{background:var(--ink);color:var(--paper-2)}
-.hcell[data-s="cur"]{box-shadow:inset 0 -3px 0 var(--brass);color:var(--ink);font-weight:600}
-.hcell[data-s="done"][data-s2="cur"]{box-shadow:inset 0 -3px 0 var(--brass)}
+  padding:6px 0 5px;font-family:'IBM Plex Mono',monospace;font-size:9px;
+  color:var(--ink-faint);cursor:pointer;position:relative;font-weight:500}
+.hcell.done{background:var(--ink);color:var(--paper-2)}
+.hcell.won-a{background:var(--ink);color:var(--paper-2)}
+.hcell.won-b{background:var(--brass);color:var(--paper)}
+.hcell.halved{background:var(--rule);color:var(--ink)}
+.hcell.cur{box-shadow:inset 0 -3px 0 var(--pencil);font-weight:700}
+.hcell.cur:not(.done):not(.won-a):not(.won-b):not(.halved){color:var(--ink)}
+.hkey{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;
+  font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.1em;font-size:9.5px;font-weight:600;color:var(--ink-soft)}
+.hkey span{display:flex;align-items:center;gap:4px;min-width:0}
+.hkey i.sw{width:9px;height:9px;flex:none;display:inline-block;border:1px solid var(--rule)}
+.hkey i.sw.a{background:var(--ink);border-color:var(--ink)}
+.hkey i.sw.b{background:var(--brass);border-color:var(--brass)}
+.hkey i.sw.h{background:var(--rule)}
 
 /* match banner */
 .banner{border:1.5px solid var(--ink);background:var(--paper-2);padding:13px;margin-top:12px;text-align:center}
@@ -196,6 +207,7 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
   font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.11em;font-size:13px}
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--ink)}
+.btn.red{background:var(--pencil);color:var(--paper)}
 .btn.red{background:var(--pencil)}
 .btn:disabled{opacity:.32;cursor:default}
 .note{font-size:13px;color:var(--ink-soft);margin:9px 0 0;text-align:center}
@@ -739,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.0529";
+const BUILD = "2026-08-26.1135";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -813,14 +825,35 @@ async function initSync(){
     const gamesRef = fsMod.collection(db, "tournaments", TID, "games");
 
     // seed once if the tournament doesn't exist yet
+    /* Seeding never destroys work you've entered.
+         - Config (players, courses, schedule) is written ONLY if absent.
+           Once it exists it is yours; a new app version won't touch it.
+         - Game docs are repaired only if missing or written in a shape this
+           version can't write to (holes/teams as arrays rather than maps).
+       A deliberate wipe is the admin "Reset tournament" button, nothing else. */
     try {
       const snap = await fsMod.getDoc(cfgRef);
-      const stale = !snap.exists() || (snap.data().schema || 1) !== SCHEMA;
-      if (stale){
+      if (!snap.exists()){
         await fsMod.setDoc(cfgRef,
           { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
-        for (const g of GAMES) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
-        console.log("seeded tournament at schema " + SCHEMA);
+        console.log("seeded config");
+      } else if ((snap.data().schema || 1) !== SCHEMA){
+        // structure marker only — the content stays exactly as it is
+        await fsMod.setDoc(cfgRef, { schema: SCHEMA }, { merge: true });
+        console.log("config kept, schema marked " + SCHEMA);
+      }
+
+      const existing = await fsMod.getDocs(gamesRef);
+      const byId = {};
+      existing.forEach(d => byId[d.id] = d.data());
+      for (const g of GAMES){
+        const cur = byId[g.id];
+        const unusable = !cur || Array.isArray(cur.holes) || Array.isArray(cur.teams)
+                         || !cur.holes || !cur.holes["0"];
+        if (unusable){
+          await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+          console.log("repaired game " + g.id);
+        }
       }
     } catch (e){
       setSync("error", { err: (e.code || e.message) + " (while seeding)" });
@@ -905,6 +938,19 @@ function pushGame(g){
     .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
 /* config: players, courses, schedule — admin edits, low contention */
+/* deliberate, admin-only wipe back to the built-in defaults */
+async function resetTournament(){
+  if (!SYNC.on){ GAMES.forEach(g => g.holes = blankHoles()); render(); return; }
+  const { doc, setDoc, collection, getDocs } = SYNC.api;
+  const cfgRef = doc(SYNC.db, "tournaments", TID);
+  const gamesRef = collection(SYNC.db, "tournaments", TID, "games");
+  await setDoc(cfgRef, { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE });
+  const snap = await getDocs(gamesRef);
+  const ids = new Set(GAMES.map(g => g.id));
+  for (const g of GAMES) await setDoc(doc(gamesRef, g.id), g);
+  snap.forEach(d => { if (!ids.has(d.id)) setDoc(doc(gamesRef, d.id), {}, {merge:false}); });
+}
+
 function pushConfig(){
   if (!SYNC.on) return;
   const { doc, setDoc } = SYNC.api;
@@ -1110,13 +1156,29 @@ function renderGame(){
   out += renderOtherBug(g);
 
   /* hole strip */
+  /* Hole strip. For match play a completed hole is coloured by who won it, so
+     the shape of the match is readable at a glance rather than just "played". */
   out += `<div class="hstrip">`;
   for (let i = 0; i < 18; i++){
     const done = isMatch(g) ? holeComplete(g,i) : (g.holes[i].locked[0] && g.holes[i].locked[1]);
-    out += `<button class="hcell" data-hole="${i}" data-s="${done?"done":(i===h?"cur":"")}"
-      ${done && i===h ? 'data-s2="cur"' : ""}>${i+1}</button>`;
+    let cls = "hcell";
+    if (done && isMatch(g)){
+      const r = resolveHole(g, i);
+      cls += r === "A" ? " won-a" : r === "B" ? " won-b" : " halved";
+    } else if (done){
+      cls += " done";
+    }
+    if (i === h) cls += " cur";
+    out += `<button class="${cls}" data-hole="${i}">${i+1}</button>`;
   }
   out += `</div>`;
+  if (isMatch(g)){
+    out += `<div class="hkey">
+      <span><i class="sw a"></i>${esc(teamLabel(g,0))}</span>
+      <span><i class="sw b"></i>${esc(teamLabel(g,1))}</span>
+      <span><i class="sw h"></i>Halved</span>
+    </div>`;
+  }
 
   /* banner */
   if (isMatch(g)){
@@ -1380,7 +1442,8 @@ function renderPlayers(){
   PLAYERS.forEach(p => {
     h += `<tr>
       <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
-      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"${dis}></td>
+      <td><input class="idx cc-like" inputmode="decimal" maxlength="4" data-index="${p.id}"
+        value="${p.index.toFixed(1)}"${dis}></td>
     </tr>`;
   });
   h += `</tbody></table>
@@ -1438,8 +1501,20 @@ function renderPlayers(){
   ${cardBlock(0)}
   ${cardBlock(9)}
   <p class="impmsg" id="cardmsg"></p>
-  <div class="footnote">In the real app the course library and rosters are admin-only, and
-  handicaps lock once play starts. Everything is editable here since this prototype has no login.<br>Build ${BUILD}</div>`;
+  ${ro ? "" : `
+  <h3 class="sub3">Danger zone</h3>
+  <div class="imp">
+    <p class="hint" style="margin:0 0 9px">Your handicaps, courses and schedule are stored in the
+      database, not in the app file \u2014 uploading a new version keeps them. These two buttons are
+      the only things that discard data.</p>
+    <div class="acts">
+      <button class="btn ghost" id="clearscores">Clear all scores</button>
+      <button class="btn red" id="resetall">Reset everything</button>
+    </div>
+    <p class="impmsg" id="dangermsg"></p>
+  </div>`}
+  <div class="footnote">Handicaps and courses persist across app updates.
+  Scoring is open to everyone; setup is admin-only.<br>Build ${BUILD} \u00b7 schema ${SCHEMA}</div>`;
   app.innerHTML = h;
   updateCardMsg();
 }
@@ -1529,6 +1604,21 @@ document.addEventListener("click", e => {
       "last error: " + (SYNC.err || "none")
     ].join("\n");
     alert("Sync diagnostics\n\n" + d);
+    return;
+  }
+  if (el.id === "clearscores"){
+    if (!confirm("Clear every score in every game?\n\nHandicaps, courses and the schedule are kept."))
+      return;
+    GAMES.forEach(gm => { gm.holes = blankHoles(); pushGame(gm); });
+    toast("Scores cleared"); render(); return;
+  }
+  if (el.id === "resetall"){
+    if (!confirm("Reset EVERYTHING back to the built-in defaults?\n\nThis discards your handicaps, "
+      + "courses, tees, schedule and all scores. There is no undo."))
+      return;
+    resetTournament().then(() => { toast("Reset to defaults"); location.reload(); })
+      .catch(e => { const m = document.getElementById("dangermsg");
+        if (m){ m.className = "impmsg bad"; m.textContent = (e.code||e.message); } });
     return;
   }
   if (el.id === "alock"){ isAdmin = false; toast("Setup locked"); render(); return; }
@@ -1633,6 +1723,10 @@ document.addEventListener("input", e => {
     t.value = t.value.replace(/[^0-9.]/g, "");
     const v = parseFloat(t.value);
     if (!isNaN(v)){ P(t.dataset.index).index = Math.max(0, Math.min(54, v)); refreshCH(); queueConfig(); }
+    /* Advance only once a decimal place is typed — "12" might still be
+       heading for "12.4", so jumping on a whole number would be wrong.
+       A whole-number index means tapping the next field, which is rare. */
+    if (/^\d{1,2}\.\d$/.test(t.value)) advanceIn(".idx", t);
     return;
   }
 
@@ -1684,6 +1778,12 @@ document.addEventListener("input", e => {
   updateCardMsg(); queueConfig();
 });
 
+/* move to the next field in a group, so a column can be typed straight through */
+function advanceIn(sel, t){
+  const all = [...document.querySelectorAll(sel)].filter(x => !x.disabled);
+  const n = all[all.indexOf(t) + 1];
+  if (n){ n.focus(); n.select(); }
+}
 function advanceCell(t){
   const all = [...document.querySelectorAll(".cc")];
   const n = all[all.indexOf(t) + 1];
@@ -1702,7 +1802,8 @@ document.addEventListener("change", e => {
 
 /* tapping a cell selects it, so typing replaces rather than appends */
 document.addEventListener("focusin", e => {
-  if (e.target.classList && e.target.classList.contains("cc")) e.target.select();
+  const c = e.target.classList;
+  if (c && (c.contains("cc") || c.contains("cc-like") || c.contains("tf"))) e.target.select();
 });
 
 render();
