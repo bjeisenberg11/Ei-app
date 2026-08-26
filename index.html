@@ -751,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1155";
+const BUILD = "2026-08-26.1212";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -801,12 +801,17 @@ function paintSync(){
 /* Connection strategies, tried in order. iOS standalone (home screen) apps
    often can't use Firestore's default streaming transport and sit cache-only
    forever with no error, so we escalate rather than guess. */
+/* Firestore reconnects by itself and its first handshake on mobile can take
+   20 seconds or more. Tearing a connection down early and starting over just
+   churns — which is what an aggressive watchdog was doing here. So: two
+   strategies, a patient timeout, one escalation, and after that we leave
+   Firestore alone to do its own retrying. Score durability doesn't depend on
+   any of this anyway; the local queue handles that. */
 const STRATEGIES = [
-  { name: "stream",            persist: "multi",  force: false, offline: true  },
-  { name: "long-poll",         persist: "multi",  force: true,  offline: true  },
-  { name: "long-poll-single",  persist: "single", force: true,  offline: true  },
-  { name: "long-poll-nocache", persist: false,    force: true,  offline: false }
+  { name: "long-poll",         persist: "single", force: true, offline: true  },
+  { name: "long-poll-nocache", persist: false,    force: true, offline: false }
 ];
+const CONNECT_TIMEOUT = 25000;
 /* Remember what worked so the next open connects immediately instead of
    waiting out failed attempts. */
 const TKEY = "ei-transport";
@@ -853,7 +858,9 @@ async function connectWith(i){
 
   try {
     // a fresh app name per attempt: Firestore settings are immutable once set
-    const app = appMod.initializeApp(FIREBASE_CONFIG, "ei-" + i + "-" + Date.now());
+    let app;
+    try { app = appMod.getApp("ei-" + i); }
+    catch(e){ app = appMod.initializeApp(FIREBASE_CONFIG, "ei-" + i); }
     const opts = st.force ? { experimentalForceLongPolling: true }
                           : { experimentalAutoDetectLongPolling: true };
     opts.localCache =
@@ -918,21 +925,23 @@ async function seedIfNeeded(fsMod, cfgRef, gamesRef){
 }
 
 let serverSeen = false;
-let tried = 0;
 function startWatchdog(i){
   serverSeen = false;
   SYNC.seen = { cfg:false, games:false };
   setTimeout(() => {
-    if (serverSeen) return;
-    tried++;
-    if (tried >= STRATEGIES.length){
-      setSync("error", { err: "no-server-response (all transports)" });
-      return;
+    if (serverSeen) return;                 // connected — nothing to do
+    if (i + 1 < STRATEGIES.length){
+      console.log("no server data on '" + STRATEGIES[i].name + "' after "
+                  + (CONNECT_TIMEOUT/1000) + "s, trying '" + STRATEGIES[i+1].name + "'");
+      setSync("connecting");
+      connectWith(i + 1);
+    } else {
+      /* Out of strategies. Do NOT tear down — Firestore keeps retrying on its
+         own and will deliver server data when the network allows. Say so
+         plainly and let it recover in the background. */
+      setSync("error", { err: "slow-to-connect" });
     }
-    const next = (i + 1) % STRATEGIES.length;   // wrap, so a stale remembered
-    setSync("connecting");                      // preference still recovers
-    connectWith(next);
-  }, 5000);
+  }, CONNECT_TIMEOUT);
 }
 function touchSync(which, snapOrQs){
   const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
@@ -943,6 +952,7 @@ function touchSync(which, snapOrQs){
   if (live && !serverSeen){
     serverSeen = true;
     rememberTransport(SYNC.transport);
+    SYNC.err = null;                        // recovered — drop the stale error
   }
   setSync(live ? "live" : "offline", live ? { lastAt: new Date() } : {});
 }
@@ -1109,8 +1119,8 @@ function render(){
 function renderHome(){
   const rounds = [...new Set(GAMES.map(g => g.round))];
   let h = "";
-  if (SYNC.state === "error"){
-    const code = SYNC.err || "unknown";
+  if (SYNC.state === "error" && SYNC.err){
+    const code = SYNC.err;
     let hint = "Open the browser console for the full error.";
     if (/permission|insufficient/i.test(code))
       hint = "Firestore rules are blocking access. Publish the open rules from the setup guide.";
@@ -1120,6 +1130,9 @@ function renderHome(){
       hint = "Couldn't reach Firebase. Check the connection and reload.";
     else if (/api-key|invalid|auth/i.test(code))
       hint = "The config values look wrong. Re-check apiKey and projectId.";
+    else if (/slow-to-connect/.test(code))
+      hint = "Still trying in the background — Firestore keeps retrying on its own. "
+           + "Scores you enter now are saved locally and will send once it connects.";
     else if (/no-server-response/.test(code))
       hint = "Connected to Firebase but no data came back from the server. "
            + "Usually another tab holding this site, or a network blocking Firestore. "
