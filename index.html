@@ -729,6 +729,12 @@ const SYNC = {
   pending: 0,         // writes not yet acknowledged
   lastAt: null,       // last successful sync
   err: null,          // last error code, shown on screen
+  /* Each listener fires from cache first, then from the server. Track them
+     separately: we're only really offline if EVERY listener is cache-only.
+     Trusting whichever snapshot fired last reports offline whenever the
+     local cache is warm, which is wrong. */
+  cache: { cfg: true, games: true },
+  seen: { cfg: false, games: false },
   db: null, api: null
 };
 
@@ -790,7 +796,7 @@ async function initSync(){
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
-      touchSync(d);
+      touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
     }, e => setSync("error", { err: e.code || e.message }));
 
@@ -801,7 +807,7 @@ async function initSync(){
         if (i >= 0) GAMES[i] = v; else GAMES.push(v);
       });
       SYNC.pending = qs.docs.filter(d => d.metadata.hasPendingWrites).length;
-      touchSync(qs);
+      touchSync("games", qs);
       if (!document.querySelector("input:focus")) render();
     }, e => setSync("error", { err: e.code || e.message }));
 
@@ -811,9 +817,13 @@ async function initSync(){
   }
 }
 
-function touchSync(snapOrQs){
+function touchSync(which, snapOrQs){
   const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
-  setSync(fromCache ? "offline" : "live", { lastAt: fromCache ? SYNC.lastAt : new Date() });
+  SYNC.cache[which] = fromCache;
+  SYNC.seen[which] = true;
+  // only the listeners we've actually heard from count
+  const live = Object.keys(SYNC.seen).some(k => SYNC.seen[k] && !SYNC.cache[k]);
+  setSync(live ? "live" : "offline", live ? { lastAt: new Date() } : {});
 }
 
 /* write a single field on a single hole — the merge-safe unit */
