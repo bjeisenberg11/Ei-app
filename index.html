@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1816";
+const BUILD = "2026-08-26.1836";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1608,7 +1608,9 @@ function renderSchedule(){
       <div class="acts"><button class="btn" id="csvcheck">Check it</button></div>
       <div id="csvout"></div>
     </div>
-    <div class="footnote">Nothing changes until you press Replace. Importing swaps out the whole
+    <div class="footnote">Copied rows are tab-separated, so they land in proper columns when
+      pasted into Sheets or Excel. Paste back either way \u2014 tabs or commas both work.
+      Nothing changes until you press Replace. Importing swaps out the whole
       schedule and all games \u2014 handicaps, courses and tees are untouched.</div>`;
     app.innerHTML = h;
     return;
@@ -1754,6 +1756,8 @@ Sunday,20:45,TRAVEL-OUT,,Delta 1190,Jake,ORD,,,,,,,,
 `;
 
 function splitCSVLine(line){
+  // a tab-separated row (straight from a spreadsheet) needs no quote handling
+  if (line.indexOf("\t") !== -1) return line.split("\t").map(x => x.trim());
   const out = []; let cur = "", q = false;
   for (let i = 0; i < line.length; i++){
     const c = line[i];
@@ -1780,8 +1784,9 @@ function parseCSV(text){
   const lines = text.split(/\r?\n/).filter(l => l.trim().length);
   if (!lines.length) return { errors:["Nothing to import."], events, games, days };
 
+  /* skip the header row whether it arrived with commas or tabs */
   let start = 0;
-  if (/day\s*,\s*time/i.test(lines[0])) start = 1;
+  if (/^\s*day\s*[,\t]\s*time\s*[,\t]\s*type/i.test(lines[0])) start = 1;
 
   const byName = n => PLAYERS.find(p => p.name.toLowerCase() === n.trim().toLowerCase());
   const courseByName = n => COURSES.find(c => c.name.toLowerCase() === n.trim().toLowerCase());
@@ -1886,7 +1891,17 @@ function scheduleToCSV(){
   return rows.join("\n");
 }
 
+/* Sheets and Excel split pasted text on TABS. Commas stay in one cell, which
+   is why a pasted CSV lands entirely in column A. So we hand over tabs. */
+function toTSV(csv){
+  return csv.split(/\r?\n/).map(line => {
+    if (!line.length) return line;
+    return splitCSVLine(line).join("\t");
+  }).join("\n");
+}
+
 function copyText(txt, label){
+  txt = toTSV(txt);
   const done = () => toast(label + " copied");
   if (navigator.clipboard && navigator.clipboard.writeText)
     navigator.clipboard.writeText(txt).then(done).catch(() => showFallback(txt));
