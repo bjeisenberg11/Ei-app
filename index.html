@@ -751,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1212";
+const BUILD = "2026-08-26.1309";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -834,6 +834,10 @@ function preferredStart(){
 }
 let unsubs = [];
 let attempt = 0;
+/* Each connection attempt gets a generation number. Callbacks from an
+   abandoned attempt arrive late and must be ignored — otherwise a failure
+   from a superseded strategy overwrites the state of one that is working. */
+let gen = 0;
 
 async function initSync(){
   if (!FIREBASE_CONFIG.apiKey){ setSync("local"); return; }
@@ -852,6 +856,7 @@ async function connectWith(i){
   const st = STRATEGIES[i];
   attempt = i;
   SYNC.transport = st.name;
+  const myGen = ++gen;
 
   unsubs.forEach(u => { try { u(); } catch(e){} });
   unsubs = [];
@@ -876,15 +881,17 @@ async function connectWith(i){
     await seedIfNeeded(fsMod, cfgRef, gamesRef);
 
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
+      if (myGen !== gen) return;
       const v = d.data(); if (!v) return;
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
-    }, e => setSync("error", { err: e.code || e.message })));
+    }, e => reportListenerError(myGen, e)));
 
     unsubs.push(fsMod.onSnapshot(gamesRef, qs => {
+      if (myGen !== gen) return;
       qs.forEach(d => {
         const v = d.data();
         const idx = GAMES.findIndex(x => x.id === v.id);
@@ -893,7 +900,7 @@ async function connectWith(i){
       applyQueueLocally();
       touchSync("games", qs);
       if (!document.querySelector("input:focus")) render();
-    }, e => setSync("error", { err: e.code || e.message })));
+    }, e => reportListenerError(myGen, e)));
 
     startWatchdog(i);
     flushQueue();
@@ -926,9 +933,11 @@ async function seedIfNeeded(fsMod, cfgRef, gamesRef){
 
 let serverSeen = false;
 function startWatchdog(i){
+  const myGen = gen;
   serverSeen = false;
   SYNC.seen = { cfg:false, games:false };
   setTimeout(() => {
+    if (myGen !== gen) return;              // a newer attempt took over
     if (serverSeen) return;                 // connected — nothing to do
     if (i + 1 < STRATEGIES.length){
       console.log("no server data on '" + STRATEGIES[i].name + "' after "
@@ -943,6 +952,16 @@ function startWatchdog(i){
     }
   }, CONNECT_TIMEOUT);
 }
+/* Errors only matter if they come from the live attempt AND we aren't
+   already receiving server data. Firestore surfaces plenty of transient
+   failures that it then recovers from by itself. */
+function reportListenerError(myGen, e){
+  const code = (e && (e.code || e.message)) || String(e);
+  if (myGen !== gen){ console.log("ignoring stale error from old attempt:", code); return; }
+  if (serverSeen){ console.log("transient sync error, connection still up:", code); return; }
+  setSync("error", { err: code });
+}
+
 function touchSync(which, snapOrQs){
   const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
   SYNC.cache[which] = fromCache;
@@ -1130,6 +1149,9 @@ function renderHome(){
       hint = "Couldn't reach Firebase. Check the connection and reload.";
     else if (/api-key|invalid|auth/i.test(code))
       hint = "The config values look wrong. Re-check apiKey and projectId.";
+    else if (/failed-precondition/i.test(code))
+      hint = "Local storage for offline data isn't available — usually another tab with this "
+           + "page open. Scoring and syncing still work; scores queue locally either way.";
     else if (/slow-to-connect/.test(code))
       hint = "Still trying in the background — Firestore keeps retrying on its own. "
            + "Scores you enter now are saved locally and will send once it connects.";
