@@ -6,6 +6,9 @@
 <title>The EI — Eisenberg Invitational</title>
 <meta name="description" content="Live scoring for the Eisenberg Invitational — best ball, scrambles and 40ball.">
 <meta name="theme-color" content="#12321F">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 
 <!-- home screen / icons. apple-touch-icon must be a real file: iOS ignores
      embedded icons when adding to the home screen. The favicon is inlined. -->
@@ -256,6 +259,19 @@ h3.sub3{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform
 .syncerr-c{font-family:'IBM Plex Mono',monospace;font-size:12px;margin:5px 0 7px;
   word-break:break-word;color:var(--ink)}
 .syncerr-h{font-size:13px;color:var(--ink-soft);line-height:1.45;margin-top:4px}
+
+.lockbar{display:flex;align-items:center;gap:8px;margin-top:16px;
+  border:1.5px solid var(--pencil);background:var(--paper-2);padding:9px 10px}
+.lockbar.open{border-color:var(--ink)}
+.lockbar-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;font-size:10px;color:var(--pencil);flex:none}
+.lockbar.open .lockbar-t{color:var(--ink)}
+.lockbar input{flex:1;min-width:0;background:var(--paper);border:1px solid var(--rule);
+  color:var(--ink);font-family:'Barlow',sans-serif;font-size:14px;padding:7px 8px}
+.lockbar input:focus{outline:none;border-color:var(--brass)}
+.lockbar .btn{flex:none;width:auto;padding:8px 14px;font-size:11px}
+input:disabled,select:disabled{opacity:.75;color:var(--ink-soft)}
+input.cc:disabled{background:transparent;color:var(--ink-soft)}
 
 /* course entry */
 .imp{border:1.5px solid var(--ink);background:var(--paper-2);padding:12px;margin-top:12px}
@@ -720,6 +736,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
+const BUILD = "2026-08-26.0457";
 const TID = "ei-2026";
 const ADMIN_CODE = "eagle";
 
@@ -1314,28 +1331,30 @@ function renderCorridor(g, t, h){
 
 function renderPlayers(){
   const co = C(editCourseId);
-  if (SYNC.on && !isAdmin){
-    app.innerHTML = `<h2 class="sec">Setup</h2>
-      <div class="imp">
-        <label for="acode">Admin code</label>
-        <input id="acode" type="password" inputmode="text" autocomplete="off" placeholder="\u2022\u2022\u2022\u2022\u2022">
-        <div class="acts"><button class="btn" id="aunlock">Unlock setup</button></div>
-        <p class="impmsg" id="amsg"></p>
-        <p class="hint">Scoring needs no code \u2014 anyone can enter scores from any phone.
-          This only guards course, tee and handicap settings so they don't get changed by mistake.</p>
-      </div>`;
-    return;
-  }
+  const ro = SYNC.on && !isAdmin;          // read-only for non-admins
+  const dis = ro ? " disabled" : "";
   const rounds = GAMES.filter(g => g.courseId === co.id)
                       .map(g => g.round).filter((v,i,a) => a.indexOf(v)===i);
 
   /* --- 1. indexes: one number per player, true everywhere --- */
-  let h = `<h2 class="sec">Handicap indexes</h2>
+  let h = ro
+    ? `<div class="lockbar">
+         <span class="lockbar-t">View only</span>
+         <input id="acode" type="password" inputmode="text" autocomplete="off" placeholder="admin code">
+         <button class="btn" id="aunlock">Unlock</button>
+       </div>
+       <p class="impmsg" id="amsg"></p>`
+    : `<div class="lockbar open">
+         <span class="lockbar-t">Editing unlocked</span>
+         <button class="btn ghost" id="alock">Lock</button>
+       </div>`;
+  h += `<h2 class="sec">Handicap indexes</h2>`;
+  h += `
   <table class="lb ftbl"><thead><tr><th>Player</th><th>Index</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
     h += `<tr>
       <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
-      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"></td>
+      <td><input class="idx" inputmode="decimal" data-index="${p.id}" value="${p.index.toFixed(1)}"${dis}></td>
     </tr>`;
   });
   h += `</tbody></table>
@@ -1356,10 +1375,10 @@ function renderPlayers(){
     <th>Tee</th><th>Rating</th><th>Slope</th><th>Par</th></tr></thead><tbody>`;
   co.tees.forEach((t,i) => {
     h += `<tr>
-      <td><input class="tf wide" data-tee-f="name:${i}" value="${esc(t.name)}"></td>
-      <td><input class="tf" inputmode="decimal" data-tee-f="rating:${i}" value="${t.rating}"></td>
-      <td><input class="tf" inputmode="numeric" data-tee-f="slope:${i}" value="${t.slope}"></td>
-      <td><input class="tf" inputmode="numeric" data-tee-f="par:${i}" value="${t.par}"></td>
+      <td><input class="tf wide" data-tee-f="name:${i}" value="${esc(t.name)}"${dis}></td>
+      <td><input class="tf" inputmode="decimal" data-tee-f="rating:${i}" value="${t.rating}"${dis}></td>
+      <td><input class="tf" inputmode="numeric" data-tee-f="slope:${i}" value="${t.slope}"${dis}></td>
+      <td><input class="tf" inputmode="numeric" data-tee-f="par:${i}" value="${t.par}"${dis}></td>
     </tr>`;
   });
   h += `</tbody></table>
@@ -1372,7 +1391,7 @@ function renderPlayers(){
   PLAYERS.forEach(p => {
     h += `<tr>
       <td>${esc(p.name)}</td>
-      <td><select class="tee" data-tee="${p.id}">
+      <td><select class="tee" data-tee="${p.id}"${dis}>
         ${co.tees.map(x => `<option${x.name===teeNameFor(p.id,co)?" selected":""}>${esc(x.name)}</option>`).join("")}
       </select></td>
       <td class="mono ch" data-ch="${p.id}">${courseHcp(p.id, co)}</td>
@@ -1386,7 +1405,7 @@ function renderPlayers(){
   <h3 class="sub3">Scorecard</h3>
   <div class="imp">
     <label for="cname">Course name</label>
-    <input id="cname" value="${esc(co.name)}" data-cname>
+    <input id="cname" value="${esc(co.name)}" data-cname${dis}>
     <p class="hint" style="margin-top:9px">Copy the card straight across. Each box jumps to the
       next as you fill it, so the number pad never has to close.</p>
   </div>
@@ -1394,7 +1413,7 @@ function renderPlayers(){
   ${cardBlock(9)}
   <p class="impmsg" id="cardmsg"></p>
   <div class="footnote">In the real app the course library and rosters are admin-only, and
-  handicaps lock once play starts. Everything is editable here since this prototype has no login.</div>`;
+  handicaps lock once play starts. Everything is editable here since this prototype has no login.<br>Build ${BUILD}</div>`;
   app.innerHTML = h;
   updateCardMsg();
 }
@@ -1402,13 +1421,14 @@ function renderPlayers(){
 /* nine-hole block of the scorecard, as editable cells */
 function cardBlock(off){
   const co = C(editCourseId);
+  const dis = (SYNC.on && !isAdmin) ? " disabled" : "";
   const nums = [], pars = [], sis = [];
   for (let i = off; i < off + 9; i++){
     nums.push(`<th>${i+1}</th>`);
     pars.push(`<td><input class="cc" inputmode="numeric" maxlength="1"
-      data-cell="par:${i}" value="${co.holes[i].par}"></td>`);
+      data-cell="par:${i}" value="${co.holes[i].par}"${dis}></td>`);
     sis.push(`<td><input class="cc" inputmode="numeric" maxlength="2"
-      data-cell="si:${i}" value="${co.holes[i].si}"></td>`);
+      data-cell="si:${i}" value="${co.holes[i].si}"${dis}></td>`);
   }
   const out = co.holes.slice(off, off+9).reduce((a,c) => a + c.par, 0);
   return `<div class="cardwrap"><table class="card">
@@ -1471,6 +1491,8 @@ document.addEventListener("click", e => {
 
   if (el.id === "syncdot"){
     const d = [
+      "build: " + BUILD,
+      "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
       "state: " + SYNC.state,
       "configured: " + (SYNC.on ? "yes" : "no"),
       "server data seen: " + (serverSeen ? "yes" : "not yet"),
@@ -1483,6 +1505,7 @@ document.addEventListener("click", e => {
     alert("Sync diagnostics\n\n" + d);
     return;
   }
+  if (el.id === "alock"){ isAdmin = false; toast("Setup locked"); render(); return; }
   if (el.id === "aunlock"){
     const v = (document.getElementById("acode")||{}).value || "";
     const m = document.getElementById("amsg");
