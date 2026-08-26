@@ -318,7 +318,7 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
     <div class="sub" id="tsub">Prototype · scoring engine</div>
   </div>
   <span class="topright">
-    <span class="syncdot local" id="syncdot">On this device</span>
+    <button class="syncdot local" id="syncdot">On this device</button>
     <button class="back" id="back" style="display:none">Back</button>
   </span>
 </div></div></header>
@@ -770,9 +770,18 @@ async function initSync(){
       import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
     ]);
     const app = appMod.initializeApp(FIREBASE_CONFIG);
-    // offline persistence: scores entered without signal queue and send later
+    /* Two settings that matter on phones:
+       - multi-tab manager: the persistent cache takes an exclusive lock. With
+         the single-tab default, any second tab holding this site is stuck
+         cache-only forever and looks permanently offline.
+       - auto-detect long polling: Firestore's streaming connection is blocked
+         by some networks and iOS setups. It fails silently and serves cache
+         rather than erroring, which looks identical to being offline. */
     const db = fsMod.initializeFirestore(app, {
-      localCache: fsMod.persistentLocalCache({})
+      localCache: fsMod.persistentLocalCache({
+        tabManager: fsMod.persistentMultipleTabManager()
+      }),
+      experimentalAutoDetectLongPolling: true
     });
     SYNC.db = db; SYNC.api = fsMod; SYNC.on = true;
 
@@ -811,18 +820,29 @@ async function initSync(){
       if (!document.querySelector("input:focus")) render();
     }, e => setSync("error", { err: e.code || e.message }));
 
+    startWatchdog();
+
   } catch (err){
     console.error(err);
     setSync("error", { err: (err && (err.code || err.message)) || String(err) });
   }
 }
 
+let serverSeen = false;
+function startWatchdog(){
+  setTimeout(() => {
+    if (!serverSeen && SYNC.state !== "error"){
+      setSync("error", { err: "no-server-response" });
+    }
+  }, 12000);
+}
 function touchSync(which, snapOrQs){
   const fromCache = snapOrQs.metadata ? snapOrQs.metadata.fromCache : false;
   SYNC.cache[which] = fromCache;
   SYNC.seen[which] = true;
   // only the listeners we've actually heard from count
   const live = Object.keys(SYNC.seen).some(k => SYNC.seen[k] && !SYNC.cache[k]);
+  if (live) serverSeen = true;
   setSync(live ? "live" : "offline", live ? { lastAt: new Date() } : {});
 }
 
@@ -910,6 +930,10 @@ function renderHome(){
       hint = "Couldn't reach Firebase. Check the connection and reload.";
     else if (/api-key|invalid|auth/i.test(code))
       hint = "The config values look wrong. Re-check apiKey and projectId.";
+    else if (/no-server-response/.test(code))
+      hint = "Connected to Firebase but no data came back from the server. "
+           + "Usually another tab holding this site, or a network blocking Firestore. "
+           + "Close other tabs with this page open and reload.";
     h += `<div class="syncerr">
       <div class="syncerr-t">Sync error</div>
       <div class="syncerr-c">${esc(code)}</div>
@@ -1445,6 +1469,20 @@ document.addEventListener("click", e => {
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
+  if (el.id === "syncdot"){
+    const d = [
+      "state: " + SYNC.state,
+      "configured: " + (SYNC.on ? "yes" : "no"),
+      "server data seen: " + (serverSeen ? "yes" : "not yet"),
+      "config listener: " + (SYNC.seen.cfg ? (SYNC.cache.cfg ? "cache only" : "server") : "silent"),
+      "games listener: " + (SYNC.seen.games ? (SYNC.cache.games ? "cache only" : "server") : "silent"),
+      "pending writes: " + SYNC.pending,
+      "last sync: " + (SYNC.lastAt ? SYNC.lastAt.toLocaleTimeString() : "never"),
+      "last error: " + (SYNC.err || "none")
+    ].join("\n");
+    alert("Sync diagnostics\n\n" + d);
+    return;
+  }
   if (el.id === "aunlock"){
     const v = (document.getElementById("acode")||{}).value || "";
     const m = document.getElementById("amsg");
