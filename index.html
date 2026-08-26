@@ -751,7 +751,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1153";
+const BUILD = "2026-08-26.1155";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -789,11 +789,11 @@ function paintSync(){
   const label = {
     local:      "On this device",
     connecting: "Connecting…",
-    live:       SYNC.pending ? `Saving ${SYNC.pending}…` : "Live",
+    live:       queue.length ? `Saving ${queue.length}…` : "Live",
     offline:    "Offline — will sync",
     error:      "Sync error"
   }[SYNC.state] || SYNC.state;
-  el.className = "syncdot " + SYNC.state + (SYNC.pending ? " pending" : "");
+  el.className = "syncdot " + SYNC.state + (queue.length ? " pending" : "");
   el.textContent = label;
   el.title = SYNC.lastAt ? "Last synced " + SYNC.lastAt.toLocaleTimeString() : "";
 }
@@ -883,12 +883,13 @@ async function connectWith(i){
         const idx = GAMES.findIndex(x => x.id === v.id);
         if (idx >= 0) GAMES[idx] = v; else GAMES.push(v);
       });
-      SYNC.pending = qs.docs.filter(d => d.metadata.hasPendingWrites).length;
+      applyQueueLocally();
       touchSync("games", qs);
       if (!document.querySelector("input:focus")) render();
     }, e => setSync("error", { err: e.code || e.message })));
 
     startWatchdog(i);
+    flushQueue();
 
   } catch (err){
     console.error(err);
@@ -946,29 +947,89 @@ function touchSync(which, snapOrQs){
   setSync(live ? "live" : "offline", live ? { lastAt: new Date() } : {});
 }
 
+/* ============================================================
+   DURABLE WRITE QUEUE
+
+   Firestore's own offline cache (IndexedDB) fails on some phones, which would
+   mean no scoring without signal — unacceptable on a course. So every score
+   write is also recorded in a small local queue that survives reloads and is
+   flushed whenever the connection is up. This works regardless of which
+   Firestore transport we ended up on.
+   ============================================================ */
+const QKEY = "ei-queue";
+let queue = loadQueue();
+
+function loadQueue(){
+  try { return JSON.parse(localStorage.getItem(QKEY) || "[]"); }
+  catch(e){ return []; }
+}
+function saveQueue(){
+  try { localStorage.setItem(QKEY, JSON.stringify(queue.slice(-500))); } catch(e){}
+}
+function enqueue(gid, h, path, val){
+  queue.push({ k: gid + "|" + h + "|" + path, gid, h, path, val, t: Date.now() });
+  // keep only the newest write per field — a stepper tapped five times sends one
+  const seen = new Set();
+  queue = queue.slice().reverse().filter(it => {
+    if (seen.has(it.k)) return false;
+    seen.add(it.k); return true;
+  }).reverse();
+  saveQueue();
+  paintSync();
+}
+function dequeue(item){
+  queue = queue.filter(x => !(x.k === item.k && x.t === item.t));
+  saveQueue();
+  paintSync();
+}
+
+/* re-apply anything not yet acknowledged on top of server data, so a pending
+   score never disappears from the screen when a snapshot arrives */
+function applyQueueLocally(){
+  queue.forEach(it => {
+    const g = GAMES.find(x => x.id === it.gid);
+    if (!g || !g.holes || !g.holes[it.h]) return;
+    const parts = it.path.split(".");
+    let o = g.holes[it.h];
+    for (let i = 0; i < parts.length - 1; i++){ if (!o[parts[i]]) o[parts[i]] = {}; o = o[parts[i]]; }
+    if (it.val === null) delete o[parts[parts.length-1]];
+    else o[parts[parts.length-1]] = it.val;
+  });
+}
+
+let flushing = false;
+async function flushQueue(){
+  if (flushing || !SYNC.on || !queue.length) return;
+  flushing = true;
+  const { doc, updateDoc, setDoc } = SYNC.api;
+  for (const it of queue.slice()){
+    try {
+      const ref = doc(SYNC.db, "tournaments", TID, "games", it.gid);
+      await updateDoc(ref, { [`holes.${it.h}.${it.path}`]: it.val });
+      dequeue(it);
+    } catch (err){
+      const code = (err && (err.code || err.message)) || "";
+      if (/not-found|invalid-argument/i.test(code)){
+        const g = GAMES.find(x => x.id === it.gid);
+        if (g){ try { await setDoc(doc(SYNC.db,"tournaments",TID,"games",it.gid), g); dequeue(it); continue; } catch(e){} }
+      }
+      break;                       // still offline — stop and retry later
+    }
+  }
+  flushing = false;
+  if (!queue.length) setSync("live", { lastAt: new Date() });
+}
+
+setInterval(() => { if (queue.length) flushQueue(); }, 8000);
+window.addEventListener("online", flushQueue);
+
 /* write a single field on a single hole — the merge-safe unit */
 function pushHole(g, h, path, value){
   if (!SYNC.on) return;
-  const { doc, updateDoc, setDoc } = SYNC.api;
-  const ref = doc(SYNC.db, "tournaments", TID, "games", g.id);
-  SYNC.pending++; paintSync();
-  const done = () => { SYNC.pending = Math.max(0, SYNC.pending-1); };
-  updateDoc(ref, { [`holes.${h}.${path}`]: value })
-    .then(() => { done(); setSync("live", { lastAt: new Date() }); })
-    .catch(err => {
-      const code = err && (err.code || err.message) || String(err);
-      /* A missing doc, or one written under an older shape, can't take a
-         field-path update. Rewrite the whole game once, then carry on. */
-      if (/not-found|invalid-argument/i.test(code)){
-        setDoc(ref, g)
-          .then(() => { done(); setSync("live", { lastAt: new Date() }); })
-          .catch(e2 => { done(); setSync("error", { err: (e2.code||e2.message) + " (repair failed)" }); });
-      } else {
-        done();
-        setSync("error", { err: code + " (write failed)" });
-      }
-    });
+  enqueue(g.id, h, path, value);
+  flushQueue();
 }
+
 /* replace a whole game (reset) */
 function pushGame(g){
   if (!SYNC.on) return;
@@ -1635,13 +1696,13 @@ document.addEventListener("click", e => {
       "build: " + BUILD + "  schema " + SCHEMA,
       "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
       "transport: " + (SYNC.transport || "-"),
-      "offline queueing: " + (STRATEGIES[attempt] && STRATEGIES[attempt].offline ? "yes" : "NO — scores need signal"),
+      "offline queueing: yes (local queue, independent of transport)",
       "state: " + SYNC.state,
       "configured: " + (SYNC.on ? "yes" : "no"),
       "server data seen: " + (serverSeen ? "yes" : "not yet"),
       "config listener: " + (SYNC.seen.cfg ? (SYNC.cache.cfg ? "cache only" : "server") : "silent"),
       "games listener: " + (SYNC.seen.games ? (SYNC.cache.games ? "cache only" : "server") : "silent"),
-      "pending writes: " + SYNC.pending,
+      "queued writes: " + queue.length,
       "last sync: " + (SYNC.lastAt ? SYNC.lastAt.toLocaleTimeString() : "never"),
       "last error: " + (SYNC.err || "none")
     ].join("\n");
@@ -1855,6 +1916,7 @@ document.addEventListener("focusin", e => {
   if (c && (c.contains("cc") || c.contains("cc-like") || c.contains("tf"))) e.target.select();
 });
 
+applyQueueLocally();
 render();
 paintSync();
 /* If the Firebase SDK can't load — no signal on first open, CDN blocked —
