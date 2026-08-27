@@ -400,6 +400,14 @@ table.pm td.v.mid{background:#DCD8C8}
 table.pm td.v.hi{background:var(--ink);color:var(--paper);font-weight:600}
 table.pm .tot{background:var(--paper-3);font-weight:600}
 
+.lockrow{display:flex;align-items:center;gap:8px;padding:8px 11px;
+  border-top:1px solid var(--rule-soft);background:var(--paper-3)}
+.lockrow .btn{flex:1;padding:9px 6px;font-size:11px}
+.lockrow-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.12em;font-size:10px;color:var(--ink-soft);flex:1}
+.team.islocked{border-color:var(--ink)}
+.team.islocked .prow{opacity:.72}
+
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
   border-top:1.5px solid var(--ink);display:flex;z-index:40;
@@ -708,7 +716,10 @@ let DAYS = ["Friday","Saturday","Sunday","Monday"];
 
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
                 SCRAMBLE3:"3v3 Scramble", FORTYBALL:"40ball" };
-const isMatch = g => g.type !== "FORTYBALL";
+/* Match play: holes won. Stroke play: one aggregate total for the round.
+   Only best ball is match play — both scrambles are decided on total strokes. */
+const isMatch  = g => g.type === "BESTBALL";
+const isStroke = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3";
 const isScramble = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3";
 const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
 
@@ -880,9 +891,40 @@ function fbState(g){
                        : {winner:"TIE",label:`${a}–${a}`} };
 }
 
+/* stroke play: lowest 18-hole total wins */
+function strokeTotals(g){
+  const t = [0,0], done = [0,0];
+  holeList(g).forEach(hole => {
+    [0,1].forEach(i => {
+      const v = hole.teamScore[i];
+      if (v != null){ t[i] += v; done[i]++; }
+    });
+  });
+  return { totals:t, holes:done };
+}
+function strokeState(g){
+  const { totals, holes } = strokeTotals(g);
+  const complete = holes[0] === 18 && holes[1] === 18;
+  if (!complete) return { done:false, result:null, totals, holes };
+  const [a,b] = totals;
+  return { done:true, totals, holes,
+    result: a < b ? {winner:"A", label:`${a}\u2013${b}`}
+          : b < a ? {winner:"B", label:`${b}\u2013${a}`}
+          : {winner:"TIE", label:`${a}\u2013${a}`} };
+}
+/* par for the holes a team has actually played, so a running total means something */
+function strokeParSoFar(g, t){
+  const course = courseOf(g);
+  let p = 0;
+  holeList(g).forEach((hole, h) => { if (hole.teamScore[t] != null) p += course.holes[h].par; });
+  return p;
+}
+
 /* ---------- unified result ---------- */
 function gameResult(g){
-  return isMatch(g) ? matchState(g).result : fbState(g).result;
+  if (isMatch(g))  return matchState(g).result;
+  if (isStroke(g)) return strokeState(g).result;
+  return fbState(g).result;
 }
 
 /* ============================================================
@@ -961,7 +1003,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0514";
+const BUILD = "2026-08-27.0546";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2301,10 +2343,13 @@ function renderGame(){
      the shape of the match is readable at a glance rather than just "played". */
   out += `<div class="hstrip">`;
   for (let i = 0; i < 18; i++){
-    const done = isMatch(g) ? holeComplete(g,i) : (g.holes[i].locked[0] && g.holes[i].locked[1]);
+    const done = isMatch(g) ? holeComplete(g,i)
+      : isStroke(g) ? (g.holes[i].teamScore[0] != null && g.holes[i].teamScore[1] != null)
+      : (g.holes[i].locked[0] && g.holes[i].locked[1]);
     let cls = "hcell";
-    if (done && isMatch(g)){
-      const r = resolveHole(g, i);
+    if (done && (isMatch(g) || isStroke(g))){
+      const a = g.holes[i].teamScore[0], b = g.holes[i].teamScore[1];
+      const r = isMatch(g) ? resolveHole(g, i) : (a < b ? "A" : b < a ? "B" : "H");
       cls += r === "A" ? " won-a" : r === "B" ? " won-b" : " halved";
     } else if (done){
       cls += " done";
@@ -2313,7 +2358,7 @@ function renderGame(){
     out += `<button class="${cls}" data-hole="${i}">${i+1}</button>`;
   }
   out += `</div>`;
-  if (isMatch(g)){
+  if (isMatch(g) || isStroke(g)){
     out += `<div class="hkey">
       <span><i class="sw a"></i>${esc(teamLabel(g,0))}</span>
       <span><i class="sw b"></i>${esc(teamLabel(g,1))}</span>
@@ -2331,6 +2376,18 @@ function renderGame(){
       <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
         !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
       ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
+    </div>`;
+  } else if (isStroke(g)){
+    const st = strokeState(g);
+    const thru = Math.max(st.holes[0], st.holes[1]);
+    const r0 = st.totals[0] - strokeParSoFar(g,0), r1 = st.totals[1] - strokeParSoFar(g,1);
+    out += `<div class="banner ${st.done?"closed":""}">
+      <div class="st">${st.done
+        ? (st.result.winner==="TIE" ? `TIED ${st.result.label}`
+           : `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
+        : `${st.totals[0]} \u2014 ${st.totals[1]}`}</div>
+      <div class="thru">${thru ? `Thru ${thru}` : "Not started"} \u00b7 stroke play \u00b7
+        ${esc(teamLabel(g,0))} ${toPar(r0)} \u00b7 ${esc(teamLabel(g,1))} ${toPar(r1)}</div>
     </div>`;
   } else {
     const fs = fbState(g);
@@ -2503,6 +2560,18 @@ function netCell(id, g, h){
          `<span class="par ${parClass(rel)}">${toPar(rel)}</span></span>`;
 }
 
+/* Everyone can score every match, so a team locks its own hole once it's in.
+   After that nobody can change it except an admin — the protection that makes
+   open access workable. */
+function teamReady(g, t, h){
+  const hole = g.holes[h];
+  if (hole.conceded !== null) return true;
+  if (isScramble(g) || isStroke(g)) return hole.teamScore[t] != null;
+  if (g.type === "BESTBALL")
+    return g.teams[t].some(id => { const v = hole.scores[id]; return v != null && v !== "PU"; });
+  return g.teams[t].every(id => hole.scores[id] != null);   // 40ball
+}
+
 function renderTeam(g, t, h, hardLocked){
   const hole = g.holes[h];
   const name = teamLabel(g, t);
@@ -2514,10 +2583,15 @@ function renderTeam(g, t, h, hardLocked){
     if (r === (t===0?"A":"B")) winCls = "win";
   }
 
-  if (isScramble(g)){
+  const locked = hole.locked[t];
+
+  if (isScramble(g) || isStroke(g)){
     inner += `<div class="prow">
       <span class="pname">${esc(roster)}</span>
-      ${stepper(`ts-${t}`, hole.teamScore[t], hardLocked || hole.conceded!==null)}
+      ${stepper(`ts-${t}`, hole.teamScore[t], locked || hardLocked || hole.conceded!==null)}
+      ${isStroke(g) && hole.teamScore[t] != null ? `<span class="pnet"><span class="par ${
+        parClass(hole.teamScore[t] - courseOf(g).holes[h].par)}">${
+        toPar(hole.teamScore[t] - courseOf(g).holes[h].par)}</span></span>` : ""}
     </div>`;
   }
 
@@ -2527,10 +2601,10 @@ function renderTeam(g, t, h, hardLocked){
       const v = hole.scores[id];
       inner += `<div class="prow">
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${stepper(`sc-${id}`, v==="PU"?null:v, hardLocked || hole.conceded!==null)}
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked || hardLocked || hole.conceded!==null)}
         ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
-          ${hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
+          ${locked||hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
       </div>`;
     });
   }
@@ -2566,8 +2640,19 @@ function renderTeam(g, t, h, hardLocked){
   }
   head += `</span></div>`;
 
+  if (g.type !== "FORTYBALL" && !hardLocked){
+    const ready = teamReady(g, t, h);
+    inner += `<div class="lockrow">
+      ${locked
+        ? `<span class="lockrow-t">Locked</span>
+           <button class="chip" data-unlock="${t}">Admin unlock</button>`
+        : `<button class="btn ghost" data-lockteam="${t}" ${ready?"":"disabled"}>
+             ${ready ? "Lock this score" : "Enter a score first"}</button>`}
+    </div>`;
+  }
+
   const extra = g.type === "FORTYBALL" ? renderCorridor(g, t, h) : "";
-  return `<div class="team ${winCls}">${head}${inner}</div>${extra}`;
+  return `<div class="team ${winCls} ${locked?"islocked":""}">${head}${inner}</div>${extra}`;
 }
 
 function stepper(key, val, disabled){
@@ -3058,10 +3143,14 @@ function handleClick(el){
     const [kind, ref] = key.split("-");
     const hole = g.holes[h];
     if (kind === "ts"){
-      const t = +ref, cur = hole.teamScore[t] ?? courseOf(g).holes[h].par - d;
+      const t = +ref;
+      if (hole.locked[t]){ toast("Locked \u2014 admin can reopen"); return; }
+      const cur = hole.teamScore[t] ?? courseOf(g).holes[h].par - d;
       hole.teamScore[t] = Math.max(1, Math.min(14, cur + d));
       pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
     } else {
+      const side = g.teams[0].includes(ref) ? 0 : 1;
+      if (hole.locked[side]){ toast("Locked \u2014 admin can reopen"); return; }
       const cur = (hole.scores[ref] === "PU" || hole.scores[ref] == null)
         ? courseOf(g).holes[h].par - d : hole.scores[ref];
       hole.scores[ref] = Math.max(1, Math.min(14, cur + d));
@@ -3072,6 +3161,8 @@ function handleClick(el){
 
   if (el.dataset.pu){
     const hole = g.holes[h], id = el.dataset.pu;
+    const side = g.teams[0].includes(id) ? 0 : 1;
+    if (hole.locked[side]){ toast("Locked \u2014 admin can reopen"); return; }
     if (hole.scores[id] === "PU"){
       delete hole.scores[id];
       pushHole(g, h, `scores.${id}`, null);
@@ -3104,6 +3195,14 @@ function handleClick(el){
     render(); return;
   }
 
+  if (el.dataset.lockteam != null){
+    const t = +el.dataset.lockteam;
+    if (!teamReady(g, t, h)){ toast("Enter a score first"); return; }
+    g.holes[h].locked[t] = true;
+    pushHole(g, h, `locked.${t}`, true);
+    toast("Locked");
+    render(); return;
+  }
   if (el.dataset.lock != null){
     const t = +el.dataset.lock, b = fbBudget(g, t, h);
     const n = g.holes[h].selected[t].length;
