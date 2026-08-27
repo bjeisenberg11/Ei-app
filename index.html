@@ -514,9 +514,9 @@ const C = id => COURSES.find(c => c.id === id) || COURSES[0];
    at before pairings are final: an even spread is usually the goal, and the
    zeroes are the ones to notice. */
 function pairMatrix(){
-  const withC = {}, agC = {}, played = {};
-  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; played[a.id] = 0;
-    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; }); });
+  const withC = {}, agC = {}, grpC = {}, played = {};
+  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; grpC[a.id] = {}; played[a.id] = 0;
+    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; grpC[a.id][b.id] = 0; }); });
 
   GAMES.forEach(g => {
     const A = g.teams[0] || [], B = g.teams[1] || [];
@@ -525,12 +525,15 @@ function pairMatrix(){
       if (a !== b && withC[a]) withC[a][b]++;
     })));
     A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
+    /* in the same game at all — partner or opponent */
+    const all = [...A, ...B];
+    all.forEach(a => all.forEach(b => { if (a !== b && grpC[a]) grpC[a][b]++; }));
   });
-  return { withC, agC, played };
+  return { withC, agC, grpC, played };
 }
 
 function renderPairs(){
-  const { withC, agC, played } = pairMatrix();
+  const { withC, agC, grpC, played } = pairMatrix();
   const ids = PLAYERS.map(p => p.id);
 
   const grid = (title, m, note) => {
@@ -541,7 +544,7 @@ function renderPairs(){
     let h = `<h2 class="sec">${title}</h2><p class="note">${note}</p>
       <div class="pmwrap"><table class="pm"><thead><tr><th></th>`;
     ids.forEach(b => h += `<th>${esc(P(b).name.slice(0,4))}</th>`);
-    h += `<th class="tot">Tot</th></tr></thead><tbody>`;
+    h += `<th class="tot">Sum</th></tr></thead><tbody>`;
     ids.forEach(a => {
       h += `<tr><th>${esc(P(a).name)}</th>`;
       let rowTot = 0;
@@ -569,15 +572,27 @@ function renderPairs(){
     app.innerHTML = h; return;
   }
 
-  h += grid("Playing with", withC, "How many games each pair is on the same team.");
-  h += grid("Playing against", agC, "How many games each pair is on opposite sides.");
+  h += grid("Playing with", withC,
+    "Games where the pair are on the same team. The total counts teammates, " +
+    "not games \u2014 a scramble puts you alongside three people at once.");
+  h += grid("Playing against", agC,
+    "Games where the pair are on opposite sides. Same again: the total counts " +
+    "opponents, not games.");
+  h += grid("In the same game", grpC,
+    "Games the pair are in at all, either side. This is the one to scan for " +
+    "anyone you'd barely see all weekend.");
 
-  h += `<h2 class="sec">Games each</h2><table class="lb"><tbody>`;
-  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p =>
-    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td></tr>`);
+  h += `<h2 class="sec">Games each</h2><table class="lb"><thead><tr>
+    <th>Player</th><th>Games</th><th>Never with</th></tr></thead><tbody>`;
+  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p => {
+    const never = PLAYERS.filter(o => o.id !== p.id && withC[p.id][o.id] === 0).map(o => o.name);
+    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td>
+      <td style="font-size:13px;text-align:right;${never.length?"color:var(--pencil)":""}">${
+        never.length ? esc(never.join(", ")) : "\u2014"}</td></tr>`;
+  });
   h += `</tbody></table>
-    <div class="footnote">Red means never paired, dark means more often than average.
-    Check this before the pairings are final \u2014 it's harder to fix later.</div>`;
+    <div class="footnote">Red is a pair that never meets in that column's sense;
+    dark is more often than average. Worth settling before the weekend starts.</div>`;
   app.innerHTML = h;
 }
 
@@ -946,7 +961,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0413";
+const BUILD = "2026-08-27.0449";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2166,9 +2181,9 @@ function gameEditor(g){
    at before pairings are final: an even spread is usually the goal, and the
    zeroes are the ones to notice. */
 function pairMatrix(){
-  const withC = {}, agC = {}, played = {};
-  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; played[a.id] = 0;
-    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; }); });
+  const withC = {}, agC = {}, grpC = {}, played = {};
+  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; grpC[a.id] = {}; played[a.id] = 0;
+    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; grpC[a.id][b.id] = 0; }); });
 
   GAMES.forEach(g => {
     const A = g.teams[0] || [], B = g.teams[1] || [];
@@ -2177,12 +2192,15 @@ function pairMatrix(){
       if (a !== b && withC[a]) withC[a][b]++;
     })));
     A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
+    /* in the same game at all — partner or opponent */
+    const all = [...A, ...B];
+    all.forEach(a => all.forEach(b => { if (a !== b && grpC[a]) grpC[a][b]++; }));
   });
-  return { withC, agC, played };
+  return { withC, agC, grpC, played };
 }
 
 function renderPairs(){
-  const { withC, agC, played } = pairMatrix();
+  const { withC, agC, grpC, played } = pairMatrix();
   const ids = PLAYERS.map(p => p.id);
 
   const grid = (title, m, note) => {
@@ -2193,7 +2211,7 @@ function renderPairs(){
     let h = `<h2 class="sec">${title}</h2><p class="note">${note}</p>
       <div class="pmwrap"><table class="pm"><thead><tr><th></th>`;
     ids.forEach(b => h += `<th>${esc(P(b).name.slice(0,4))}</th>`);
-    h += `<th class="tot">Tot</th></tr></thead><tbody>`;
+    h += `<th class="tot">Sum</th></tr></thead><tbody>`;
     ids.forEach(a => {
       h += `<tr><th>${esc(P(a).name)}</th>`;
       let rowTot = 0;
@@ -2221,15 +2239,27 @@ function renderPairs(){
     app.innerHTML = h; return;
   }
 
-  h += grid("Playing with", withC, "How many games each pair is on the same team.");
-  h += grid("Playing against", agC, "How many games each pair is on opposite sides.");
+  h += grid("Playing with", withC,
+    "Games where the pair are on the same team. The total counts teammates, " +
+    "not games \u2014 a scramble puts you alongside three people at once.");
+  h += grid("Playing against", agC,
+    "Games where the pair are on opposite sides. Same again: the total counts " +
+    "opponents, not games.");
+  h += grid("In the same game", grpC,
+    "Games the pair are in at all, either side. This is the one to scan for " +
+    "anyone you'd barely see all weekend.");
 
-  h += `<h2 class="sec">Games each</h2><table class="lb"><tbody>`;
-  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p =>
-    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td></tr>`);
+  h += `<h2 class="sec">Games each</h2><table class="lb"><thead><tr>
+    <th>Player</th><th>Games</th><th>Never with</th></tr></thead><tbody>`;
+  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p => {
+    const never = PLAYERS.filter(o => o.id !== p.id && withC[p.id][o.id] === 0).map(o => o.name);
+    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td>
+      <td style="font-size:13px;text-align:right;${never.length?"color:var(--pencil)":""}">${
+        never.length ? esc(never.join(", ")) : "\u2014"}</td></tr>`;
+  });
   h += `</tbody></table>
-    <div class="footnote">Red means never paired, dark means more often than average.
-    Check this before the pairings are final \u2014 it's harder to fix later.</div>`;
+    <div class="footnote">Red is a pair that never meets in that column's sense;
+    dark is more often than average. Worth settling before the weekend starts.</div>`;
   app.innerHTML = h;
 }
 
