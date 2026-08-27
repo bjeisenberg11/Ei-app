@@ -1016,12 +1016,17 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0623";
+const BUILD = "2026-08-27.1154";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
    writes like `holes.5.scores.p1` silently fail against arrays. */
 const SCHEMA = 4;
+/* The build that last wrote config. A device running something older can
+   silently undo an import — older builds recreated the demo games on load —
+   so an out-of-date device goes read-only rather than writing stale data. */
+let serverBuild = null;
+let staleDevice = false;
 const ADMIN_CODE = "eagle";
 
 const SYNC = {
@@ -1148,6 +1153,10 @@ async function connectWith(i){
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
       if (myGen !== gen) return;
       const v = d.data(); if (!v) return;
+      if (v.appBuild){
+        serverBuild = v.appBuild;
+        staleDevice = String(BUILD) < String(v.appBuild);
+      }
       if (cfgDirty || d.metadata.hasPendingWrites) return;   // ours is newer
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
@@ -1189,7 +1198,8 @@ async function seedIfNeeded(fsMod, cfgRef, gamesRef){
 
   if (fresh){
     await fsMod.setDoc(cfgRef,
-      { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS });
+      { schema: SCHEMA, appBuild: BUILD, players: PLAYERS, courses: COURSES,
+        schedule: SCHEDULE, days: DAYS });
   } else if ((snap.data().schema || 1) !== SCHEMA){
     await fsMod.setDoc(cfgRef, { schema: SCHEMA }, { merge: true });
   }
@@ -1473,6 +1483,7 @@ window.addEventListener("online", flushQueue);
 /* Sync must never block the interface. If any of this throws, the local state
    and the screen are already correct — only the send is affected. */
 function pushHole(g, h, path, value){
+  if (staleDevice) return;
   if (!SYNC.on) return;
   try { enqueue(g.id, h, path, value); flushQueue(); }
   catch (e){ console.error("pushHole", e); }
@@ -1480,6 +1491,7 @@ function pushHole(g, h, path, value){
 
 /* replace a whole game (reset) */
 function pushGame(g){
+  if (staleDevice) return;
   if (!SYNC.on || !SYNC.api) return;
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), g)
@@ -1501,7 +1513,8 @@ async function resetTournament(){
   const { doc, setDoc, collection, getDocs } = SYNC.api;
   const cfgRef = doc(SYNC.db, "tournaments", TID);
   const gamesRef = collection(SYNC.db, "tournaments", TID, "games");
-  await setDoc(cfgRef, { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS });
+  await setDoc(cfgRef, { schema: SCHEMA, appBuild: BUILD, players: PLAYERS,
+    courses: COURSES, schedule: SCHEDULE, days: DAYS });
   const snap = await getDocs(gamesRef);
   const ids = new Set(GAMES.map(g => g.id));
   for (const g of GAMES) await setDoc(doc(gamesRef, g.id), g);
@@ -1509,10 +1522,12 @@ async function resetTournament(){
 }
 
 function pushConfig(){
+  if (staleDevice){ cfgDirty = false; return; }      // never write from an old build
   if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID),
-    { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS }, { merge:true })
+    { schema: SCHEMA, appBuild: BUILD, players: PLAYERS, courses: COURSES,
+      schedule: SCHEDULE, days: DAYS }, { merge:true })
     .then(() => { cfgDirty = false; setSync("live", {lastAt:new Date()}); })
     .catch(e => setSync("error", { err: (e.code||e.message) + " (config write failed)" }));
 }
@@ -1575,6 +1590,15 @@ function renderHome(){
   const rounds = ROUNDS().slice().sort((a,b) =>
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   let h = "";
+  if (staleDevice){
+    h += `<div class="syncerr">
+      <div class="syncerr-t">This device is out of date</div>
+      <div class="syncerr-c">running ${esc(BUILD)} \u00b7 current is ${esc(serverBuild||"newer")}</div>
+      <div class="syncerr-h">Scores entered here won't be saved, because an older version can
+        undo other people's work. Delete the app from your home screen and add it again from
+        the link to update.</div>
+    </div>`;
+  }
   if (SYNC.state === "error" && SYNC.err){
     const code = SYNC.err;
     let hint = "Open the browser console for the full error.";
@@ -2923,6 +2947,7 @@ function handleClick(el){
   if (el.id === "syncdot"){
     const d = [
       "build: " + BUILD + "  schema " + SCHEMA,
+      "server build: " + (serverBuild || "unknown") + (staleDevice ? "  ** THIS DEVICE IS OLDER **" : ""),
       "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
       "transport: " + (SYNC.transport || "-"),
       "offline queueing: yes (local queue, independent of transport)",
@@ -2946,12 +2971,22 @@ function handleClick(el){
     return;
   }
   if (el.id === "purgegames"){
-    /* Games left behind by an earlier failed import: their round is gone, so
-       nothing can reach them, but they still count in the pairings. */
+    /* Two kinds of junk: games whose round is gone, and duplicates written back
+       by a device running an older build. A round shouldn't hold two games of
+       the same format with different teams unless you put them there, so the
+       oldest duplicate is the one to drop. */
     const strays = GAMES.filter(g => !g.roundId || !EV(g.roundId));
+    const seen = {};
+    const dupes = [];
+    GAMES.filter(g => g.roundId && EV(g.roundId)).forEach(g => {
+      const key = g.roundId + "|" + g.type + "|" +
+        [...(g.teams[0]||[]), ...(g.teams[1]||[])].slice().sort().join(",");
+      if (seen[key]) dupes.push(g); else seen[key] = g;
+    });
+    strays.push(...dupes);
     if (!strays.length){ toast("Nothing to remove"); return; }
-    if (!confirm(`Remove ${strays.length} game(s) that aren't attached to any round?\n\n`
-      + `Rounds on the schedule keep their games.`)) return;
+    if (!confirm(`Remove ${strays.length} game(s) \u2014 unattached or duplicated?\n\n`
+      + `Everything on the schedule keeps its games.`)) return;
     strays.forEach(g => removeGame(g.id));
     render(); toast(`Removed ${strays.length}`); return;
   }
