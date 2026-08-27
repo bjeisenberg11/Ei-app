@@ -961,7 +961,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0449";
+const BUILD = "2026-08-27.0514";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1130,21 +1130,43 @@ async function connectWith(i){
 
 async function seedIfNeeded(fsMod, cfgRef, gamesRef){
   const snap = await fsMod.getDoc(cfgRef);
-  if (!snap.exists()){
+  const fresh = !snap.exists();
+
+  if (fresh){
     await fsMod.setDoc(cfgRef,
       { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS });
   } else if ((snap.data().schema || 1) !== SCHEMA){
     await fsMod.setDoc(cfgRef, { schema: SCHEMA }, { merge: true });
   }
+
   const existing = await fsMod.getDocs(gamesRef);
   const byId = {};
   existing.forEach(d => byId[d.id] = d.data());
+
+  if (fresh){
+    /* Brand new tournament: write the demo games so there's something to look
+       at. Only ever here. */
+    for (const g of GAMES) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
+    return;
+  }
+
+  /* Established tournament. Repair games that are actually THERE but in an
+     old shape — never re-create ones that are absent. They're absent because
+     they were deleted or replaced by an import, and putting them back was
+     resurrecting the demo games after every schedule import. */
   for (const g of GAMES){
     const cur = byId[g.id];
-    const unusable = !cur || Array.isArray(cur.holes) || Array.isArray(cur.teams)
+    if (!cur) continue;
+    const unusable = Array.isArray(cur.holes) || Array.isArray(cur.teams)
                      || !cur.holes || !cur.holes["0"];
     if (unusable) await fsMod.setDoc(fsMod.doc(gamesRef, g.id), g);
   }
+
+  /* Adopt whatever the database actually holds, so the defaults in memory
+     don't linger and get written back later. */
+  const fromDb = [];
+  existing.forEach(d => { const v = d.data(); if (v && v.id) fromDb.push(v); });
+  if (fromDb.length) GAMES = fromDb;
 }
 
 let serverSeen = false;
