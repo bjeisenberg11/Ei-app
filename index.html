@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.1836";
+const BUILD = "2026-08-26.2328";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1549,6 +1549,25 @@ function renderBoard(){
 
 /* ---------- §10 schedule ---------- */
 let schedMode = "timeline";
+/* Accepts 8:10am, 8:10 AM, 1:15pm, 13:15, 8am. Stores 24-hour internally so
+   sorting stays simple; everything shown to a person is 12-hour. */
+function parseTime(raw){
+  const t = (raw || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!t) return null;
+  const m = t.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)?$/);
+  if (!m) return undefined;                 // undefined = couldn't read it
+  let h = +m[1];
+  const min = m[2] ? +m[2] : 0;
+  const ap = m[3];
+  if (min > 59) return undefined;
+  if (ap){
+    if (h < 1 || h > 12) return undefined;
+    if (ap === "pm" && h !== 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+  } else if (h > 23) return undefined;
+  return String(h).padStart(2,"0") + ":" + String(min).padStart(2,"0");
+}
+
 function fmtTime(t){
   if (!t) return "—";
   let [h,m] = t.split(":").map(Number);
@@ -1587,6 +1606,9 @@ function renderSchedule(){
       <label>Column order</label>
       <p class="hint" style="margin:0 0 8px"><span class="mono">day, time, type, course, detail,
         player, notes, a1, a2, a3, a4, b1, b2, b3, b4</span></p>
+      <label>time</label>
+      <p class="hint" style="margin:0 0 8px">12-hour, e.g. <span class="mono">8:10am</span> or
+        <span class="mono">1:15pm</span>. Leave blank for TBD.</p>
       <label>type</label>
       <p class="hint" style="margin:0 0 8px">ROUND · GAME · MEAL · TRAVEL-IN · TRAVEL-OUT · OTHER</p>
       <label>detail</label>
@@ -1743,16 +1765,16 @@ const CSV_TEMPLATE = CSV_HEAD + "\n" + Array(24).fill(",,,,,,,,,,,,,,").join("\n
 /* Filled example, for reference rather than pasting back in. */
 const CSV_EXAMPLE =
 `${CSV_HEAD}
-Friday,14:20,TRAVEL-IN,,United 1442,Jason,ORD,,,,,,,,
-Friday,19:30,MEAL,,Welcome dinner,,Reservation under Eisenberg,,,,,,,,
-Saturday,08:10,ROUND,Pine Hollow,,,,,,,,,,,
+Friday,2:20pm,TRAVEL-IN,,United 1442,Jason,ORD,,,,,,,,
+Friday,7:30pm,MEAL,,Welcome dinner,,Reservation under Eisenberg,,,,,,,,
+Saturday,8:10am,ROUND,Pine Hollow,,,,,,,,,,,
 Saturday,,GAME,,BESTBALL,,,Blake,Daniel,,,Dan,Howard,,
 Saturday,,GAME,,BESTBALL,,,Jason,Luke,,,Jake,Adam,,
-Saturday,13:40,ROUND,Marsh Ridge,,,,,,,,,,,
+Saturday,1:40pm,ROUND,Marsh Ridge,,,,,,,,,,,
 Saturday,,GAME,,SCRAMBLE4,,,Blake,Daniel,Jason,Luke,Dan,Howard,Jake,Adam
-Sunday,13:15,ROUND,Stonebridge,,,,,,,,,,,
+Sunday,1:15pm,ROUND,Stonebridge,,,,,,,,,,,
 Sunday,,GAME,,40BALL,,,Blake,Daniel,Jason,Luke,Dan,Howard,Jake,Adam
-Sunday,20:45,TRAVEL-OUT,,Delta 1190,Jake,ORD,,,,,,,,
+Sunday,8:45pm,TRAVEL-OUT,,Delta 1190,Jake,ORD,,,,,,,,
 `;
 
 function splitCSVLine(line){
@@ -1805,13 +1827,15 @@ function parseCSV(text){
 
     if (day && !days.includes(day)) days.push(day);
 
-    const t = time.trim() ? time.trim() : null;
-    if (t && !/^\d{1,2}:\d{2}$/.test(t)) errors.push(`Line ${n}: time "${t}" should look like 08:10.`);
+    const t = parseTime(time);
+    if (t === undefined){
+      errors.push(`Line ${n}: couldn't read the time "${time}". Try 8:10am or 1:15pm.`);
+    }
 
     if (type === "ROUND"){
       const c = courseByName(course);
       if (!c) errors.push(`Line ${n}: no course called "${course}". Add it on the Field tab first.`);
-      currentRound = { id: uid("r"), type:"ROUND", day: day || days[0], time: t,
+      currentRound = { id: uid("r"), type:"ROUND", day: day || days[0], time: t || null,
                        courseId: c ? c.id : (COURSES[0]||{}).id, mode:"RELATIVE" };
       events.push(currentRound);
       return;
@@ -1842,7 +1866,7 @@ function parseCSV(text){
     }
 
     if (type === "MEAL" || type === "OTHER"){
-      events.push({ id: uid("e"), type, day: day || days[0], time: t,
+      events.push({ id: uid("e"), type, day: day || days[0], time: t || null,
                     title: detail || (type === "MEAL" ? "Meal" : "Event"),
                     location: course || "", notes });
       return;
@@ -1851,7 +1875,7 @@ function parseCSV(text){
     if (type === "TRAVEL-IN" || type === "TRAVEL-OUT"){
       const p = byName(player);
       if (!p) errors.push(`Line ${n}: no player called "${player}".`);
-      events.push({ id: uid("e"), type:"TRAVEL", day: day || days[0], time: t,
+      events.push({ id: uid("e"), type:"TRAVEL", day: day || days[0], time: t || null,
                     dir: type === "TRAVEL-OUT" ? "DEPARTURE" : "ARRIVAL",
                     pid: p ? p.id : PLAYERS[0].id, title: detail || "Travel", notes });
       return;
@@ -1871,7 +1895,7 @@ function scheduleToCSV(){
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   ordered.forEach(e => {
     if (e.type === "ROUND"){
-      rows.push([e.day, e.time||"", "ROUND", esc2((C(e.courseId)||{}).name),
+      rows.push([e.day, e.time?fmtTime(e.time):"", "ROUND", esc2((C(e.courseId)||{}).name),
         "", "", "", "", "", "", "", "", "", "", ""].join(","));
       GAMES.filter(g => g.roundId === e.id).forEach(g => {
         const cells = t => { const a = g.teams[t].map(id => esc2((P(id)||{}).name));
@@ -1880,11 +1904,11 @@ function scheduleToCSV(){
         rows.push([e.day, "", "GAME", "", fmt, "", "", ...cells(0), ...cells(1)].join(","));
       });
     } else if (e.type === "TRAVEL"){
-      rows.push([e.day, e.time||"", e.dir === "DEPARTURE" ? "TRAVEL-OUT" : "TRAVEL-IN", "",
+      rows.push([e.day, e.time?fmtTime(e.time):"", e.dir === "DEPARTURE" ? "TRAVEL-OUT" : "TRAVEL-IN", "",
         esc2(e.title), esc2((P(e.pid)||{}).name), esc2(e.notes),
         "", "", "", "", "", "", "", ""].join(","));
     } else {
-      rows.push([e.day, e.time||"", e.type, esc2(e.location), esc2(e.title), "",
+      rows.push([e.day, e.time?fmtTime(e.time):"", e.type, esc2(e.location), esc2(e.title), "",
         esc2(e.notes), "", "", "", "", "", "", "", ""].join(","));
     }
   });
@@ -1948,9 +1972,9 @@ function renderEventEditor(h, id){
       ${DAYS.map(d => `<button class="btn ${e.day===d?"":"ghost"}" data-evday="${d}">${d.slice(0,3)}</button>`).join("")}
     </div>
 
-    <label for="evtime">Time (blank = TBD)</label>
-    <input id="evtime" data-evf="time" inputmode="numeric" placeholder="14:20"
-      value="${esc(e.time||"")}">
+    <label for="evtime">Time \u2014 e.g. 8:10am (blank = TBD)</label>
+    <input id="evtime" data-evf="time" placeholder="8:10am"
+      value="${esc(e.time ? fmtTime(e.time) : "")}">
 
     ${isRound ? "" : `
     <label for="evloc">Location</label>
@@ -2903,8 +2927,8 @@ document.addEventListener("input", e => {
     const e = EV(editEvent);
     let v = t.value;
     if (t.dataset.evf === "time"){
-      v = v.replace(/[^0-9:]/g, "");
-      e.time = v.trim() === "" ? null : v;
+      const parsed = parseTime(v);
+      if (parsed !== undefined) e.time = parsed;   // ignore half-typed values
     } else {
       e[t.dataset.evf] = v;
     }
