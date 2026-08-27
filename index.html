@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0340";
+const BUILD = "2026-08-27.0401";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1078,6 +1078,7 @@ async function connectWith(i){
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
       if (myGen !== gen) return;
       const v = d.data(); if (!v) return;
+      if (cfgDirty || d.metadata.hasPendingWrites) return;   // ours is newer
       if (v.players)  { PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push(x)); }
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
@@ -1254,6 +1255,7 @@ function dequeue(item){
    appear to do nothing at all.
    ============================================================ */
 function migrateLoaded(){
+  if (cfgDirty) return false;        // config is mid-save; nothing to repair yet
   let changed = false;
   const uid = p => p + Math.random().toString(36).slice(2,8);
 
@@ -1270,7 +1272,10 @@ function migrateLoaded(){
   GAMES.forEach(g => {
     if (g.roundId && EV(g.roundId)) return;
     const cid = g.courseId || COURSES[0].id;
-    let r = SCHEDULE.find(e => e.type === "ROUND" && e.courseId === cid);
+    /* Only adopt an existing round when it's unambiguous. Two rounds at the
+       same course would otherwise swallow every orphaned game. */
+    const sameCourse = SCHEDULE.filter(e => e.type === "ROUND" && e.courseId === cid);
+    let r = sameCourse.length === 1 ? sameCourse[0] : null;
     if (!r) r = SCHEDULE.find(e => e.type === "ROUND" && e.title === g.round);
     if (!r){
       const label = g.round || "";
@@ -1400,11 +1405,11 @@ async function resetTournament(){
 }
 
 function pushConfig(){
-  if (!SYNC.on || !SYNC.api) return;
+  if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", TID),
     { schema: SCHEMA, players: PLAYERS, courses: COURSES, schedule: SCHEDULE, days: DAYS }, { merge:true })
-    .then(() => setSync("live", {lastAt:new Date()}))
+    .then(() => { cfgDirty = false; setSync("live", {lastAt:new Date()}); })
     .catch(e => setSync("error", { err: (e.code||e.message) + " (config write failed)" }));
 }
 
@@ -1420,7 +1425,12 @@ let crsPlan = null;
 let boardMode = "table";
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
+/* True from the moment config changes locally until the write is acknowledged.
+   While it's set, incoming server snapshots are ignored for config — ours is
+   newer, and letting the old copy land was wiping freshly imported rounds. */
+let cfgDirty = false;
 function queueConfig(){
+  cfgDirty = true;
   clearTimeout(cfgTimer);
   cfgTimer = setTimeout(pushConfig, 700);   // debounce typing
 }
@@ -1943,8 +1953,13 @@ function applyCSV(plan){
   SCHEDULE = plan.events;
   GAMES = plan.games.slice();
   if (plan.days.length){ DAYS.length = 0; plan.days.forEach(d => DAYS.push(d)); }
+  /* Schedule first and immediately. Games reference round ids, so writing them
+     while the schedule is still queued leaves every game an orphan if a server
+     snapshot lands in between. */
+  cfgDirty = true;
+  clearTimeout(cfgTimer);
+  pushConfig();
   GAMES.forEach(g => pushGame(g));
-  queueConfig();
 }
 
 /* ============================================================
