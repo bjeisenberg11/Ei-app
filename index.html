@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0226";
+const BUILD = "2026-08-27.0323";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2612,6 +2612,18 @@ function renderPlayers(){
   <p class="note"><b>CH</b> is the course handicap that player's index is worth off that tee:
     <span class="mono">index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
     Scrambles ignore it and play gross.</p>
+
+  <h3 class="sub3">Add a course from a scorecard</h3>
+  <div class="imp">
+    <p class="hint" style="margin:0 0 9px">Type what's on the card \u2014 or send a photo of it to
+      Claude and paste back what it hands you. Adds a new course, or updates one of the same name.</p>
+    <textarea id="crsin" rows="7" placeholder="${esc(COURSE_EXAMPLE)}"${dis}></textarea>
+    <div class="acts">
+      <button class="btn ghost" id="crsexample">Copy example</button>
+      <button class="btn" id="crscheck"${dis}>Check it</button>
+    </div>
+    <div id="crsout"></div>
+  </div>
 
   <h3 class="sub3">Scorecard</h3>
   <div class="imp">
