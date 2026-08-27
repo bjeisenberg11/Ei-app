@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0401";
+const BUILD = "2026-08-27.0413";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1090,11 +1090,13 @@ async function connectWith(i){
 
     unsubs.push(fsMod.onSnapshot(gamesRef, qs => {
       if (myGen !== gen) return;
-      qs.forEach(d => {
-        const v = d.data();
-        const idx = GAMES.findIndex(x => x.id === v.id);
-        if (idx >= 0) GAMES[idx] = v; else GAMES.push(v);
-      });
+      /* Rebuild from the snapshot rather than merging into what's already
+         here. Merging only ever added, so deleted games lingered forever and
+         every re-import stacked another copy on top — which is why pair counts
+         climbed past the number of games actually scheduled. */
+      const fresh = [];
+      qs.forEach(d => { const v = d.data(); if (v && v.id) fresh.push(v); });
+      GAMES = fresh;
       applyQueueLocally();
       touchSync("games", qs);
       if (!document.querySelector("input:focus")) render();
@@ -1313,7 +1315,17 @@ function migrateLoaded(){
     if (!e.mode){ e.mode = "RELATIVE"; changed = true; }
   });
 
-  // 6. teams stored as an array can't be written to Firestore
+  // 6. drop games whose round was deleted — they can never be reached
+  const orphans = GAMES.filter(g => g.roundId && !EV(g.roundId));
+  if (orphans.length && !cfgDirty){
+    orphans.forEach(g => {
+      const cid = g.courseId || COURSES[0].id;
+      const sameCourse = SCHEDULE.filter(e => e.type === "ROUND" && e.courseId === cid);
+      if (sameCourse.length !== 1) removeGame(g.id);
+    });
+  }
+
+  // 7. teams stored as an array can't be written to Firestore
   GAMES.forEach(g => {
     if (Array.isArray(g.teams)){
       g.teams = { 0: g.teams[0] || [], 1: g.teams[1] || [] };
@@ -2659,8 +2671,9 @@ function renderPlayers(){
     <p class="hint" style="margin:0 0 9px">Your handicaps, courses and schedule are stored in the
       database, not in the app file \u2014 uploading a new version keeps them. These two buttons are
       the only things that discard data.</p>
-    <div class="acts">
+    <div class="acts cwrap">
       <button class="btn ghost" id="clearscores">Clear all scores</button>
+      <button class="btn ghost" id="purgegames">Remove stray games</button>
       <button class="btn red" id="resetall">Reset everything</button>
     </div>
     <p class="impmsg" id="dangermsg"></p>
@@ -2771,6 +2784,16 @@ function handleClick(el){
       connectWith(0);
     }
     return;
+  }
+  if (el.id === "purgegames"){
+    /* Games left behind by an earlier failed import: their round is gone, so
+       nothing can reach them, but they still count in the pairings. */
+    const strays = GAMES.filter(g => !g.roundId || !EV(g.roundId));
+    if (!strays.length){ toast("Nothing to remove"); return; }
+    if (!confirm(`Remove ${strays.length} game(s) that aren't attached to any round?\n\n`
+      + `Rounds on the schedule keep their games.`)) return;
+    strays.forEach(g => removeGame(g.id));
+    render(); toast(`Removed ${strays.length}`); return;
   }
   if (el.id === "clearscores"){
     if (!confirm("Clear every score in every game?\n\nHandicaps, courses and the schedule are kept."))
