@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-26.2328";
+const BUILD = "2026-08-27.0226";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1416,6 +1416,7 @@ let showStrokes = false;
 let editCourseId = COURSES[0].id;
 let editEvent = null;
 let csvPlan = null;
+let crsPlan = null;
 let boardMode = "table";
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
@@ -1944,6 +1945,73 @@ function applyCSV(plan){
   if (plan.days.length){ DAYS.length = 0; plan.days.forEach(d => DAYS.push(d)); }
   GAMES.forEach(g => pushGame(g));
   queueConfig();
+}
+
+/* ============================================================
+   COURSE IMPORT
+
+   A scorecard has everything needed, but reading a photo needs a vision model
+   — an API key and a server, which this app deliberately doesn't have. So the
+   format is plain text that anyone (or any assistant) can produce from a
+   photo in a few seconds, and pasting it takes one tap.
+   ============================================================ */
+const COURSE_EXAMPLE =
+`Name: The Black Course
+Par:   4 4 4 3 4 5 3 4 5 3 4 4 3 4 5 4 4 5
+Index: 5 1 9 15 13 7 17 11 3 16 14 8 18 6 12 2 4 10
+Tee: Gold, 74.6, 147
+Tee: Black, 71.5, 144
+Tee: White, 70.2, 131
+Tee: Blue, 68.6, 114`;
+
+function parseCourse(text){
+  const errors = [];
+  const out = { name:"", holes:[], tees:[] };
+  let pars = null, idx = null;
+
+  text.split(/\r?\n/).forEach(line => {
+    const l = line.trim();
+    if (!l) return;
+    const m = l.match(/^([A-Za-z ]+)\s*:\s*(.*)$/);
+    if (!m){ errors.push(`Couldn't read: "${l}"`); return; }
+    const key = m[1].trim().toLowerCase(), val = m[2].trim();
+    const nums = () => val.split(/[\s,]+/).filter(Boolean).map(Number);
+
+    if (key === "name") out.name = val;
+    else if (key === "par") pars = nums();
+    else if (key === "index" || key === "hcp" || key === "stroke index") idx = nums();
+    else if (key === "tee"){
+      const parts = val.split(",").map(x => x.trim());
+      const [nm, rating, slope, par] = parts;
+      if (!nm) { errors.push(`Tee line missing a name: "${l}"`); return; }
+      const r = parseFloat(rating), sl = parseInt(slope, 10);
+      if (isNaN(r) || isNaN(sl)){ errors.push(`Tee "${nm}" needs a rating and slope.`); return; }
+      if (sl < 55 || sl > 155) errors.push(`Tee "${nm}": slope ${sl} is outside 55\u2013155.`);
+      out.tees.push({ name:nm, rating:r, slope:sl, par: par ? +par : null });
+    }
+    else errors.push(`Don't know what "${m[1].trim()}" means.`);
+  });
+
+  if (!out.name) errors.push("No Name line.");
+  if (!pars) errors.push("No Par line.");
+  else if (pars.length !== 18) errors.push(`Par: found ${pars.length} numbers, need 18.`);
+  else if (pars.some(x => !(x >= 3 && x <= 6))) errors.push("Par values must be 3\u20136.");
+  if (!idx) errors.push("No Index line.");
+  else if (idx.length !== 18) errors.push(`Index: found ${idx.length} numbers, need 18.`);
+  else {
+    const missing = [];
+    for (let i = 1; i <= 18; i++) if (!idx.includes(i)) missing.push(i);
+    if (missing.length) errors.push(`Index must use 1\u201318 once each. Missing: ${missing.join(", ")}.`);
+  }
+  if (!out.tees.length) errors.push("No Tee lines \u2014 at least one is needed.");
+
+  if (!errors.length){
+    const total = pars.reduce((a,b) => a+b, 0);
+    out.holes = pars.map((par,i) => ({ par, si: idx[i] }));
+    out.tees.forEach(t => { if (!t.par) t.par = total; });
+    out.total = total;
+  }
+  return { errors, course: out };
 }
 
 /* ---------- event editor ---------- */
@@ -2694,6 +2762,39 @@ function handleClick(el){
   if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
   if (el.id === "evdone"){ editEvent = null; render(); return; }
 
+  if (el.id === "crsexample"){ copyText(COURSE_EXAMPLE, "Example"); return; }
+  if (el.id === "crscheck"){
+    const txt = (document.getElementById("crsin")||{}).value || "";
+    const { errors, course } = parseCourse(txt);
+    const o = document.getElementById("crsout");
+    if (errors.length){
+      crsPlan = null;
+      o.innerHTML = `<p class="impmsg bad">${errors.length} problem(s):</p>
+        <ul class="csverr">${errors.slice(0,10).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`;
+    } else {
+      crsPlan = course;
+      const dup = COURSES.find(c => c.name.toLowerCase() === course.name.toLowerCase());
+      o.innerHTML = `<p class="impmsg good">${esc(course.name)} \u2014 par ${course.total},
+        ${course.tees.length} tee set(s): ${course.tees.map(t=>esc(t.name)).join(", ")}.</p>
+        ${dup ? `<p class="impmsg bad">A course called "${esc(course.name)}" already exists \u2014
+          adding will replace its holes and tees.</p>` : ""}
+        <div class="acts"><button class="btn" id="crsadd">${dup ? "Replace" : "Add"} course</button></div>`;
+    }
+    return;
+  }
+  if (el.id === "crsadd"){
+    if (!crsPlan) return;
+    const existing = COURSES.find(c => c.name.toLowerCase() === crsPlan.name.toLowerCase());
+    if (existing){
+      existing.holes = crsPlan.holes; existing.tees = crsPlan.tees; existing.name = crsPlan.name;
+      editCourseId = existing.id;
+    } else {
+      const id = "c" + Date.now().toString(36);
+      COURSES.push({ id, name: crsPlan.name, holes: crsPlan.holes, tees: crsPlan.tees });
+      editCourseId = id;
+    }
+    crsPlan = null; queueConfig(); render(); toast("Course saved"); return;
+  }
   if (el.id === "csvtemplate"){ copyText(CSV_TEMPLATE, "Template"); return; }
   if (el.id === "csvexample"){ copyText(CSV_EXAMPLE, "Example"); return; }
   if (el.id === "csvcurrent"){ copyText(scheduleToCSV(), "Schedule"); return; }
