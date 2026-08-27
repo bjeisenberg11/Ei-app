@@ -946,7 +946,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0323";
+const BUILD = "2026-08-27.0340";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2580,6 +2580,9 @@ function renderPlayers(){
   <p class="note">${rounds.length
       ? `Played ${rounds.join(", ")}.`
       : "No rounds assigned to this course."}</p>
+  ${ro ? "" : `<div class="acts" style="margin-top:6px">
+    <button class="btn ghost" id="crsdel">Delete ${esc(co.name)}</button>
+  </div>`}
 
   <h3 class="sub3">Tee sets</h3>
   <table class="lb ttbl"><thead><tr>
@@ -2774,6 +2777,24 @@ function handleClick(el){
   if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
   if (el.id === "evdone"){ editEvent = null; render(); return; }
 
+  if (el.id === "crsdel"){
+    const co = C(editCourseId);
+    const used = ROUNDS().filter(r => r.courseId === co.id);
+    if (used.length){
+      alert(`"${co.name}" can't be deleted \u2014 ${used.length} round(s) are played there.\n\n`
+        + `Point those rounds at another course first, or delete them on the Schedule tab.`);
+      return;
+    }
+    if (COURSES.length <= 1){ alert("There has to be at least one course."); return; }
+    if (!confirm(`Delete "${co.name}"?\n\nIts tees and scorecard go with it. `
+      + `Nothing else is affected.`)) return;
+    const i = COURSES.findIndex(c => c.id === co.id);
+    COURSES.splice(i, 1);
+    // any player tee assignment for that course is now meaningless
+    PLAYERS.forEach(p => { if (p.tees) delete p.tees[co.id]; });
+    editCourseId = COURSES[0].id;
+    queueConfig(); render(); toast("Course deleted"); return;
+  }
   if (el.id === "crsexample"){ copyText(COURSE_EXAMPLE, "Example"); return; }
   if (el.id === "crscheck"){
     const txt = (document.getElementById("crsin")||{}).value || "";
