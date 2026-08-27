@@ -147,6 +147,15 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .banner .thru{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.14em;font-size:10px;color:var(--ink-soft);margin-top:4px}
 .banner.closed{background:var(--ink);color:var(--paper)}
+.strokerow{display:flex;align-items:baseline;gap:10px;padding:5px 2px;text-align:left}
+.strokerow + .strokerow{border-top:1px solid var(--rule-soft)}
+.banner.closed .strokerow + .strokerow{border-top-color:#3A5C46}
+.sname{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.05em;font-size:14px;min-width:0}
+.stot{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600}
+.spar{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;width:34px;text-align:right}
+.spar.under{color:var(--pencil)}
+.banner.closed .spar.under{color:#E8A79A}
 .banner.closed .thru{color:#A9BFAE}
 .tag{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-weight:700;
   text-transform:uppercase;letter-spacing:.12em;font-size:10px;border:1px solid var(--pencil);
@@ -533,9 +542,13 @@ function pairMatrix(){
       if (a !== b && withC[a]) withC[a][b]++;
     })));
     A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
-    /* in the same game at all — partner or opponent */
-    const all = [...A, ...B];
-    all.forEach(a => all.forEach(b => { if (a !== b && grpC[a]) grpC[a][b]++; }));
+    /* A foursome is the group that walks the course together. In a 2v2 that's
+       all four players. In a scramble or 40ball the two teams go out as
+       separate groups, so a team is its own foursome. */
+    const groups = g.type === "BESTBALL" ? [[...A, ...B]] : [A, B];
+    groups.forEach(grp => grp.forEach(a => grp.forEach(b => {
+      if (a !== b && grpC[a]) grpC[a][b]++;
+    })));
   });
   return { withC, agC, grpC, played };
 }
@@ -586,9 +599,9 @@ function renderPairs(){
   h += grid("Playing against", agC,
     "Games where the pair are on opposite sides. Same again: the total counts " +
     "opponents, not games.");
-  h += grid("In the same game", grpC,
-    "Games the pair are in at all, either side. This is the one to scan for " +
-    "anyone you'd barely see all weekend.");
+  h += grid("Same foursome", grpC,
+    "Rounds the pair actually play alongside each other. A 2v2 is one foursome " +
+    "of four; in a scramble or 40ball each team is its own group.");
 
   h += `<h2 class="sec">Games each</h2><table class="lb"><thead><tr>
     <th>Player</th><th>Games</th><th>Never with</th></tr></thead><tbody>`;
@@ -1003,7 +1016,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.0546";
+const BUILD = "2026-08-27.0623";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2256,9 +2269,13 @@ function pairMatrix(){
       if (a !== b && withC[a]) withC[a][b]++;
     })));
     A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
-    /* in the same game at all — partner or opponent */
-    const all = [...A, ...B];
-    all.forEach(a => all.forEach(b => { if (a !== b && grpC[a]) grpC[a][b]++; }));
+    /* A foursome is the group that walks the course together. In a 2v2 that's
+       all four players. In a scramble or 40ball the two teams go out as
+       separate groups, so a team is its own foursome. */
+    const groups = g.type === "BESTBALL" ? [[...A, ...B]] : [A, B];
+    groups.forEach(grp => grp.forEach(a => grp.forEach(b => {
+      if (a !== b && grpC[a]) grpC[a][b]++;
+    })));
   });
   return { withC, agC, grpC, played };
 }
@@ -2309,9 +2326,9 @@ function renderPairs(){
   h += grid("Playing against", agC,
     "Games where the pair are on opposite sides. Same again: the total counts " +
     "opponents, not games.");
-  h += grid("In the same game", grpC,
-    "Games the pair are in at all, either side. This is the one to scan for " +
-    "anyone you'd barely see all weekend.");
+  h += grid("Same foursome", grpC,
+    "Rounds the pair actually play alongside each other. A 2v2 is one foursome " +
+    "of four; in a scramble or 40ball each team is its own group.");
 
   h += `<h2 class="sec">Games each</h2><table class="lb"><thead><tr>
     <th>Player</th><th>Games</th><th>Never with</th></tr></thead><tbody>`;
@@ -2347,9 +2364,8 @@ function renderGame(){
       : isStroke(g) ? (g.holes[i].teamScore[0] != null && g.holes[i].teamScore[1] != null)
       : (g.holes[i].locked[0] && g.holes[i].locked[1]);
     let cls = "hcell";
-    if (done && (isMatch(g) || isStroke(g))){
-      const a = g.holes[i].teamScore[0], b = g.holes[i].teamScore[1];
-      const r = isMatch(g) ? resolveHole(g, i) : (a < b ? "A" : b < a ? "B" : "H");
+    if (done && isMatch(g)){
+      const r = resolveHole(g, i);
       cls += r === "A" ? " won-a" : r === "B" ? " won-b" : " halved";
     } else if (done){
       cls += " done";
@@ -2358,7 +2374,7 @@ function renderGame(){
     out += `<button class="${cls}" data-hole="${i}">${i+1}</button>`;
   }
   out += `</div>`;
-  if (isMatch(g) || isStroke(g)){
+  if (isMatch(g)){
     out += `<div class="hkey">
       <span><i class="sw a"></i>${esc(teamLabel(g,0))}</span>
       <span><i class="sw b"></i>${esc(teamLabel(g,1))}</span>
@@ -2382,12 +2398,19 @@ function renderGame(){
     const thru = Math.max(st.holes[0], st.holes[1]);
     const r0 = st.totals[0] - strokeParSoFar(g,0), r1 = st.totals[1] - strokeParSoFar(g,1);
     out += `<div class="banner ${st.done?"closed":""}">
-      <div class="st">${st.done
-        ? (st.result.winner==="TIE" ? `TIED ${st.result.label}`
-           : `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
-        : `${st.totals[0]} \u2014 ${st.totals[1]}`}</div>
-      <div class="thru">${thru ? `Thru ${thru}` : "Not started"} \u00b7 stroke play \u00b7
-        ${esc(teamLabel(g,0))} ${toPar(r0)} \u00b7 ${esc(teamLabel(g,1))} ${toPar(r1)}</div>
+      ${st.done ? `<div class="st">${st.result.winner==="TIE" ? "TIED"
+        : `${winnerLabel(g,st.result.winner)} WIN`}</div>` : ""}
+      <div class="strokerow">
+        <span class="sname">${esc(teamLabel(g,0))}</span>
+        <span class="stot">${st.totals[0]}</span>
+        <span class="spar ${parClass(r0)}">${st.holes[0] ? toPar(r0) : ""}</span>
+      </div>
+      <div class="strokerow">
+        <span class="sname">${esc(teamLabel(g,1))}</span>
+        <span class="stot">${st.totals[1]}</span>
+        <span class="spar ${parClass(r1)}">${st.holes[1] ? toPar(r1) : ""}</span>
+      </div>
+      <div class="thru">${thru ? `Stroke play \u00b7 thru ${thru}` : "Stroke play \u00b7 not started"}</div>
     </div>`;
   } else {
     const fs = fbState(g);
