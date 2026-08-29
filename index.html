@@ -178,6 +178,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   padding:8px 11px;border-bottom:1px solid var(--rule-soft);background:var(--paper-3)}
 .team-name{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.06em;font-size:13px;flex:1 1 auto;min-width:0}
+.tsub{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;
+  color:var(--ink-soft);margin-left:6px}
 .team-score{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:15px;flex:none}
 .prow{display:flex;align-items:center;gap:9px;padding:8px 11px;border-top:1px solid var(--rule-soft)}
 .prow:first-child{border-top:none}
@@ -1016,7 +1018,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-27.1154";
+const BUILD = "2026-08-29.2209";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1570,7 +1572,10 @@ function render(){
   if (inGame){
     const g = GAMES.find(x => x.id === view.gameId);
     $("#ttl").textContent = LABEL[g.type];
-    $("#tsub").textContent = roundLabel(g) + " · " + courseOf(g).name;
+    /* the round is usually named after its course, so don't print it twice */
+    const r = roundOf(g);
+    const when = r ? [r.day, r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ") : "";
+    $("#tsub").textContent = [courseOf(g).name, when].filter(Boolean).join(" · ");
   } else {
     $("#ttl").textContent = "Eisenberg Invitational";
     $("#tsub").textContent = "Prototype · scoring engine";
@@ -2480,10 +2485,15 @@ function renderGame(){
 
   if (isMatch(g) && !hardLocked){
     const hole = g.holes[h];
+    /* Conceding rewrites the hole result, so it must respect the same lock the
+       scores do — otherwise a locked hole could still be flipped. */
+    const shut = t => hole.locked[t] ? " disabled" : "";
     out += `<div class="acts">
-      <button class="btn ghost" data-concede="0">${hole.conceded===0?"Undo concede":`${esc(teamLabel(g,0))} concede`}</button>
-      <button class="btn ghost" data-concede="1">${hole.conceded===1?"Undo concede":`${esc(teamLabel(g,1))} concede`}</button>
+      <button class="btn ghost" data-concede="0"${shut(0)}>${hole.conceded===0?"Undo concede":`${esc(teamLabel(g,0))} concede`}</button>
+      <button class="btn ghost" data-concede="1"${shut(1)}>${hole.conceded===1?"Undo concede":`${esc(teamLabel(g,1))} concede`}</button>
     </div>`;
+    if (hole.locked[0] || hole.locked[1])
+      out += `<p class="note">A locked side can't concede \u2014 unlock it first.</p>`;
     if (hole.conceded !== null)
       out += `<p class="note warn">${esc(teamLabel(g,hole.conceded))} conceded — hole awarded, scoring skipped.</p>`;
     else if (!holeComplete(g,h))
@@ -2679,10 +2689,20 @@ function renderTeam(g, t, h, hardLocked){
     <span class="team-score">`;
   if (isMatch(g)){
     const ts = teamHoleScore(g,t,h);
-    head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "—");
+    head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "\u2014");
+    if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
+  } else if (isStroke(g)){
+    /* stroke play: this hole's score and the round total so far. The 40-score
+       budget belongs to 40ball and has no meaning here. */
+    const ts = hole.teamScore[t];
+    const tot = strokeTotals(g).totals[t];
+    const rel = tot - strokeParSoFar(g, t);
+    head += `${ts != null ? ts : "\u2014"} <span class="tsub">tot ${tot}` +
+            `${strokeParSoFar(g,t) ? ` <span class="par ${parClass(rel)}">${toPar(rel)}</span>` : ""}</span>`;
+    if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   } else {
     const relT = fbTotal(g,t) - fbParBasis(g,t);
-    head += `${fbTotal(g,t)} <span class="par ${parClass(relT)}">${toPar(relT)}</span> · ${fbSpent(g,t)}/40`;
+    head += `${fbTotal(g,t)} <span class="par ${parClass(relT)}">${toPar(relT)}</span> \u00b7 ${fbSpent(g,t)}/40`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   }
   head += `</span></div>`;
@@ -3238,6 +3258,7 @@ function handleClick(el){
 
   if (el.dataset.concede != null){
     const t = +el.dataset.concede, hole = g.holes[h];
+    if (hole.locked[t]){ toast("Locked \u2014 admin can reopen"); return; }
     hole.conceded = hole.conceded === t ? null : t;
     pushHole(g, h, "conceded", hole.conceded);
     render(); return;
