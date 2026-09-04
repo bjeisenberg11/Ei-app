@@ -37,8 +37,10 @@
 <style>
 :root{
   --paper:#E9E4D6; --paper-2:#F2EEE3; --paper-3:#DFD8C6;
-  --ink:#12321F; --ink-soft:#4A6353; --ink-faint:#8A9A8F;
-  --rule:#B9B09A; --rule-soft:#D3CCBA;
+  --ink:#12321F; --ink-soft:#3D5647; --ink-faint:#526457;
+  /* Deliberately darker than they look indoors. Florida sun washes out
+     anything lighter and these carry real information. */
+  --rule:#A9A088; --rule-soft:#C6BEA9;
   --pencil:#A82B1E; --brass:#8A6A22;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -66,7 +68,7 @@ button{font-family:inherit;color:inherit}
 .top h1{margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;
   text-transform:uppercase;letter-spacing:.03em;font-size:19px;line-height:1}
 .top .sub{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.15em;font-size:10px;font-weight:600;color:var(--ink-soft);margin-top:2px}
+  letter-spacing:.12em;font-size:11px;font-weight:600;color:var(--ink-soft);margin-top:2px}
 .topright{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
 .syncdot{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.1em;font-size:9.5px;font-weight:700;padding:3px 7px;white-space:nowrap;
@@ -106,25 +108,25 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .gcard.live{border-left-color:var(--pencil)}
 .gcard.done{opacity:.62}
 .roundwhen{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.13em;font-size:11px;font-weight:600;color:var(--ink-soft);
+  letter-spacing:.11em;font-size:12px;font-weight:700;color:var(--ink);
   margin:14px 0 7px;padding-left:3px;border-left:3px solid var(--brass)}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:16px;line-height:1.1}
 .gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
-.gstate{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;
-  margin-top:6px;color:var(--ink-faint);line-height:1.35}
+.gstate{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;
+  margin-top:6px;color:var(--ink-soft);line-height:1.35}
 .gstate.live{color:var(--pencil)}
 .gstate.done{color:var(--ink);
   border-left:2px solid var(--ink);padding-left:7px}
 .gmeta{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.13em;font-size:10px;color:var(--ink-faint);margin-top:6px}
+  letter-spacing:.11em;font-size:11px;color:var(--ink-soft);margin-top:6px}
 
 /* hole strip */
 .hstrip{display:grid;grid-template-columns:repeat(18,1fr);border:1px solid var(--rule);
   border-right:none;background:var(--paper-2);margin:10px 0 0}
 .hcell{border:none;border-right:1px solid var(--rule);background:transparent;
-  padding:6px 0 5px;font-family:'IBM Plex Mono',monospace;font-size:9px;
-  color:var(--ink-faint);cursor:pointer;position:relative;font-weight:500}
+  padding:7px 0 6px;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  color:var(--ink-soft);cursor:pointer;position:relative;font-weight:600}
 .hcell.done{background:var(--ink);color:var(--paper-2)}
 .hcell.won-a{background:var(--ink);color:var(--paper-2)}
 .hcell.won-b{background:var(--brass);color:var(--paper)}
@@ -145,7 +147,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .banner .st{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.02em;font-size:24px;line-height:1.05}
 .banner .thru{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.14em;font-size:10px;color:var(--ink-soft);margin-top:4px}
+  letter-spacing:.12em;font-size:11px;font-weight:600;color:var(--ink-soft);margin-top:5px}
 .banner.closed{background:var(--ink);color:var(--paper)}
 .strokerow{display:flex;align-items:baseline;gap:10px;padding:5px 2px;text-align:left}
 .strokerow + .strokerow{border-top:1px solid var(--rule-soft)}
@@ -165,7 +167,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hhead{display:flex;align-items:baseline;gap:9px;margin:18px 0 4px}
 .hnum{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:30px;line-height:1}
 .hinfo{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.13em;font-size:11px;color:var(--ink-soft)}
+  letter-spacing:.11em;font-size:12px;font-weight:600;color:var(--ink-soft)}
 .nav{margin-left:auto;display:flex;gap:6px}
 .nav button{width:38px;height:32px;border:1px solid var(--ink);background:transparent;
   color:var(--ink);font-size:16px;cursor:pointer;line-height:1}
@@ -218,7 +220,7 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
   font-size:16px;cursor:pointer;line-height:1}
 .step .val{width:34px;text-align:center;font-family:'IBM Plex Mono',monospace;
   font-weight:600;font-size:15px;background:var(--paper-2)}
-.step .val.empty{color:var(--ink-faint)}
+.step .val.empty{color:var(--ink-soft)}
 .pu{border:1px solid var(--rule);background:var(--paper-3);color:var(--ink-soft);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:10px;
   letter-spacing:.1em;padding:0 7px;height:32px;cursor:pointer}
@@ -419,13 +421,18 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 .team.islocked{border-color:var(--ink)}
 .team.islocked .prow{opacity:.72}
 
+.todaybar{display:flex;align-items:center;gap:10px;margin-top:16px;
+  border-bottom:1.5px solid var(--ink);padding-bottom:8px}
+.todaybar-t{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--ink)}
+
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
   border-top:1.5px solid var(--ink);display:flex;z-index:40;
   padding-bottom:env(safe-area-inset-bottom)}
 .tabs button{flex:1;background:none;border:none;padding:13px 4px 12px;cursor:pointer;
-  font-family:'Barlow Condensed',sans-serif;font-weight:600;text-transform:uppercase;
-  letter-spacing:.13em;font-size:11px;color:var(--ink-faint)}
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.11em;font-size:12px;color:var(--ink-soft)}
 .tabs button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--ink)}
 
 .testbar{display:flex;align-items:center;gap:7px;margin-top:10px;
@@ -435,7 +442,7 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 .testbar .btn{padding:9px 6px;font-size:11px}
 
 .footnote{border-top:1px solid var(--rule);margin-top:26px;padding:14px 0 8px;
-  font-size:12.5px;color:var(--ink-faint);line-height:1.5}
+  font-size:13px;color:var(--ink-soft);line-height:1.5}
 .toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%) translateY(140%);
   background:var(--ink);color:var(--paper);padding:9px 16px;font-family:'Barlow Condensed',sans-serif;
   text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:600;
@@ -1018,7 +1025,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-08-29.2209";
+const BUILD = "2026-09-03.2102";
 const TID = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -1544,6 +1551,7 @@ let editEvent = null;
 let csvPlan = null;
 let crsPlan = null;
 let boardMode = "table";
+let homeShowAll = false;
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
 /* True from the moment config changes locally until the write is acknowledged.
@@ -1591,6 +1599,18 @@ function render(){
 }
 
 /* ---------- home ---------- */
+/* Which day is "today"? Day names are free text — they might be "Friday" or
+   "Fri Sep 19" — so match on the weekday name appearing anywhere in the label,
+   then fall back to the first day that still has unfinished games. */
+function todayDay(){
+  /* Only narrow to a single day when it really is that day. Guessing a day
+     when the tournament isn't running would hide rounds from someone looking
+     at the schedule a week beforehand. */
+  const names = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+  const today = names[new Date().getDay()];
+  return DAYS.find(d => d.toLowerCase().includes(today)) || null;
+}
+
 function renderHome(){
   const rounds = ROUNDS().slice().sort((a,b) =>
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
@@ -1637,10 +1657,26 @@ function renderHome(){
     h += `<p class="note" style="margin-top:20px">No games set up yet \u2014 add them on the
       Schedule tab.</p>`;
 
+  const today = todayDay();
+  const daysWithGames = [...new Set(withGames.map(r => r.day))];
+  const showAll = homeShowAll || !today || !daysWithGames.includes(today);
+  const shown = showAll ? withGames : withGames.filter(r => r.day === today);
+
+  if (!showAll && daysWithGames.length > 1)
+    h += `<div class="todaybar">
+      <span class="todaybar-t">Today \u00b7 ${esc(today)}</span>
+      <button class="chip" id="showalldays">Show all days</button>
+    </div>`;
+  else if (showAll && today && daysWithGames.includes(today))
+    h += `<div class="todaybar">
+      <span class="todaybar-t">All days</span>
+      <button class="chip" id="showtoday">Just today</button>
+    </div>`;
+
   /* Group by day first. Two rounds at the same course on different days were
      showing as two identical headings, which read as a duplicate. */
   let lastDay = null;
-  withGames.forEach(r => {
+  shown.forEach(r => {
     if (r.day !== lastDay){
       h += `<h2 class="sec">${esc(r.day || "")}</h2>`;
       lastDay = r.day;
@@ -1673,6 +1709,7 @@ function renderBoard(){
   let h = `<div class="acts cwrap" style="margin-top:16px">
     <button class="btn" data-board="table">Standings</button>
     <button class="btn ghost" data-board="pairs">Pairings</button>
+    <button class="btn ghost" id="exportscores">Export</button>
   </div>
   <h2 class="sec">Standings</h2>
   <table class="lb"><thead><tr>
@@ -1686,8 +1723,11 @@ function renderBoard(){
       <td class="pts">${p.pts % 1 ? p.pts.toFixed(1) : p.pts}</td></tr>`;
   });
   h += `</tbody></table>
+  <textarea id="exportbox" readonly style="display:none"></textarea>
   <div class="footnote">Win 1 point, tie 0.5, loss 0. Games played is shown because the 3v3
-  sits two players out, so records are not expected to be even.</div>`;
+  sits two players out, so records are not expected to be even.<br>
+  <b>Export</b> copies every score entered so far as plain text \u2014 worth doing at the end of
+  each round as a backup.</div>`;
   app.innerHTML = h;
 }
 
@@ -2160,6 +2200,91 @@ function parseCourse(text){
     out.total = total;
   }
   return { errors, course: out };
+}
+
+/* ============================================================
+   SCORE EXPORT
+
+   The one thing the app can't recover from is losing what was entered. This
+   is a plain-text dump anyone can read, paste into a message, or use to
+   rebuild a card by hand.
+   ============================================================ */
+function scoresToText(){
+  const L = [];
+  L.push("THE EI \u2014 scores as of " + new Date().toLocaleString());
+  L.push("");
+
+  ROUNDS().slice().sort((a,b) =>
+    DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz")
+  ).forEach(r => {
+    const games = GAMES.filter(g => g.roundId === r.id);
+    if (!games.length) return;
+    L.push("=".repeat(52));
+    L.push(`${r.day || ""}${r.time ? " " + fmtTime(r.time) : ""} \u2014 ${eventName(r)}`);
+    L.push("=".repeat(52));
+
+    games.forEach(g => {
+      const course = courseOf(g);
+      L.push("");
+      L.push(`${LABEL[g.type]}: ${teamLabel(g,0)}  vs  ${teamLabel(g,1)}`);
+      const res = gameResult(g);
+      L.push("Result: " + (res
+        ? (res.winner === "TIE" ? "tied " + res.label
+           : winnerLabel(g, res.winner) + " win " + res.label)
+        : "in progress"));
+
+      if (isScramble(g) || isStroke(g)){
+        const hdr = ["Hole", "Par"].concat([teamShort(g,0), teamShort(g,1)]);
+        L.push("  " + hdr[0].padEnd(6) + hdr[1].padEnd(5) + hdr[2].padEnd(9) + hdr[3]);
+        holeList(g).forEach((hole, h) => {
+          const a = hole.teamScore[0], b = hole.teamScore[1];
+          if (a == null && b == null) return;
+          L.push("  " + String(h+1).padEnd(6) + String(course.holes[h].par).padEnd(5)
+                 + String(a ?? "-").padEnd(9) + String(b ?? "-"));
+        });
+        if (isStroke(g)){
+          const t = strokeTotals(g).totals;
+          L.push("  TOTAL".padEnd(13) + String(t[0]).padEnd(9) + String(t[1]));
+        }
+      } else {
+        const ids = [...g.teams[0], ...g.teams[1]];
+        L.push("  Hole  Par  " + ids.map(id => P(id).name.slice(0,5).padEnd(7)).join(""));
+        holeList(g).forEach((hole, h) => {
+          const any = ids.some(id => hole.scores[id] != null) || hole.conceded !== null;
+          if (!any) return;
+          const cells = ids.map(id => {
+            const v = hole.scores[id];
+            if (v === "PU") return "PU".padEnd(7);
+            if (v == null)  return "-".padEnd(7);
+            const st = strokesOn(id, g, h);
+            return (st ? `${v}/${v-st}` : String(v)).padEnd(7);
+          }).join("");
+          const note = hole.conceded !== null ? "  (conceded by " + teamShort(g, hole.conceded) + ")" : "";
+          L.push("  " + String(h+1).padEnd(6) + String(course.holes[h].par).padEnd(5) + cells + note);
+        });
+        if (g.type === "FORTYBALL"){
+          L.push(`  spent ${fbSpent(g,0)}/40 and ${fbSpent(g,1)}/40 \u00b7 ` +
+                 `totals ${fbTotal(g,0)} \u2013 ${fbTotal(g,1)}`);
+          holeList(g).forEach((hole, h) => {
+            if (!hole.locked[0] && !hole.locked[1]) return;
+            const pick = t => (hole.selected[t]||[]).map(id => P(id).name).join(", ") || "none";
+            L.push(`    hole ${h+1}: ${teamShort(g,0)} took ${pick(0)} \u00b7 ` +
+                   `${teamShort(g,1)} took ${pick(1)}`);
+          });
+        }
+      }
+    });
+    L.push("");
+  });
+
+  L.push("=".repeat(52));
+  L.push("STANDINGS");
+  standings().forEach((p,i) =>
+    L.push(`  ${String(i+1).padStart(2)}. ${p.name.padEnd(8)} ` +
+           `${p.w}-${p.l}-${p.t}  ${p.pts} pts  (${p.gp} games)`));
+  L.push("");
+  L.push("Scores show gross/net where a stroke applies. Build " + BUILD + ".");
+  return L.join("\n");
 }
 
 /* ---------- event editor ---------- */
@@ -3081,6 +3206,13 @@ function handleClick(el){
     }
     crsPlan = null; queueConfig(); render(); toast("Course saved"); return;
   }
+  if (el.id === "exportscores"){
+    const txt = scoresToText();
+    copyText(txt, "Scores");
+    const box = document.getElementById("exportbox");
+    if (box){ box.style.display = "block"; box.value = txt; }
+    return;
+  }
   if (el.id === "csvtemplate"){ copyText(CSV_TEMPLATE, "Template"); return; }
   if (el.id === "csvexample"){ copyText(CSV_EXAMPLE, "Example"); return; }
   if (el.id === "csvcurrent"){ copyText(scheduleToCSV(), "Schedule"); return; }
@@ -3206,6 +3338,8 @@ function handleClick(el){
   }
   if (el.dataset.course){ editCourseId = el.dataset.course; render(); return; }
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
+  if (el.id === "showalldays"){ homeShowAll = true; render(); return; }
+  if (el.id === "showtoday"){ homeShowAll = false; render(); return; }
   if (el.dataset.board){ boardMode = el.dataset.board; render(); return; }
   if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
   if (el.id === "back"){ view.gameId = null; render(); return; }
@@ -3279,8 +3413,8 @@ function handleClick(el){
     if (!teamReady(g, t, h)){ toast("Enter a score first"); return; }
     g.holes[h].locked[t] = true;
     pushHole(g, h, `locked.${t}`, true);
-    toast("Locked");
-    render(); return;
+    maybeAdvance(g, h, "Locked");
+    return;
   }
   if (el.dataset.lock != null){
     const t = +el.dataset.lock, b = fbBudget(g, t, h);
@@ -3288,8 +3422,8 @@ function handleClick(el){
     if (n < b.min || n > b.max){ toast("Outside legal range"); return; }
     g.holes[h].locked[t] = true;
     pushHole(g, h, `locked.${t}`, true);
-    toast(`Locked hole ${h+1}`);
-    render(); return;
+    maybeAdvance(g, h, `Locked hole ${h+1}`);
+    return;
   }
   if (el.dataset.unlock != null){
     if (!isAdmin){ toast("Admin only"); return; }
@@ -3398,6 +3532,21 @@ document.addEventListener("input", e => {
 });
 
 /* move to the next field in a group, so a column can be typed straight through */
+/* Once both sides have locked a hole there's nothing left to do on it, so move
+   on. Forgetting to tap the arrow and entering the next hole's scores on the
+   last one is the easiest mistake to make on a cart. */
+function maybeAdvance(g, h, msg){
+  const hole = g.holes[h];
+  const bothIn = hole.locked[0] && hole.locked[1];
+  if (bothIn && h < 17){
+    view.hole = h + 1;
+    toast(msg + " \u2014 on to " + (h + 2));
+  } else {
+    toast(msg);
+  }
+  render();
+}
+
 function advanceIn(sel, t){
   const all = [...document.querySelectorAll(sel)].filter(x => !x.disabled);
   const n = all[all.indexOf(t) + 1];
