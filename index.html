@@ -426,6 +426,18 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 .todaybar-t{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;
   text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--ink)}
 
+.yearbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+.ybtn{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink-soft);
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.06em;
+  font-size:15px;padding:8px 13px;cursor:pointer;display:flex;align-items:baseline;gap:5px}
+.ybtn.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.ybtn i{font-style:normal;font-size:9px;letter-spacing:.12em;text-transform:uppercase;opacity:.8}
+.archivebar{display:flex;align-items:center;gap:10px;margin-top:16px;
+  border:1.5px solid var(--brass);background:var(--paper-2);padding:9px 11px}
+.archivebar-y{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px}
+.archivebar-t{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:600;
+  text-transform:uppercase;letter-spacing:.12em;font-size:10px;color:var(--brass)}
+
 /* tabs */
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);
   border-top:1.5px solid var(--ink);display:flex;z-index:40;
@@ -459,7 +471,7 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
   <div class="monogram">EI</div>
   <div>
     <h1 id="ttl">Eisenberg Invitational</h1>
-    <div class="sub" id="tsub">Prototype · scoring engine</div>
+    <div class="sub" id="tsub"></div>
   </div>
   <span class="topright">
     <button class="syncdot local" id="syncdot">On this device</button>
@@ -480,9 +492,8 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 
 <script>
 /* ============================================================
-   THE EI — PHASE 1 PROTOTYPE
-   All state in memory. No backend. Fake data.
-   Implements spec v2 §1–§9 and §11.
+   THE EI — live scoring for the Eisenberg Invitational
+   One tournament per year, shared across every phone.
    ============================================================ */
 
 /* ---------- course library ----------
@@ -534,6 +545,19 @@ const COURSES = [
   }
 ];
 const C = id => COURSES.find(c => c.id === id) || COURSES[0];
+
+/* ---------- year switcher ---------- */
+function yearBar(){
+  if (!YEARS.length) return "";
+  let h = `<div class="yearbar">
+    ${YEARS.map(y => `<button class="ybtn ${y===activeYear?"on":""}" data-year="${y}">${esc(y)}
+      ${y===liveYear?`<i>live</i>`:""}</button>`).join("")}
+  </div>`;
+  if (isArchive())
+    h += `<p class="note warn" style="margin-top:8px">Viewing ${esc(activeYear)} \u2014 finished
+      and locked. Nothing here can be changed.</p>`;
+  return h;
+}
 
 /* ---------- pairings ----------
    How often each pair ends up together and against each other. Worth looking
@@ -590,7 +614,8 @@ function renderPairs(){
     return h;
   };
 
-  let h = `<div class="acts cwrap" style="margin-top:16px">
+  let h = yearBar();
+  h += `<div class="acts cwrap" style="margin-top:12px">
     <button class="btn ghost" data-board="table">Standings</button>
     <button class="btn" data-board="pairs">Pairings</button>
   </div>`;
@@ -1025,8 +1050,17 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-09-03.2102";
-const TID = "ei-2026";
+const BUILD = "2026-09-05.0138";
+/* One tournament per year. A registry doc lists the years that exist and
+   which one is live; everything else hangs off tournaments/{tid}. Past years
+   are readable but frozen — results shouldn't change after the fact. */
+const YEAR_NOW = String(new Date().getFullYear());
+let YEARS = [];
+let liveYear = null;          // the year currently being played
+let activeYear = null;        // the year being looked at
+const tidFor = y => "ei-" + y;
+const isArchive = () => !!(liveYear && activeYear && activeYear !== liveYear);
+const TID_DEFAULT = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
    writes like `holes.5.scores.p1` silently fail against arrays. */
@@ -1130,6 +1164,35 @@ async function initSync(){
   await connectWith(preferredStart());
 }
 
+/* Work out which years exist and which is live, before anything subscribes. */
+async function loadRegistry(fsMod, db){
+  const ref = fsMod.doc(db, "tournaments", "_index");
+  let snap;
+  try { snap = await fsMod.getDoc(ref); } catch(e){ snap = null; }
+
+  if (!snap || !snap.exists()){
+    /* First run on an existing database: adopt whatever the old single
+       tournament was, so nothing that's already been played disappears. */
+    let seed = TID_DEFAULT.replace("ei-", "");
+    try {
+      const old = await fsMod.getDoc(fsMod.doc(db, "tournaments", TID_DEFAULT));
+      if (!old.exists()) seed = YEAR_NOW;
+    } catch(e){ seed = YEAR_NOW; }
+    YEARS = [seed]; liveYear = seed;
+    try { await fsMod.setDoc(ref, { years: YEARS, live: liveYear }); } catch(e){}
+  } else {
+    const v = snap.data();
+    YEARS = (Array.isArray(v.years) && v.years.length ? v.years : [YEAR_NOW]).slice().sort();
+    liveYear = v.live || YEARS[YEARS.length - 1];
+  }
+
+  if (!activeYear || !YEARS.includes(activeYear)){
+    let saved = null;
+    try { saved = localStorage.getItem("ei-year"); } catch(e){}
+    activeYear = (saved && YEARS.includes(saved)) ? saved : liveYear;
+  }
+}
+
 async function connectWith(i){
   const fsMod = SYNC.api, appMod = SYNC.appMod;
   const st = STRATEGIES[i];
@@ -1143,8 +1206,8 @@ async function connectWith(i){
   try {
     // a fresh app name per attempt: Firestore settings are immutable once set
     let app;
-    try { app = appMod.getApp("ei-" + i); }
-    catch(e){ app = appMod.initializeApp(FIREBASE_CONFIG, "ei-" + i); }
+    try { app = appMod.getApp("app-" + i); }
+    catch(e){ app = appMod.initializeApp(FIREBASE_CONFIG, "app-" + i); }
     const opts = st.force ? { experimentalForceLongPolling: true }
                           : { experimentalAutoDetectLongPolling: true };
     opts.localCache =
@@ -1154,10 +1217,21 @@ async function connectWith(i){
     const db = fsMod.initializeFirestore(app, opts);
     SYNC.db = db; SYNC.on = true;
 
-    const cfgRef   = fsMod.doc(db, "tournaments", TID);
-    const gamesRef = fsMod.collection(db, "tournaments", TID, "games");
+    await loadRegistry(fsMod, db);
+
+    const cfgRef   = fsMod.doc(db, "tournaments", tidFor(activeYear));
+    const gamesRef = fsMod.collection(db, "tournaments", tidFor(activeYear), "games");
 
     await seedIfNeeded(fsMod, cfgRef, gamesRef);
+
+    /* keep the year list live so a new year appears on everyone's phone */
+    unsubs.push(fsMod.onSnapshot(fsMod.doc(db, "tournaments", "_index"), d => {
+      if (myGen !== gen) return;
+      const v = d.data(); if (!v) return;
+      if (Array.isArray(v.years)) YEARS = v.years.slice().sort();
+      if (v.live) liveYear = v.live;
+      if (!document.querySelector("input:focus")) render();
+    }, () => {}));
 
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
       if (myGen !== gen) return;
@@ -1296,6 +1370,36 @@ function reportListenerError(myGen, e){
   if (myGen !== gen){ console.log("ignoring stale error from old attempt:", code); return; }
   if (serverSeen){ console.log("transient sync error, connection still up:", code); return; }
   setSync("error", { err: code });
+}
+
+async function switchYear(y){
+  if (!YEARS.includes(y) || y === activeYear) return;
+  activeYear = y;
+  try { localStorage.setItem("ei-year", y); } catch(e){}
+  GAMES = []; SCHEDULE = [];
+  editEvent = null; view.gameId = null; homeShowAll = false;
+  setSync("connecting");
+  render();
+  if (SYNC.on) await connectWith(attempt);
+  else render();
+}
+
+/* Begin a new year. Players, courses and tees carry over; the schedule and all
+   scores start empty. The old year stays exactly as it was. */
+async function startYear(y){
+  if (!SYNC.on || !SYNC.api) return;
+  const { doc, setDoc } = SYNC.api;
+  const tid = tidFor(y);
+  await setDoc(doc(SYNC.db, "tournaments", tid), {
+    schema: SCHEMA, appBuild: BUILD,
+    players: PLAYERS.map(p => ({ ...p })),
+    courses: COURSES.map(c => JSON.parse(JSON.stringify(c))),
+    schedule: [], days: DAYS.slice()
+  });
+  if (!YEARS.includes(y)) YEARS = YEARS.concat(y).sort();
+  liveYear = y;
+  await setDoc(doc(SYNC.db, "tournaments", "_index"), { years: YEARS, live: liveYear });
+  await switchYear(y);
 }
 
 function touchSync(which, snapOrQs){
@@ -1469,14 +1573,14 @@ async function flushQueue(){
   const { doc, updateDoc, setDoc } = SYNC.api;
   for (const it of queue.slice()){
     try {
-      const ref = doc(SYNC.db, "tournaments", TID, "games", it.gid);
+      const ref = doc(SYNC.db, "tournaments", tidFor(activeYear), "games", it.gid);
       await updateDoc(ref, { [`holes.${it.h}.${it.path}`]: it.val });
       dequeue(it);
     } catch (err){
       const code = (err && (err.code || err.message)) || "";
       if (/not-found|invalid-argument/i.test(code)){
         const g = GAMES.find(x => x.id === it.gid);
-        if (g){ try { await setDoc(doc(SYNC.db,"tournaments",TID,"games",it.gid), g); dequeue(it); continue; } catch(e){} }
+        if (g){ try { await setDoc(doc(SYNC.db,"tournaments",tidFor(activeYear),"games",it.gid), g); dequeue(it); continue; } catch(e){} }
       }
       break;                       // still offline — stop and retry later
     }
@@ -1492,7 +1596,7 @@ window.addEventListener("online", flushQueue);
 /* Sync must never block the interface. If any of this throws, the local state
    and the screen are already correct — only the send is affected. */
 function pushHole(g, h, path, value){
-  if (staleDevice) return;
+  if (staleDevice || isArchive()) return;
   if (!SYNC.on) return;
   try { enqueue(g.id, h, path, value); flushQueue(); }
   catch (e){ console.error("pushHole", e); }
@@ -1500,18 +1604,19 @@ function pushHole(g, h, path, value){
 
 /* replace a whole game (reset) */
 function pushGame(g){
-  if (staleDevice) return;
+  if (staleDevice || isArchive()) return;
   if (!SYNC.on || !SYNC.api) return;
   const { doc, setDoc } = SYNC.api;
-  setDoc(doc(SYNC.db, "tournaments", TID, "games", g.id), g)
+  setDoc(doc(SYNC.db, "tournaments", tidFor(activeYear), "games", g.id), g)
     .then(() => setSync("live", {lastAt:new Date()}))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
 function removeGame(gid){
   GAMES = GAMES.filter(g => g.id !== gid);
+  if (isArchive()) return;
   if (!SYNC.on || !SYNC.api) return;
   const { doc, deleteDoc } = SYNC.api;
-  deleteDoc(doc(SYNC.db, "tournaments", TID, "games", gid))
+  deleteDoc(doc(SYNC.db, "tournaments", tidFor(activeYear), "games", gid))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (delete failed)" }));
 }
 
@@ -1520,8 +1625,8 @@ function removeGame(gid){
 async function resetTournament(){
   if (!SYNC.on){ GAMES.forEach(g => g.holes = blankHoles()); render(); return; }
   const { doc, setDoc, collection, getDocs } = SYNC.api;
-  const cfgRef = doc(SYNC.db, "tournaments", TID);
-  const gamesRef = collection(SYNC.db, "tournaments", TID, "games");
+  const cfgRef = doc(SYNC.db, "tournaments", tidFor(activeYear));
+  const gamesRef = collection(SYNC.db, "tournaments", tidFor(activeYear), "games");
   await setDoc(cfgRef, { schema: SCHEMA, appBuild: BUILD, players: PLAYERS,
     courses: COURSES, schedule: SCHEDULE, days: DAYS });
   const snap = await getDocs(gamesRef);
@@ -1531,10 +1636,10 @@ async function resetTournament(){
 }
 
 function pushConfig(){
-  if (staleDevice){ cfgDirty = false; return; }      // never write from an old build
+  if (staleDevice || isArchive()){ cfgDirty = false; return; }      // never write from an old build
   if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
   const { doc, setDoc } = SYNC.api;
-  setDoc(doc(SYNC.db, "tournaments", TID),
+  setDoc(doc(SYNC.db, "tournaments", tidFor(activeYear)),
     { schema: SCHEMA, appBuild: BUILD, players: PLAYERS, courses: COURSES,
       schedule: SCHEDULE, days: DAYS }, { merge:true })
     .then(() => { cfgDirty = false; setSync("live", {lastAt:new Date()}); })
@@ -1585,8 +1690,8 @@ function render(){
     const when = r ? [r.day, r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ") : "";
     $("#tsub").textContent = [courseOf(g).name, when].filter(Boolean).join(" · ");
   } else {
-    $("#ttl").textContent = "Eisenberg Invitational";
-    $("#tsub").textContent = "Prototype · scoring engine";
+    $("#ttl").textContent = (activeYear ? activeYear + " " : "") + "Eisenberg Invitational";
+    $("#tsub").textContent = activeYear ? activeYear + (isArchive() ? " \u00b7 archive" : "") : "";
   }
   document.querySelectorAll(".tabs button").forEach(b =>
     b.classList.toggle("on", !inGame && b.dataset.tab === view.tab));
@@ -1615,6 +1720,13 @@ function renderHome(){
   const rounds = ROUNDS().slice().sort((a,b) =>
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   let h = "";
+  if (isArchive()){
+    h += `<div class="archivebar">
+      <span class="archivebar-y">${esc(activeYear)}</span>
+      <span class="archivebar-t">Archived \u2014 view only</span>
+      <button class="chip" data-year="${esc(liveYear)}">Back to ${esc(liveYear)}</button>
+    </div>`;
+  }
   if (staleDevice){
     h += `<div class="syncerr">
       <div class="syncerr-t">This device is out of date</div>
@@ -1706,7 +1818,8 @@ function renderHome(){
 function renderBoard(){
   if (boardMode === "pairs") return renderPairs();
   const s = standings();
-  let h = `<div class="acts cwrap" style="margin-top:16px">
+  let h = yearBar();
+  h += `<div class="acts cwrap" style="margin-top:12px">
     <button class="btn" data-board="table">Standings</button>
     <button class="btn ghost" data-board="pairs">Pairings</button>
     <button class="btn ghost" id="exportscores">Export</button>
@@ -2407,6 +2520,19 @@ function gameEditor(g){
   </div>`;
 }
 
+/* ---------- year switcher ---------- */
+function yearBar(){
+  if (!YEARS.length) return "";
+  let h = `<div class="yearbar">
+    ${YEARS.map(y => `<button class="ybtn ${y===activeYear?"on":""}" data-year="${y}">${esc(y)}
+      ${y===liveYear?`<i>live</i>`:""}</button>`).join("")}
+  </div>`;
+  if (isArchive())
+    h += `<p class="note warn" style="margin-top:8px">Viewing ${esc(activeYear)} \u2014 finished
+      and locked. Nothing here can be changed.</p>`;
+  return h;
+}
+
 /* ---------- pairings ----------
    How often each pair ends up together and against each other. Worth looking
    at before pairings are final: an even spread is usually the goal, and the
@@ -2462,7 +2588,8 @@ function renderPairs(){
     return h;
   };
 
-  let h = `<div class="acts cwrap" style="margin-top:16px">
+  let h = yearBar();
+  h += `<div class="acts cwrap" style="margin-top:12px">
     <button class="btn ghost" data-board="table">Standings</button>
     <button class="btn" data-board="pairs">Pairings</button>
   </div>`;
@@ -2588,7 +2715,7 @@ function renderGame(){
       <button id="next" ${h===17?"disabled":""}>&rarr;</button>
     </span></div>`;
 
-  out += `<div class="testbar">
+  if (!isArchive()) out += `<div class="testbar">
     <span class="testbar-t">Test</span>
     <button class="btn ghost" id="randhole">Random scores</button>
     <button class="btn ghost" id="reset">Reset game</button>
@@ -2608,7 +2735,7 @@ function renderGame(){
 
   [0,1].forEach(t => out += renderTeam(g, t, h, hardLocked));
 
-  if (isMatch(g) && !hardLocked){
+  if (isMatch(g) && !hardLocked && !isArchive()){
     const hole = g.holes[h];
     /* Conceding rewrites the hole result, so it must respect the same lock the
        scores do — otherwise a locked hole could still be flipped. */
@@ -2832,7 +2959,7 @@ function renderTeam(g, t, h, hardLocked){
   }
   head += `</span></div>`;
 
-  if (g.type !== "FORTYBALL" && !hardLocked){
+  if (g.type !== "FORTYBALL" && !hardLocked && !isArchive()){
     const ready = teamReady(g, t, h);
     inner += `<div class="lockrow">
       ${locked
@@ -3005,6 +3132,12 @@ function renderPlayers(){
       <button class="btn ghost" id="purgegames">Remove stray games</button>
       <button class="btn red" id="resetall">Reset everything</button>
     </div>
+    <p class="hint" style="margin:12px 0 8px">Starting a new year keeps this one exactly as it
+      is and opens a fresh tournament. Players, courses and tees carry over; the schedule and
+      scores start empty.</p>
+    <div class="acts">
+      <button class="btn ghost" id="startyear">Start ${esc(String(+(liveYear||YEAR_NOW)+1))}</button>
+    </div>
     <p class="impmsg" id="dangermsg"></p>
   </div>`}
   <div class="footnote">Handicaps and courses persist across app updates.
@@ -3113,6 +3246,16 @@ function handleClick(el){
       setSync("connecting");
       connectWith(0);
     }
+    return;
+  }
+  if (el.dataset.year){ switchYear(el.dataset.year); return; }
+  if (el.id === "startyear"){
+    const next = String(+(liveYear || YEAR_NOW) + 1);
+    if (YEARS.includes(next)){ switchYear(next); return; }
+    if (!confirm(`Start the ${next} EI?\n\n${liveYear} stays exactly as it is and stays `
+      + `readable. Players, courses and tees carry over. Schedule and scores start empty.`)) return;
+    startYear(next).then(() => toast(next + " started"))
+      .catch(e => toast((e.code||e.message||"failed")));
     return;
   }
   if (el.id === "purgegames"){
