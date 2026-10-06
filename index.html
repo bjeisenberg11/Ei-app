@@ -289,6 +289,17 @@ input.idx:focus,input.tf:focus{outline:none;border-color:var(--brass);background
 select.tee{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink);
   font-family:'Barlow',sans-serif;font-size:16px;padding:7px 4px;max-width:104px}
 select.tee:focus{outline:none;border-color:var(--brass)}
+/* full-width picker — a row of buttons stops scaling once there are more than
+   three or four courses */
+select.sel{width:100%;background:var(--paper-2);border:1.5px solid var(--rule);
+  color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;font-size:15px;padding:12px 10px;
+  margin-top:4px;-webkit-appearance:none;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),
+    linear-gradient(135deg,var(--ink) 50%,transparent 50%);
+  background-position:calc(100% - 17px) 20px,calc(100% - 11px) 20px;
+  background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+select.sel:focus{outline:none;border-color:var(--brass);background-color:var(--paper)}
 td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
 table.ftbl td:nth-child(n+2),table.ttbl td:nth-child(n+2){text-align:right}
@@ -567,111 +578,6 @@ const COURSES = [
 ];
 const C = id => COURSES.find(c => c.id === id) || COURSES[0];
 
-/* ---------- year switcher ---------- */
-function yearBar(){
-  if (!YEARS.length) return "";
-  let h = `<div class="yearbar">
-    ${YEARS.map(y => `<button class="ybtn ${y===activeYear?"on":""}" data-year="${y}">${esc(y)}
-      ${y===liveYear?`<i>live</i>`:""}</button>`).join("")}
-  </div>`;
-  if (isArchive())
-    h += `<p class="note warn" style="margin-top:8px">Viewing ${esc(activeYear)} \u2014 finished
-      and locked. Nothing here can be changed.</p>`;
-  return h;
-}
-
-/* ---------- pairings ----------
-   How often each pair ends up together and against each other. Worth looking
-   at before pairings are final: an even spread is usually the goal, and the
-   zeroes are the ones to notice. */
-function pairMatrix(){
-  const withC = {}, agC = {}, grpC = {}, played = {};
-  PLAYERS.forEach(a => { withC[a.id] = {}; agC[a.id] = {}; grpC[a.id] = {}; played[a.id] = 0;
-    PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; grpC[a.id][b.id] = 0; }); });
-
-  GAMES.forEach(g => {
-    const A = g.teams[0] || [], B = g.teams[1] || [];
-    [...A, ...B].forEach(id => { if (played[id] != null) played[id]++; });
-    [A, B].forEach(team => team.forEach(a => team.forEach(b => {
-      if (a !== b && withC[a]) withC[a][b]++;
-    })));
-    A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
-    /* A foursome is the group that walks the course together. In a 2v2 that's
-       all four players. In a scramble or 40ball the two teams go out as
-       separate groups, so a team is its own foursome. */
-    const groups = g.type === "BESTBALL" ? [[...A, ...B]] : [A, B];
-    groups.forEach(grp => grp.forEach(a => grp.forEach(b => {
-      if (a !== b && grpC[a]) grpC[a][b]++;
-    })));
-  });
-  return { withC, agC, grpC, played };
-}
-
-function renderPairs(){
-  const { withC, agC, grpC, played } = pairMatrix();
-  const ids = PLAYERS.map(p => p.id);
-
-  const grid = (title, m, note) => {
-    const vals = [];
-    ids.forEach(a => ids.forEach(b => { if (a !== b) vals.push(m[a][b]); }));
-    const max = Math.max(1, ...vals);
-    const avg = vals.length ? vals.reduce((x,y)=>x+y,0) / vals.length : 0;
-    let h = `<h2 class="sec">${title}</h2><p class="note">${note}</p>
-      <div class="pmwrap"><table class="pm"><thead><tr><th></th>`;
-    ids.forEach(b => h += `<th>${esc(P(b).name.slice(0,4))}</th>`);
-    h += `<th class="tot">Sum</th></tr></thead><tbody>`;
-    ids.forEach(a => {
-      h += `<tr><th>${esc(P(a).name)}</th>`;
-      let rowTot = 0;
-      ids.forEach(b => {
-        if (a === b){ h += `<td class="self"></td>`; return; }
-        const v = m[a][b]; rowTot += v;
-        const lvl = v === 0 ? "z" : v > avg ? "hi" : v < avg ? "lo" : "mid";
-        h += `<td class="v ${lvl}">${v}</td>`;
-      });
-      h += `<td class="tot">${rowTot}</td></tr>`;
-    });
-    h += `</tbody></table></div>`;
-    return h;
-  };
-
-  let h = yearBar();
-  h += `<div class="acts cwrap" style="margin-top:12px">
-    <button class="btn ghost" data-board="table">Standings</button>
-    <button class="btn" data-board="pairs">Pairings</button>
-  </div>`;
-
-  const anyGames = GAMES.some(g => (g.teams[0]||[]).length);
-  if (!anyGames){
-    h += `<p class="note" style="margin-top:20px">No teams set yet \u2014 build the rounds on the
-      Schedule tab and this fills in.</p>`;
-    app.innerHTML = h; return;
-  }
-
-  h += grid("Playing with", withC,
-    "Games where the pair are on the same team. The total counts teammates, " +
-    "not games \u2014 a scramble puts you alongside three people at once.");
-  h += grid("Playing against", agC,
-    "Games where the pair are on opposite sides. Same again: the total counts " +
-    "opponents, not games.");
-  h += grid("Same foursome", grpC,
-    "Rounds the pair actually play alongside each other. A 2v2 is one foursome " +
-    "of four; in a scramble or 40ball each team is its own group.");
-
-  h += `<h2 class="sec">Games each</h2><table class="lb"><thead><tr>
-    <th>Player</th><th>Games</th><th>Never with</th></tr></thead><tbody>`;
-  PLAYERS.slice().sort((a,b) => played[b.id] - played[a.id]).forEach(p => {
-    const never = PLAYERS.filter(o => o.id !== p.id && withC[p.id][o.id] === 0).map(o => o.name);
-    h += `<tr><td>${esc(p.name)}</td><td class="mono">${played[p.id]}</td>
-      <td style="font-size:13px;text-align:right;${never.length?"color:var(--pencil)":""}">${
-        never.length ? esc(never.join(", ")) : "\u2014"}</td></tr>`;
-  });
-  h += `</tbody></table>
-    <div class="footnote">Red is a pair that never meets in that column's sense;
-    dark is more often than average. Worth settling before the weekend starts.</div>`;
-  app.innerHTML = h;
-}
-
 /* ---------- players ---------- */
 const PLAYERS = [
   /* tees is keyed by course id — tee names differ course to course */
@@ -772,7 +678,10 @@ function roundOf(g){ return EV(g.roundId) || ROUNDS()[0]; }
 function eventName(e){
   if (!e) return "Round";
   if (e.type === "ROUND") return e.title || (C(e.courseId) || {}).name || "Round";
-  return e.title || "Untitled";
+  /* An untitled event says what it is rather than "Untitled" or, worse, the
+     placeholder "New event" sitting on the schedule as though it were a name. */
+  return e.title || { MEAL:"Meal", TRAVEL:"Travel", OTHER:"Untitled event" }[e.type]
+      || "Untitled event";
 }
 function roundLabel(g){
   const r = roundOf(g);
@@ -1008,6 +917,10 @@ function standings(){
       const team = g.teams[t];
       const side = t === 0 ? "A" : "B";
       team.forEach(id => {
+        /* A game can name someone who isn't on this year's roster — an old
+           year read back, or a player removed after the fact. Skip them
+           rather than throwing and taking the whole leaderboard down. */
+        if (!rec[id]) return;
         rec[id].gp++;
         if (r.winner === "TIE") rec[id].t++;
         else if (r.winner === side) rec[id].w++;
@@ -1017,6 +930,107 @@ function standings(){
   });
   return PLAYERS.map(p => ({ ...p, ...rec[p.id], pts: rec[p.id].w + rec[p.id].t * 0.5 }))
     .sort((a,b) => b.pts - a.pts || b.w - a.w || a.gp - b.gp || a.name.localeCompare(b.name));
+}
+
+/* ============================================================
+   HISTORY — records across every year
+   Each year is a separate tournament in the database, so nothing here can be
+   read off what's currently loaded. Two sources feed it:
+     played   — a year the app scored, computed from that year's own games
+     recorded — a year from before the app, typed in from whatever Blake has
+
+   Everything is keyed by NAME rather than player id: the pre-app years have
+   no ids, and the roster isn't fixed forever.
+   ============================================================ */
+const HIST = {
+  loading: false,
+  loadedAt: null,
+  err: null,
+  years: {},        // year -> { source, rows:[{name,w,l,t,gp}] }
+  recorded: {}      // year -> { rows:[...] }, as stored
+};
+
+/* Scoring depends on that year's players, courses and tees — a course
+   handicap computed against this year's tees would quietly give the wrong
+   winner. So swap the globals, compute, and always put them back. */
+function withYearData(cfg, games, fn){
+  const save = { p: PLAYERS.slice(), c: COURSES.slice(), g: GAMES, s: SCHEDULE.slice() };
+  try {
+    if (cfg){
+      if (Array.isArray(cfg.players)){ PLAYERS.length = 0; cfg.players.forEach(x => PLAYERS.push(x)); }
+      if (Array.isArray(cfg.courses)){ COURSES.length = 0; cfg.courses.forEach(x => COURSES.push(x)); }
+      if (Array.isArray(cfg.schedule)){ SCHEDULE.length = 0; cfg.schedule.forEach(x => SCHEDULE.push(x)); }
+    }
+    if (games) GAMES = games;
+    return fn();
+  } finally {
+    PLAYERS.length = 0; save.p.forEach(x => PLAYERS.push(x));
+    COURSES.length = 0; save.c.forEach(x => COURSES.push(x));
+    SCHEDULE.length = 0; save.s.forEach(x => SCHEDULE.push(x));
+    GAMES = save.g;
+  }
+}
+
+/* A year's finished record, by name. Unplayed games contribute nothing, so a
+   year still in progress simply counts what's been decided so far. */
+function recordsFor(cfg, games){
+  return withYearData(cfg, games, () =>
+    standings()
+      .filter(p => p.gp > 0)
+      .map(p => ({ name: p.name, w: p.w, l: p.l, t: p.t, gp: p.gp })));
+}
+
+/* Winning percentage, not points: Howard and Luke sit out the 3v3, so an
+   extra game is an extra chance at points and a straight total punishes
+   whoever played less. A tie counts as half a win. */
+const winPct = r => r.gp ? (r.w + r.t * 0.5) / r.gp : 0;
+
+/* Years of records pasted in one go. A bare four-digit number starts a year;
+   every line under it is a player and two or three numbers — W, L and
+   optionally T. Typing five years row by row on a phone is nobody's idea of
+   an evening. */
+function parseHistory(text){
+  const out = {}, errs = [];
+  let year = null;
+  String(text || "").split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || /^(name|player)\b/i.test(line)) return;
+    if (/^\d{4}$/.test(line)){ year = line; out[year] = out[year] || []; return; }
+    const m = /^(.+?)[\s,\t]+(\d+)[\s,\t]+(\d+)(?:[\s,\t]+(\d+))?$/.exec(line);
+    if (!m){ errs.push("line " + (i+1) + ": " + line); return; }
+    if (!year){ errs.push("line " + (i+1) + ": no year above it"); return; }
+    const name = m[1].trim().replace(/[,\t]+$/, "");
+    const w = +m[2], l = +m[3], t = +(m[4] || 0);
+    if (!name){ errs.push("line " + (i+1) + ": no name"); return; }
+    out[year].push({ name, w, l, t, gp: w + l + t });
+  });
+  Object.keys(out).forEach(y => { if (!out[y].length) delete out[y]; });
+  return { years: out, errs };
+}
+
+function yearWinners(rows){
+  if (!rows || !rows.length) return [];
+  const best = Math.max(...rows.map(winPct));
+  if (!best) return [];
+  return rows.filter(r => Math.abs(winPct(r) - best) < 1e-9).map(r => r.name).sort();
+}
+
+/* Everyone who has ever played, summed. */
+function allTime(){
+  const by = {};
+  Object.keys(HIST.years).sort().forEach(y => {
+    (HIST.years[y].rows || []).forEach(r => {
+      const k = r.name;
+      by[k] = by[k] || { name: r.name, w:0, l:0, t:0, gp:0, years:0, wins:0 };
+      by[k].w += r.w; by[k].l += r.l; by[k].t += r.t; by[k].gp += r.gp;
+      by[k].years++;
+    });
+    yearWinners(HIST.years[y].rows).forEach(n => { if (by[n]) by[n].wins++; });
+  });
+  return Object.values(by)
+    .map(r => ({ ...r, pts: r.w + r.t * 0.5, pct: winPct(r) }))
+    .sort((a,b) => b.wins - a.wins || b.pct - a.pct || b.gp - a.gp
+                || a.name.localeCompare(b.name));
 }
 
 /* ---------- shared status text, used by home cards and the score bug ---------- */
@@ -1071,7 +1085,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-05.2030";
+const BUILD = "2026-10-06.0105";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1212,6 +1226,96 @@ async function loadRegistry(fsMod, db){
     try { saved = localStorage.getItem("ei-year"); } catch(e){}
     activeYear = (saved && YEARS.includes(saved)) ? saved : liveYear;
   }
+}
+
+/* Read every year once, on demand. These are one-off reads rather than
+   listeners: history changes once a year, and eight live subscriptions to
+   finished tournaments would be a lot of connection for nothing. */
+async function loadHistory(force){
+  if (HIST.loading) return;
+  if (HIST.loadedAt && !force) return;
+  if (!SYNC.on || !SYNC.api || !SYNC.db){
+    /* The other years are out of reach without a connection, but the year in
+       front of us is right here — an empty History screen would read as
+       broken rather than as offline. */
+    const rows = recordsFor(null, GAMES);
+    HIST.years = rows.length ? { [activeYear || YEAR_NOW]: { source:"played", rows } } : {};
+    HIST.err = "Offline — showing this year only.";
+    HIST.loadedAt = Date.now();
+    render();
+    return;
+  }
+  HIST.loading = true; HIST.err = null; render();
+  const { doc, getDoc, collection, getDocs } = SYNC.api;
+  try {
+    const years = {};
+
+    // years typed in from before the app existed
+    try {
+      const hs = await getDoc(doc(SYNC.db, "tournaments", "_history"));
+      const hv = hs.exists() ? (hs.data().years || {}) : {};
+      HIST.recorded = hv;
+      Object.keys(hv).forEach(y => {
+        const rows = (hv[y].rows || []).filter(r => r && r.name);
+        if (rows.length) years[y] = { source: "recorded", rows };
+      });
+    } catch(e){ HIST.recorded = {}; }
+
+    // years the app actually scored
+    for (const y of YEARS){
+      try {
+        if (y === activeYear){
+          const rows = recordsFor(null, GAMES);
+          if (rows.length) years[y] = { source: "played", rows };
+          continue;
+        }
+        const cfgSnap = await getDoc(doc(SYNC.db, "tournaments", tidFor(y)));
+        const gs = await getDocs(collection(SYNC.db, "tournaments", tidFor(y), "games"));
+        const games = [];
+        gs.forEach(d => { const v = d.data(); if (v && v.id) games.push(v); });
+        const rows = recordsFor(cfgSnap.exists() ? cfgSnap.data() : null, games);
+        if (rows.length) years[y] = { source: "played", rows };
+      } catch(e){ /* one unreadable year shouldn't lose the rest */ }
+    }
+
+    HIST.years = years;
+  } catch (e){
+    HIST.err = "Couldn't read the other years \u2014 "
+               + ((e && (e.code || e.message)) || String(e)) + ".";
+  } finally {
+    HIST.loading = false;
+    HIST.loadedAt = Date.now();
+    render();
+  }
+}
+
+/* Recorded years live in their own document, deliberately apart from the
+   registry — startYear() overwrites that one wholesale, and this shouldn't
+   go with it. */
+/* Several years in one write, so a half-finished paste can't leave history
+   partly entered. */
+async function saveRecordedYears(byYear){
+  if (!SYNC.on || !SYNC.api) throw new Error("not connected");
+  const { doc, setDoc } = SYNC.api;
+  const next = { ...(HIST.recorded || {}) };
+  Object.keys(byYear).forEach(y => {
+    const rows = byYear[y].filter(r => r && r.name && (r.w || r.l || r.t));
+    if (rows.length) next[y] = { rows };
+  });
+  await setDoc(doc(SYNC.db, "tournaments", "_history"), { years: next });
+  HIST.recorded = next;
+  await loadHistory(true);
+}
+
+async function saveRecordedYear(year, rows){
+  if (!SYNC.on || !SYNC.api) throw new Error("not connected");
+  const { doc, setDoc } = SYNC.api;
+  const next = { ...(HIST.recorded || {}) };
+  if (rows && rows.length) next[year] = { rows };
+  else delete next[year];
+  await setDoc(doc(SYNC.db, "tournaments", "_history"), { years: next });
+  HIST.recorded = next;
+  await loadHistory(true);
 }
 
 async function connectWith(i){
@@ -1674,6 +1778,46 @@ let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
 let editCourseId = COURSES[0].id;
 let editEvent = null;
+/* What the event looked like when the editor opened, so Back can put it back.
+   Fields are saved as they're typed — that's what keeps eight phones in step —
+   so "don't save" has to mean "restore", not "don't write". */
+let editSnap = null;
+let editIsNew = false;
+
+function openEvent(id, isNew){
+  const e = EV(id);
+  editEvent = id;
+  editIsNew = !!isNew;
+  editSnap = e ? JSON.stringify(e) : null;
+}
+
+const editorDirty = () =>
+  !!editEvent && editSnap !== null && JSON.stringify(EV(editEvent) || null) !== editSnap;
+
+/* Leaving an editor. keep=true is Done; keep=false is Back, which undoes
+   whatever was typed — including removing an event that was only created by
+   opening the editor in the first place. */
+function closeEvent(keep){
+  if (!editEvent){ render(); return; }
+  if (!keep){
+    const e = EV(editEvent);
+    if (editIsNew && e){
+      const i = SCHEDULE.indexOf(e);
+      if (i >= 0) SCHEDULE.splice(i, 1);
+      /* games added inside the editor are already on the server, so they need
+         deleting properly rather than just dropping out of the local list */
+      GAMES.filter(g => g.roundId === editEvent).forEach(g => removeGame(g.id));
+      queueConfig();
+    } else if (e && editSnap){
+      const was = JSON.parse(editSnap);
+      Object.keys(e).forEach(k => { if (!(k in was)) delete e[k]; });
+      Object.assign(e, was);
+      queueConfig();
+    }
+  }
+  editEvent = null; editSnap = null; editIsNew = false;
+  render();
+}
 let csvPlan = null;
 let crsPlan = null;
 let boardMode = "table";
@@ -1788,7 +1932,10 @@ async function applyUpdate(){
 /* ---------- render router ---------- */
 function render(){
   const inGame = !!view.gameId;
-  $("#back").style.display = inGame ? "block" : "none";
+  /* Back is for anywhere that isn't a top-level tab — a game, or an editor.
+     Without it the only way out of an editor was the button at the bottom of
+     a long form. */
+  $("#back").style.display = (inGame || editEvent) ? "block" : "none";
   if (inGame){
     const g = GAMES.find(x => x.id === view.gameId);
     $("#ttl").textContent = LABEL[g.type];
@@ -1931,13 +2078,24 @@ function renderHome(){
 }
 
 /* ---------- leaderboard ---------- */
+/* the three Board views, so the chips can't drift out of step with the router */
+const BOARD_MODES = [
+  { id:"table",   label:"Standings" },
+  { id:"pairs",   label:"Pairings"  },
+  { id:"history", label:"History"   }
+];
+const boardChips = () => `<div class="acts cwrap" style="margin-top:12px">
+  ${BOARD_MODES.map(m => `<button class="btn ${m.id===boardMode?"":"ghost"}"
+    data-board="${m.id}">${m.label}</button>`).join("")}
+</div>`;
+
 function renderBoard(){
-  if (boardMode === "pairs") return renderPairs();
+  if (boardMode === "pairs")   return renderPairs();
+  if (boardMode === "history") return renderHistory();
   const s = standings();
   let h = yearBar();
-  h += `<div class="acts cwrap" style="margin-top:12px">
-    <button class="btn" data-board="table">Standings</button>
-    <button class="btn ghost" data-board="pairs">Pairings</button>
+  h += boardChips();
+  h += `<div class="acts cwrap" style="margin-top:8px">
     <button class="btn ghost" id="exportscores">Export</button>
   </div>
   <h2 class="sec">Standings</h2>
@@ -2086,8 +2244,9 @@ function renderSchedule(){
       const untimed = evs.filter(e => !e.time);
       h += `<h2 class="sec">${day}</h2>`;
       [...timed, ...untimed].forEach(e => h += eventCard(e, ro));
-      if (!ro) h += `<div class="acts" style="margin:2px 0 10px">
-        <button class="btn ghost addev" data-addev="${day}">+ Add to ${day}</button>
+      if (!ro) h += `<div class="acts cwrap" style="margin:2px 0 10px">
+        <button class="btn ghost addev" data-addround="${day}">+ Round</button>
+        <button class="btn ghost addev" data-addev="${day}">+ Other</button>
         ${evs.length ? `<button class="btn ghost dayclear" data-clearday="${day}">Clear ${day}</button>` : ""}
       </div>`;
     });
@@ -2566,11 +2725,11 @@ function renderEventEditor(h, id){
   }
 
   if (isRound){
-    h += `<label>Course \u2014 this also names the round</label>
-    <div class="acts cwrap">
-      ${COURSES.map(c => `<button class="btn ${e.courseId===c.id?"":"ghost"}"
-        data-evcourse="${c.id}">${esc(c.name)}</button>`).join("")}
-    </div>
+    h += `<label for="evcourse">Course \u2014 this also names the round</label>
+    <select class="sel" id="evcourse" data-evcourse>
+      ${COURSES.map(c => `<option value="${c.id}"${c.id===e.courseId?" selected":""}>${
+        esc(c.name)}</option>`).join("")}
+    </select>
     <label>Handicaps</label>
     <div class="acts">
       <button class="btn ${e.mode!=="FULL"?"":"ghost"}" data-evmode="RELATIVE">Relative</button>
@@ -2591,10 +2750,15 @@ function renderEventEditor(h, id){
     </div>`;
   }
 
-  h += `<div class="acts" style="margin-top:18px">
+  h += `<div class="acts cwrap" style="margin-top:18px">
     <button class="btn" id="evdone">Done</button>
-    <button class="btn red" data-delev="${e.id}">Delete ${isRound ? "round" : "event"}</button>
-  </div>`;
+    <button class="btn ghost" id="evcancel">${editIsNew ? "Discard" : "Cancel"}</button>
+    ${editIsNew ? "" : `<button class="btn red" data-delev="${e.id}">Delete ${
+      isRound ? "round" : "event"}</button>`}
+  </div>
+  <p class="hint" style="margin-top:7px">${editIsNew
+    ? "Discard removes this one again — nothing is kept."
+    : "Cancel puts it back the way it was when you opened it."}</p>`;
   if (travelOnly)
     h += `<div class="footnote">You can add and edit flights without the admin code.
       Rounds, meals and the rest are admin-only.</div>`;
@@ -2705,10 +2869,7 @@ function renderPairs(){
   };
 
   let h = yearBar();
-  h += `<div class="acts cwrap" style="margin-top:12px">
-    <button class="btn ghost" data-board="table">Standings</button>
-    <button class="btn" data-board="pairs">Pairings</button>
-  </div>`;
+  h += boardChips();
 
   const anyGames = GAMES.some(g => (g.teams[0]||[]).length);
   if (!anyGames){
@@ -2741,7 +2902,142 @@ function renderPairs(){
   app.innerHTML = h;
 }
 
-/* ---------- players ---------- */
+/* ---------- history ----------
+   Every year at once, which is the one view that doesn't belong to the year
+   you're looking at. The year chips are deliberately left off. */
+let histEdit = null;          // the past year being typed in, if any
+let histPaste = null;         // the paste box contents, if it's open
+let histPlan = null;          // what that paste would save, once checked
+
+function renderHistory(){
+  let h = boardChips();
+
+  if (HIST.loading){
+    h += `<p class="note" style="margin-top:22px">Reading every year…</p>`;
+    app.innerHTML = h; return;
+  }
+  if (!HIST.loadedAt){
+    loadHistory(false);
+    h += `<p class="note" style="margin-top:22px">Reading every year…</p>`;
+    app.innerHTML = h; return;
+  }
+
+  const years = Object.keys(HIST.years).sort();
+  const all = allTime();
+
+  if (HIST.err){
+    h += `<p class="note warn" style="margin-top:18px">${esc(HIST.err)}</p>`;
+  }
+
+  if (!all.length && !histEdit){
+    h += `<p class="note" style="margin-top:22px">Nothing to show yet. History starts with
+      the first finished year.</p>`;
+  }
+
+  if (all.length){
+    h += `<h2 class="sec">All time</h2>
+    <table class="lb"><thead><tr>
+      <th>Player</th><th>EIs</th><th>W</th><th>L</th><th>T</th><th>GP</th><th>Win%</th>
+    </tr></thead><tbody>`;
+    all.forEach((p,i) => {
+      h += `<tr><td><span class="pos">${String(i+1).padStart(2,"0")}</span>${esc(p.name)}
+        ${p.wins ? `<span class="hcp"> ${p.wins}× winner</span>` : ""}</td>
+        <td class="mono" style="color:var(--ink-faint)">${p.years}</td>
+        <td class="mono">${p.w}</td><td class="mono">${p.l}</td><td class="mono">${p.t}</td>
+        <td class="mono" style="color:var(--ink-faint)">${p.gp}</td>
+        <td class="pts">${(p.pct*100).toFixed(0)}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+  }
+
+  if (years.length){
+    h += `<h2 class="sec">Year by year</h2>`;
+    years.slice().reverse().forEach(y => {
+      const yr = HIST.years[y];
+      const won = yearWinners(yr.rows);
+      const sorted = yr.rows.slice().sort((a,b) => winPct(b) - winPct(a)
+        || b.w - a.w || a.name.localeCompare(b.name));
+      h += `<p class="roundwhen">${esc(y)}${yr.source === "recorded" ? " · recorded" : ""}${
+        y === liveYear ? " · in progress" : ""}</p>
+      <p class="note" style="text-align:left;margin:0 0 6px">${
+        won.length ? `<b>${esc(won.join(" & "))}</b> — ${
+          (winPct(sorted[0])*100).toFixed(0)}%` : "no result yet"}</p>
+      <table class="lb"><thead><tr>
+        <th>Player</th><th>W</th><th>L</th><th>T</th><th>GP</th><th>Win%</th>
+      </tr></thead><tbody>`;
+      sorted.forEach(r => {
+        h += `<tr><td>${esc(r.name)}</td>
+          <td class="mono">${r.w}</td><td class="mono">${r.l}</td><td class="mono">${r.t}</td>
+          <td class="mono" style="color:var(--ink-faint)">${r.gp}</td>
+          <td class="pts">${(winPct(r)*100).toFixed(0)}</td></tr>`;
+      });
+      h += `</tbody></table>`;
+      if (isAdmin && yr.source === "recorded")
+        h += `<div class="acts cwrap" style="margin-top:6px">
+          <button class="btn ghost" data-delpast="${esc(y)}">Remove ${esc(y)}</button>
+        </div>`;
+    });
+  }
+
+  /* typing in a year from before the app */
+  if (histEdit){
+    h += `<h2 class="sec">Record a past year</h2>
+    <div class="imp">
+      <div class="acts cwrap" style="margin-bottom:8px">
+        <label style="flex:none;font-size:13px;color:var(--ink-soft);align-self:center">Year</label>
+        <input class="idx" id="hyear" inputmode="numeric" value="${esc(histEdit.year)}">
+      </div>
+      <table class="lb"><thead><tr><th>Player</th><th>W</th><th>L</th><th>T</th></tr></thead><tbody>`;
+    histEdit.rows.forEach((r,i) => {
+      h += `<tr><td><input class="tf wide" data-hname="${i}" value="${esc(r.name)}"></td>
+        <td><input class="idx" style="width:52px" inputmode="numeric" data-hw="${i}" value="${r.w}"></td>
+        <td><input class="idx" style="width:52px" inputmode="numeric" data-hl="${i}" value="${r.l}"></td>
+        <td><input class="idx" style="width:52px" inputmode="numeric" data-ht="${i}" value="${r.t}"></td></tr>`;
+    });
+    h += `</tbody></table>
+      <p class="hint">Anyone left on 0–0–0 is dropped. The winner is worked out from these
+        numbers — best winning percentage, a tie counting as half a win.</p>
+      <div class="acts cwrap" style="margin-top:9px">
+        <button class="btn" id="savepast">Save ${esc(histEdit.year)}</button>
+        <button class="btn ghost" id="addpastrow">Add a player</button>
+        <button class="btn ghost" id="cancelpast">Cancel</button>
+      </div>
+      <p class="impmsg" id="histmsg"></p>
+    </div>`;
+  } else if (histPaste !== null){
+    h += `<h2 class="sec">Paste past years</h2>
+    <div class="imp">
+      <p class="hint" style="margin:0 0 7px">A year on its own line, then one line per
+        player: <b>name, wins, losses</b> and ties if there were any. As many years as
+        you like in one go.</p>
+      <textarea id="histbox" rows="10"
+        placeholder="2021&#10;Blake 2 1&#10;Dan 2 1&#10;&#10;2022&#10;Blake 3 0 1">${
+        esc(histPaste)}</textarea>
+      <div class="acts cwrap" style="margin-top:9px">
+        <button class="btn" id="histcheck">Check it</button>
+        <button class="btn ghost" id="cancelpaste">Cancel</button>
+      </div>
+      <p class="impmsg" id="histmsg"></p>
+      ${histPlan ? `<div class="acts" style="margin-top:9px">
+        <button class="btn" id="histapply">Save ${Object.keys(histPlan).length} year${
+          Object.keys(histPlan).length === 1 ? "" : "s"}</button>
+      </div>` : ""}
+    </div>`;
+  } else if (isAdmin){
+    h += `<div class="acts cwrap" style="margin-top:20px">
+      <button class="btn ghost" id="pastepast">Paste past years</button>
+      <button class="btn ghost" id="addpast">Type one in</button>
+      <button class="btn ghost" id="refreshhist">Refresh</button>
+    </div>`;
+  }
+
+  h += `<div class="footnote">Years the app scored are computed from their own games and
+    can't be edited here. Earlier years are typed in from whatever records exist.<br>
+    <b>Win%</b> counts a tie as half a win and divides by games played, so sitting out the
+    3v3 neither helps nor hurts.</div>`;
+  app.innerHTML = h;
+}
+
 /* ---------- game ---------- */
 function renderGame(){
   const g = GAMES.find(x => x.id === view.gameId);
@@ -3172,10 +3468,11 @@ function renderPlayers(){
     Everything below is per course.</p>
 
   <h2 class="sec">Course setup</h2>
-  <div class="acts cwrap">
-    ${COURSES.map(c => `<button class="btn ${c.id===editCourseId?"":"ghost"}"
-      data-course="${c.id}">${esc(c.name)}</button>`).join("")}
-  </div>
+  <label for="crspick">Course</label>
+  <select class="sel" id="crspick">
+    ${COURSES.map(c => `<option value="${c.id}"${c.id===editCourseId?" selected":""}>${
+      esc(c.name)}</option>`).join("")}
+  </select>
   <p class="note">${rounds.length
       ? `Played ${rounds.join(", ")}.`
       : "No rounds assigned to this course."}</p>
@@ -3424,8 +3721,17 @@ function handleClick(el){
   }
   if (el.id === "alock"){ isAdmin = false; toast("Setup locked"); render(); return; }
   /* ---------- schedule / admin editing ---------- */
-  if (el.dataset.editev){ editEvent = el.dataset.editev; render(); return; }
-  if (el.id === "evdone"){ editEvent = null; render(); return; }
+  if (el.dataset.editev){ openEvent(el.dataset.editev, false); render(); return; }
+  if (el.id === "evdone"){ closeEvent(true); return; }
+  if (el.id === "evcancel"){
+    const wasNew = editIsNew;
+    if (editorDirty() && !confirm(wasNew
+        ? "Discard this event?\n\nNothing about it is kept."
+        : "Undo your changes?\n\nIt goes back to how it was when you opened it.")) return;
+    closeEvent(false);
+    toast(wasNew ? "Discarded" : "Changes undone");
+    return;
+  }
 
   if (el.id === "crsdel"){
     const co = C(editCourseId);
@@ -3544,12 +3850,22 @@ function handleClick(el){
     const id = "e" + Date.now().toString(36);
     SCHEDULE.push({ id, day: DAYS[0], time:null, type:"TRAVEL",
                     dir: el.dataset.addtravel, pid: PLAYERS[0].id, title:"" });
-    queueConfig(); editEvent = id; render(); return;
+    queueConfig(); openEvent(id, true); render(); return;
   }
   if (el.dataset.addev){
+    /* No placeholder title. "New event" was landing on the schedule as if it
+       were the name — and a round is named by its course anyway. */
     const id = "e" + Date.now().toString(36);
-    SCHEDULE.push({ id, day: el.dataset.addev, time:null, type:"OTHER", title:"New event" });
-    queueConfig(); editEvent = id; render(); return;
+    SCHEDULE.push({ id, day: el.dataset.addev, time:null, type:"OTHER", title:"" });
+    queueConfig(); openEvent(id, true); render(); return;
+  }
+  if (el.dataset.addround){
+    /* Rounds are what people add most, so they get their own button and skip
+       straight to picking a course. */
+    const id = "e" + Date.now().toString(36);
+    SCHEDULE.push({ id, day: el.dataset.addround, time:null, type:"ROUND",
+                    title:"", courseId: COURSES[0] ? COURSES[0].id : null });
+    queueConfig(); openEvent(id, true); render(); return;
   }
   if (el.dataset.delev){
     const e = EV(el.dataset.delev);
@@ -3573,7 +3889,6 @@ function handleClick(el){
   if (el.dataset.evday){ EV(editEvent).day = el.dataset.evday; queueConfig(); render(); return; }
   if (el.dataset.evpid){ EV(editEvent).pid = el.dataset.evpid; queueConfig(); render(); return; }
   if (el.dataset.evdir){ EV(editEvent).dir = el.dataset.evdir; queueConfig(); render(); return; }
-  if (el.dataset.evcourse){ EV(editEvent).courseId = el.dataset.evcourse; queueConfig(); render(); return; }
   if (el.dataset.evmode){ EV(editEvent).mode = el.dataset.evmode; queueConfig(); render(); return; }
 
   if (el.dataset.addgame){
@@ -3608,13 +3923,132 @@ function handleClick(el){
     else if (m){ m.className = "impmsg bad"; m.textContent = "Wrong code."; }
     return;
   }
-  if (el.dataset.course){ editCourseId = el.dataset.course; render(); return; }
   if (el.dataset.tab){ view.tab = el.dataset.tab; view.gameId = null; render(); return; }
   if (el.id === "showalldays"){ homeShowAll = true; render(); return; }
   if (el.id === "showtoday"){ homeShowAll = false; render(); return; }
-  if (el.dataset.board){ boardMode = el.dataset.board; render(); return; }
+  if (el.dataset.board){
+    boardMode = el.dataset.board;
+    if (boardMode === "history") loadHistory(false);
+    render();
+    return;
+  }
+
+  /* ---- history ---- */
+  if (el.id === "refreshhist"){ loadHistory(true); return; }
+  if (el.id === "pastepast"){
+    if (!isAdmin){ toast("Admin only"); return; }
+    histPaste = ""; histPlan = null; histEdit = null; render(); return;
+  }
+  if (el.id === "cancelpaste"){ histPaste = null; histPlan = null; render(); return; }
+  if (el.id === "histcheck" || el.id === "histapply"){
+    if (!isAdmin){ toast("Admin only"); return; }
+    const box = document.getElementById("histbox");
+    if (box) histPaste = box.value;
+    const msg = document.getElementById("histmsg");
+    const say = (cls, t) => { if (msg){ msg.className = "impmsg " + cls; msg.textContent = t; } };
+    const { years, errs } = parseHistory(histPaste);
+    const names = Object.keys(years).sort();
+    if (errs.length){
+      histPlan = null;
+      return say("bad", "Couldn't read " + errs.length + " line"
+        + (errs.length === 1 ? "" : "s") + " — " + errs.slice(0,3).join("; "));
+    }
+    if (!names.length){ histPlan = null; return say("bad", "Nothing to read yet."); }
+    const clash = names.filter(y => YEARS.includes(y));
+    if (clash.length){
+      histPlan = null;
+      return say("bad", clash.join(", ") + (clash.length === 1 ? " was" : " were")
+        + " scored in the app, so those records come from the games themselves.");
+    }
+    if (el.id === "histcheck"){
+      histPlan = years;
+      const sum = names.map(y => {
+        const won = yearWinners(years[y]);
+        return y + ": " + years[y].length + " players"
+          + (won.length ? ", " + won.join(" & ") : "");
+      }).join(" · ");
+      render();
+      const m2 = document.getElementById("histmsg");
+      if (m2){ m2.className = "impmsg good"; m2.textContent = sum; }
+      return;
+    }
+    // histapply
+    if (!SYNC.on) return say("bad", "History is shared with everyone, so saving it needs "
+      + "a connection. Try again once the pill at the top says Live.");
+    say("", "Saving…");
+    saveRecordedYears(years)
+      .then(() => { histPaste = null; histPlan = null;
+                    toast(names.length + " years recorded"); render(); })
+      .catch(e => say("bad", "Couldn't save — " + (e.code || e.message || "unknown")));
+    return;
+  }
+  if (el.id === "addpast"){
+    if (!isAdmin){ toast("Admin only"); return; }
+    const taken = Object.keys(HIST.years).concat(YEARS).map(Number).filter(n => n);
+    const suggest = String(taken.length ? Math.min(...taken) - 1 : +YEAR_NOW - 1);
+    histEdit = { year: suggest, rows: PLAYERS.map(p => ({ name: p.name, w:0, l:0, t:0 })) };
+    render();
+    return;
+  }
+  if (el.id === "addpastrow"){
+    if (histEdit){ histEdit.rows.push({ name:"", w:0, l:0, t:0 }); render(); }
+    return;
+  }
+  if (el.id === "cancelpast"){ histEdit = null; render(); return; }
+  if (el.id === "savepast"){
+    if (!isAdmin){ toast("Admin only"); return; }
+    const msg = document.getElementById("histmsg");
+    const say = t => { if (msg){ msg.className = "impmsg bad"; msg.textContent = t; } };
+    const y = String(histEdit.year).trim();
+    if (!SYNC.on) return say("History is shared with everyone, so saving it needs a "
+      + "connection. Try again once the pill at the top says Live.");
+    if (!/^\d{4}$/.test(y)) return say("The year needs four digits.");
+    if (YEARS.includes(y))
+      return say(y + " was scored in the app, so its record comes from the games themselves.");
+    const rows = histEdit.rows
+      .map(r => ({ name: String(r.name||"").trim(), w:+r.w||0, l:+r.l||0, t:+r.t||0 }))
+      .filter(r => r.name && (r.w || r.l || r.t))
+      .map(r => ({ ...r, gp: r.w + r.l + r.t }));
+    if (!rows.length) return say("Nobody has a record yet — enter some wins and losses.");
+    const dupe = rows.map(r => r.name.toLowerCase())
+      .find((n,i,a) => a.indexOf(n) !== i);
+    if (dupe) return say("Two rows for the same player.");
+    if (msg){ msg.className = "impmsg"; msg.textContent = "Saving…"; }
+    saveRecordedYear(y, rows)
+      .then(() => { histEdit = null; toast(y + " recorded"); render(); })
+      .catch(e => say("Couldn't save — " + (e.code || e.message || "unknown")));
+    return;
+  }
+  if (el.dataset.delpast){
+    if (!isAdmin){ toast("Admin only"); return; }
+    const y = el.dataset.delpast;
+    if (!confirm(`Remove the ${y} record?\n\nIt's typed-in history, so this only deletes `
+      + `what was entered here.`)) return;
+    saveRecordedYear(y, null)
+      .then(() => toast(y + " removed"))
+      .catch(e => toast(e.code || e.message || "failed"));
+    return;
+  }
   if (el.dataset.sched){ schedMode = el.dataset.sched; render(); return; }
-  if (el.id === "back"){ view.gameId = null; render(); return; }
+  if (el.id === "back"){
+    if (view.gameId){ view.gameId = null; render(); return; }
+    if (editEvent){
+      /* Back out of an editor is the "I didn't mean to change that" exit, so
+         it undoes — but never silently. */
+      if (editorDirty()){
+        const wasNew = editIsNew;
+        if (!confirm(wasNew
+          ? "Leave without keeping this event?"
+          : "Leave without saving your changes?")) return;
+        closeEvent(false);
+        toast(wasNew ? "Discarded" : "Changes undone");
+        return;
+      }
+      closeEvent(!editIsNew);
+      return;
+    }
+    render(); return;
+  }
   if (el.dataset.game){ view.gameId = el.dataset.game;
     view.hole = el.dataset.jumphole != null ? +el.dataset.jumphole : 0; render(); return; }
   if (el.dataset.hole != null){ view.hole = +el.dataset.hole; render(); return; }
@@ -3720,6 +4154,22 @@ function handleClick(el){
 /* text inputs: update the model in place so focus and the keyboard survive */
 document.addEventListener("input", e => {
   const t = e.target;
+
+  /* the past-year form — kept in memory as it's typed, so a re-render for any
+     other reason doesn't wipe what's been entered */
+  if (histEdit && t.dataset){
+    if (t.id === "hyear"){ histEdit.year = t.value; return; }
+    const d = t.dataset;
+    const i = d.hname != null ? +d.hname : d.hw != null ? +d.hw
+            : d.hl != null ? +d.hl : d.ht != null ? +d.ht : null;
+    if (i != null && histEdit.rows[i]){
+      if (d.hname != null) histEdit.rows[i].name = t.value;
+      else if (d.hw != null) histEdit.rows[i].w = t.value.replace(/\D/g,"");
+      else if (d.hl != null) histEdit.rows[i].l = t.value.replace(/\D/g,"");
+      else if (d.ht != null) histEdit.rows[i].t = t.value.replace(/\D/g,"");
+      return;
+    }
+  }
 
   if (t.dataset && t.dataset.dayname != null){
     const i = +t.dataset.dayname, old = DAYS[i], nv = t.value;
@@ -3832,11 +4282,20 @@ function advanceCell(t){
 
 /* tee assignment */
 document.addEventListener("change", e => {
-  if (e.target.dataset && e.target.dataset.tee != null){
-    const pl = P(e.target.dataset.tee);
+  const t = e.target;
+  if (t.dataset && t.dataset.tee != null){
+    const pl = P(t.dataset.tee);
     pl.tees = pl.tees || {};
-    pl.tees[editCourseId] = e.target.value;
+    pl.tees[editCourseId] = t.value;
     refreshCH(); queueConfig();
+    return;
+  }
+  /* course pickers — a dropdown rather than a row of buttons, so the list
+     still works once there are a dozen courses */
+  if (t.id === "crspick"){ editCourseId = t.value; render(); return; }
+  if (t.id === "evcourse" && editEvent){
+    EV(editEvent).courseId = t.value;
+    queueConfig(); render(); return;
   }
 });
 
