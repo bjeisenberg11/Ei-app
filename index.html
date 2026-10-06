@@ -473,6 +473,27 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
   transition:transform .2s,opacity .2s;z-index:60}
 .toast.on{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible}
 
+/* collapsible section */
+.pnl{border:1.5px solid var(--rule);background:var(--paper-2);margin-top:10px}
+.pnl.on{border-color:var(--ink)}
+.pnl-h{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;
+  cursor:pointer;padding:14px 13px;text-align:left}
+.pnl-t{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.12em;font-size:14px;color:var(--ink)}
+.pnl-m{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-faint);
+  flex:none;text-align:right}
+.pnl-x{flex:none;font-family:'IBM Plex Mono',monospace;font-size:17px;line-height:1;
+  color:var(--ink-soft);width:16px;text-align:center}
+.pnl.on .pnl-x{color:var(--ink)}
+.pnl-b{padding:0 13px 15px;border-top:1px solid var(--rule-soft)}
+.pnl-b > h3.sub3:first-child,.pnl-b > .sec:first-child{margin-top:13px}
+.pnl-b .imp{border:none;padding:0;background:none}
+
+/* editor actions, pinned so Done is never a scroll away */
+.stick{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));z-index:30;
+  background:var(--paper);padding:10px 0 6px;margin-top:16px;
+  border-top:1.5px solid var(--ink)}
+
 /* update bar — sits over the tabs, because an out-of-date phone can't be left
    quietly scoring into a build whose writes get ignored */
 /* bottom is set in JS to sit directly on top of the tab bar, whose height
@@ -1085,7 +1106,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0105";
+const BUILD = "2026-10-06.0210";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2725,11 +2746,20 @@ function renderEventEditor(h, id){
   }
 
   if (isRound){
+    /* A select with nothing selected still *displays* its first option, so a
+       round with no course looked as though it had one \u2014 and picking the
+       course it was already showing fires no change event at all, so nothing
+       happened. An explicit placeholder makes the empty state real. */
+    const known = COURSES.some(c => c.id === e.courseId);
     h += `<label for="evcourse">Course \u2014 this also names the round</label>
-    <select class="sel" id="evcourse" data-evcourse>
+    ${COURSES.length ? `<select class="sel" id="evcourse">
+      <option value=""${known ? "" : " selected"}>Choose a course\u2026</option>
       ${COURSES.map(c => `<option value="${c.id}"${c.id===e.courseId?" selected":""}>${
         esc(c.name)}</option>`).join("")}
-    </select>
+    </select>${known ? "" : `<p class="hint">Until this is set the round has no name,
+      and handicaps can't be worked out.</p>`}`
+    : `<p class="note warn">No courses yet \u2014 add one on the Field tab and it'll
+        appear here.</p>`}
     <label>Handicaps</label>
     <div class="acts">
       <button class="btn ${e.mode!=="FULL"?"":"ghost"}" data-evmode="RELATIVE">Relative</button>
@@ -2740,21 +2770,26 @@ function renderEventEditor(h, id){
   h += `</div>`;
 
   if (isRound){
-    h += `<h3 class="sub3">Games in this round</h3>`;
+    /* Games are optional. A round is a real thing on the schedule — a tee time
+       people are playing — whether or not anyone is competing in it, so this
+       is a section you can ignore rather than a form to get through. */
     const games = GAMES.filter(g => g.roundId === e.id);
-    if (!games.length) h += `<p class="note">None yet. Two best ball matches usually run together.</p>`;
-    games.forEach(g => h += gameEditor(g));
-    h += `<div class="acts cwrap" style="margin-top:10px">
+    let body = games.length
+      ? games.map(g => gameEditor(g)).join("")
+      : `<p class="note">No games here, which is fine — the round still appears on the
+         schedule. Add one when you know who's playing whom.</p>`;
+    body += `<div class="acts cwrap" style="margin-top:10px">
       ${["BESTBALL","SCRAMBLE4","SCRAMBLE3","FORTYBALL"].map(t =>
         `<button class="btn ghost" data-addgame="${e.id}:${t}">+ ${LABEL[t]}</button>`).join("")}
     </div>`;
+    h += panel("e:games", "Games in this round", body,
+      games.length ? games.length + (games.length === 1 ? " game" : " games") : "optional");
   }
 
-  h += `<div class="acts cwrap" style="margin-top:18px">
+  h += `<div class="acts cwrap stick">
     <button class="btn" id="evdone">Done</button>
     <button class="btn ghost" id="evcancel">${editIsNew ? "Discard" : "Cancel"}</button>
-    ${editIsNew ? "" : `<button class="btn red" data-delev="${e.id}">Delete ${
-      isRound ? "round" : "event"}</button>`}
+    ${editIsNew ? "" : `<button class="btn red" data-delev="${e.id}">Delete</button>`}
   </div>
   <p class="hint" style="margin-top:7px">${editIsNew
     ? "Discard removes this one again — nothing is kept."
@@ -2905,6 +2940,27 @@ function renderPairs(){
 /* ---------- history ----------
    Every year at once, which is the one view that doesn't belong to the year
    you're looking at. The year chips are deliberately left off. */
+/* ---------- collapsible sections ----------
+   Several screens were one long scroll — the Field tab especially, which held
+   handicaps, tees, the scorecard and the danger zone end to end. These make
+   each screen a short list of things you can open, one at a time. Keys are
+   prefixed by screen ("f:" for Field) so opening one closes its siblings
+   rather than everything everywhere. */
+const openPanel = { f:"hcp", e:"det", h:null };
+
+function panel(key, title, body, meta){
+  const [grp, name] = key.split(":");
+  const on = openPanel[grp] === name;
+  return `<section class="pnl${on ? " on" : ""}">
+    <button class="pnl-h" data-panel="${esc(key)}">
+      <span class="pnl-t">${title}</span>
+      ${meta ? `<span class="pnl-m">${meta}</span>` : ""}
+      <span class="pnl-x">${on ? "−" : "+"}</span>
+    </button>
+    ${on ? `<div class="pnl-b">${body}</div>` : ""}
+  </section>`;
+}
+
 let histEdit = null;          // the past year being typed in, if any
 let histPaste = null;         // the paste box contents, if it's open
 let histPlan = null;          // what that paste would save, once checked
@@ -2929,9 +2985,16 @@ function renderHistory(){
     h += `<p class="note warn" style="margin-top:18px">${esc(HIST.err)}</p>`;
   }
 
-  if (!all.length && !histEdit){
-    h += `<p class="note" style="margin-top:22px">Nothing to show yet. History starts with
-      the first finished year.</p>`;
+  if (!all.length && !histEdit && histPaste === null){
+    h += `<div class="imp" style="margin-top:18px">
+      <div class="syncerr-t" style="color:var(--ink)">No history yet</div>
+      <p class="hint" style="margin:7px 0 0">This fills in two ways. Years the app scores
+        appear on their own once games are decided — ${esc(activeYear || YEAR_NOW)} has
+        none finished yet. Years from before the app get typed in.</p>
+      ${isAdmin ? `<p class="hint" style="margin:9px 0 0">Blake: paste 2021–2025 in below
+        and this becomes an all-time table — wins, losses, win% and who took each year.</p>`
+      : `<p class="hint" style="margin:9px 0 0">Blake can add the earlier years.</p>`}
+    </div>`;
   }
 
   if (all.length){
@@ -2951,31 +3014,34 @@ function renderHistory(){
   }
 
   if (years.length){
+    /* One year open at a time — five years of tables end to end was most of
+       the scrolling this screen had. */
     h += `<h2 class="sec">Year by year</h2>`;
     years.slice().reverse().forEach(y => {
       const yr = HIST.years[y];
       const won = yearWinners(yr.rows);
       const sorted = yr.rows.slice().sort((a,b) => winPct(b) - winPct(a)
         || b.w - a.w || a.name.localeCompare(b.name));
-      h += `<p class="roundwhen">${esc(y)}${yr.source === "recorded" ? " · recorded" : ""}${
-        y === liveYear ? " · in progress" : ""}</p>
-      <p class="note" style="text-align:left;margin:0 0 6px">${
-        won.length ? `<b>${esc(won.join(" & "))}</b> — ${
-          (winPct(sorted[0])*100).toFixed(0)}%` : "no result yet"}</p>
-      <table class="lb"><thead><tr>
+      let body = `<table class="lb"><thead><tr>
         <th>Player</th><th>W</th><th>L</th><th>T</th><th>GP</th><th>Win%</th>
       </tr></thead><tbody>`;
       sorted.forEach(r => {
-        h += `<tr><td>${esc(r.name)}</td>
+        body += `<tr><td>${esc(r.name)}</td>
           <td class="mono">${r.w}</td><td class="mono">${r.l}</td><td class="mono">${r.t}</td>
           <td class="mono" style="color:var(--ink-faint)">${r.gp}</td>
           <td class="pts">${(winPct(r)*100).toFixed(0)}</td></tr>`;
       });
-      h += `</tbody></table>`;
+      body += `</tbody></table>
+        <p class="note" style="text-align:left">${yr.source === "recorded"
+          ? "Typed in from earlier records." : "Computed from that year's games."}</p>`;
       if (isAdmin && yr.source === "recorded")
-        h += `<div class="acts cwrap" style="margin-top:6px">
+        body += `<div class="acts cwrap" style="margin-top:6px">
           <button class="btn ghost" data-delpast="${esc(y)}">Remove ${esc(y)}</button>
         </div>`;
+      const title = esc(y) + (y === liveYear ? " · in progress" : "");
+      h += panel("h:" + y, title, body,
+        won.length ? esc(won.join(" & ")) + " · " + (winPct(sorted[0])*100).toFixed(0) + "%"
+                   : "no result yet");
     });
   }
 
@@ -3453,53 +3519,51 @@ function renderPlayers(){
          <span class="lockbar-t">Editing unlocked</span>
          <button class="btn ghost" id="alock">Lock</button>
        </div>`;
-  h += `<h2 class="sec">Handicap indexes</h2>`;
-  h += `
-  <table class="lb ftbl"><thead><tr><th>Player</th><th>Index</th></tr></thead><tbody>`;
+  /* Indexes first: the thing most often changed. */
+  let idxTbl = `<table class="lb ftbl"><thead><tr><th>Player</th><th>Index</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
-    h += `<tr>
+    idxTbl += `<tr>
       <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
       <td><input class="idx cc-like" inputmode="decimal" maxlength="4" data-index="${p.id}"
         value="${p.index.toFixed(1)}"${dis}></td>
     </tr>`;
   });
-  h += `</tbody></table>
+  idxTbl += `</tbody></table>
   <p class="note">An index belongs to the player and is the same at every course.
-    Everything below is per course.</p>
+    Everything else here is per course.</p>`;
+  h += panel("f:hcp", "Handicap indexes", idxTbl, PLAYERS.length + " players");
 
-  <h2 class="sec">Course setup</h2>
-  <label for="crspick">Course</label>
-  <select class="sel" id="crspick">
+  /* The course picker sits outside the sections: everything below is scoped to
+     it, so it has to stay visible whichever section is open. */
+  h += `<h2 class="sec">Course</h2>
+  ${COURSES.length ? `<select class="sel" id="crspick">
     ${COURSES.map(c => `<option value="${c.id}"${c.id===editCourseId?" selected":""}>${
       esc(c.name)}</option>`).join("")}
-  </select>
+  </select>` : `<p class="note warn">No courses yet — add one below and it'll
+    appear here and in the round editor.</p>`}
   <p class="note">${rounds.length
       ? `Played ${rounds.join(", ")}.`
-      : "No rounds assigned to this course."}</p>
-  ${ro ? "" : `<div class="acts" style="margin-top:6px">
-    <button class="btn ghost" id="crsdel">Delete ${esc(co.name)}</button>
-  </div>`}
+      : "No rounds assigned to this course."}</p>`;
 
-  <h3 class="sub3">Tee sets</h3>
-  <table class="lb ttbl"><thead><tr>
+  let teeTbl = `<table class="lb ttbl"><thead><tr>
     <th>Tee</th><th>Rating</th><th>Slope</th><th>Par</th></tr></thead><tbody>`;
   co.tees.forEach((t,i) => {
-    h += `<tr>
+    teeTbl += `<tr>
       <td><input class="tf wide" data-tee-f="name:${i}" value="${esc(t.name)}"${dis}></td>
       <td><input class="tf" inputmode="decimal" data-tee-f="rating:${i}" value="${t.rating}"${dis}></td>
       <td><input class="tf" inputmode="numeric" data-tee-f="slope:${i}" value="${t.slope}"${dis}></td>
       <td><input class="tf" inputmode="numeric" data-tee-f="par:${i}" value="${t.par}"${dis}></td>
     </tr>`;
   });
-  h += `</tbody></table>
-  <p class="note">Rating and slope come off the card or the tee marker. Slope runs 55\u2013155;
-    113 is neutral.</p>
+  teeTbl += `</tbody></table>
+  <p class="note">Rating and slope come off the card or the tee marker. Slope runs 55–155;
+    113 is neutral.</p>`;
+  h += panel("f:tees", "Tee sets", teeTbl, co.tees.length + " tees");
 
-  <h3 class="sub3">Who plays which tee</h3>
-  <table class="lb ftbl"><thead><tr>
+  let whoTbl = `<table class="lb ftbl"><thead><tr>
     <th>Player</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
-    h += `<tr>
+    whoTbl += `<tr>
       <td>${esc(p.name)}</td>
       <td><select class="tee" data-tee="${p.id}"${dis}>
         ${co.tees.map(x => `<option${x.name===teeNameFor(p.id,co)?" selected":""}>${esc(x.name)}</option>`).join("")}
@@ -3507,38 +3571,42 @@ function renderPlayers(){
       <td class="mono ch" data-ch="${p.id}">${courseHcp(p.id, co)}</td>
     </tr>`;
   });
-  h += `</tbody></table>
+  whoTbl += `</tbody></table>
   <p class="note"><b>CH</b> is the course handicap that player's index is worth off that tee:
-    <span class="mono">index \u00d7 slope \u00f7 113 + (rating \u2212 par)</span>.
-    Scrambles ignore it and play gross.</p>
+    <span class="mono">index × slope ÷ 113 + (rating − par)</span>.
+    Scrambles ignore it and play gross.</p>`;
+  h += panel("f:who", "Who plays which tee", whoTbl, esc(co.name));
 
-  <h3 class="sub3">Add a course from a scorecard</h3>
-  <div class="imp">
-    <p class="hint" style="margin:0 0 9px">Type what's on the card \u2014 or send a photo of it to
-      Claude and paste back what it hands you. Adds a new course, or updates one of the same name.</p>
-    <textarea id="crsin" rows="7" placeholder="${esc(COURSE_EXAMPLE)}"${dis}></textarea>
-    <div class="acts">
-      <button class="btn ghost" id="crsexample">Copy example</button>
-      <button class="btn" id="crscheck"${dis}>Check it</button>
+  h += panel("f:card", "Par and stroke index", `
+    <div class="imp">
+      <label for="cname">Course name</label>
+      <input id="cname" value="${esc(co.name)}" data-cname${dis}>
+      <p class="hint" style="margin-top:9px">Copy the card straight across. Each box jumps to the
+        next as you fill it, so the number pad never has to close.</p>
     </div>
-    <div id="crsout"></div>
-  </div>
+    ${cardBlock(0)}
+    ${cardBlock(9)}
+    <p class="impmsg" id="cardmsg"></p>
+    ${ro ? "" : `<div class="acts" style="margin-top:10px">
+      <button class="btn ghost" id="crsdel">Delete ${esc(co.name)}</button>
+    </div>`}`, "par " + co.holes.reduce((a,c) => a + c.par, 0));
 
-  <h3 class="sub3">Scorecard</h3>
-  <div class="imp">
-    <label for="cname">Course name</label>
-    <input id="cname" value="${esc(co.name)}" data-cname${dis}>
-    <p class="hint" style="margin-top:9px">Copy the card straight across. Each box jumps to the
-      next as you fill it, so the number pad never has to close.</p>
-  </div>
-  ${cardBlock(0)}
-  ${cardBlock(9)}
-  <p class="impmsg" id="cardmsg"></p>
-  ${ro ? "" : `
-  <h3 class="sub3">Danger zone</h3>
+  h += panel("f:add", "Add a course from a scorecard", `
+    <div class="imp">
+      <p class="hint" style="margin:0 0 9px">Type what's on the card — or send a photo of it to
+        Claude and paste back what it hands you. Adds a new course, or updates one of the same name.</p>
+      <textarea id="crsin" rows="7" placeholder="${esc(COURSE_EXAMPLE)}"${dis}></textarea>
+      <div class="acts">
+        <button class="btn ghost" id="crsexample">Copy example</button>
+        <button class="btn" id="crscheck"${dis}>Check it</button>
+      </div>
+      <div id="crsout"></div>
+    </div>`, COURSES.length + " saved");
+
+  if (!ro) h += panel("f:danger", "Danger zone", `
   <div class="imp">
     <p class="hint" style="margin:0 0 9px">Your handicaps, courses and schedule are stored in the
-      database, not in the app file \u2014 uploading a new version keeps them. These two buttons are
+      database, not in the app file — uploading a new version keeps them. These two buttons are
       the only things that discard data.</p>
     <div class="acts cwrap">
       <button class="btn ghost" id="clearscores">Clear all scores</button>
@@ -3552,7 +3620,9 @@ function renderPlayers(){
       <button class="btn ghost" id="startyear">Start ${esc(String(+(liveYear||YEAR_NOW)+1))}</button>
     </div>
     <p class="impmsg" id="dangermsg"></p>
-  </div>`}
+  </div>`);
+
+  h += `
   <div class="footnote">Handicaps and courses persist across app updates.
   Scoring is open to everyone; setup is admin-only.<br>Build ${BUILD} \u00b7 schema ${SCHEMA}</div>`;
   app.innerHTML = h;
@@ -3861,7 +3931,8 @@ function handleClick(el){
   }
   if (el.dataset.addround){
     /* Rounds are what people add most, so they get their own button and skip
-       straight to picking a course. */
+       straight to picking a course. Games are added later, or never — a round
+       is a real thing on the schedule whether or not anyone's competing. */
     const id = "e" + Date.now().toString(36);
     SCHEDULE.push({ id, day: el.dataset.addround, time:null, type:"ROUND",
                     title:"", courseId: COURSES[0] ? COURSES[0].id : null });
@@ -3930,6 +4001,18 @@ function handleClick(el){
     boardMode = el.dataset.board;
     if (boardMode === "history") loadHistory(false);
     render();
+    return;
+  }
+
+  if (el.dataset.panel){
+    /* one section open at a time within a screen — that's the point of them */
+    const [grp, name] = el.dataset.panel.split(":");
+    openPanel[grp] = openPanel[grp] === name ? null : name;
+    render();
+    if (openPanel[grp] === name){
+      const sec = document.querySelector(`[data-panel="${el.dataset.panel}"]`);
+      if (sec && sec.scrollIntoView) sec.scrollIntoView({ block:"nearest" });
+    }
     return;
   }
 
@@ -4294,6 +4377,7 @@ document.addEventListener("change", e => {
      still works once there are a dozen courses */
   if (t.id === "crspick"){ editCourseId = t.value; render(); return; }
   if (t.id === "evcourse" && editEvent){
+    if (!t.value) return;                 // the "choose a course" placeholder
     EV(editEvent).courseId = t.value;
     queueConfig(); render(); return;
   }
