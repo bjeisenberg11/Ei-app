@@ -426,6 +426,10 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
   font-size:11px;letter-spacing:.08em;padding:7px 2px;cursor:pointer}
 .side.on.a{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .side.on.b{background:var(--brass);color:var(--paper);border-color:var(--brass)}
+.side.on.c{background:var(--ink-soft);color:var(--paper);border-color:var(--ink-soft)}
+.side.on.d{background:var(--pencil);color:var(--paper);border-color:var(--pencil)}
+/* in a four-team scramble, the two going through */
+.strokerow.through .sname::after{content:" \2713";color:var(--brass);font-weight:700}
 .side.on.out{background:var(--paper-3);color:var(--ink-soft)}
 .rost-sum{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:9px;
   font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
@@ -657,7 +661,7 @@ function blankHole(){
     teamScore:{},                // scrambles: 0 / 1 -> number
     conceded:null,               // 0 | 1 = team index that GAVE the hole
     selected:{0:[],1:[]},        // 40ball: playerIds spent, per team
-    locked:{0:false,1:false}     // 40ball
+    locked:{0:false,1:false,2:false,3:false}   // score locks, per side
   };
 }
 /* keyed by hole number as an object, not an array, so two phones editing
@@ -742,13 +746,24 @@ function roundLabel(g){
 let DAYS = ["Friday","Saturday","Sunday","Monday"];
 
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
-                SCRAMBLE3:"3v3 Scramble", FORTYBALL:"40ball" };
+                SCRAMBLE3:"3v3 Scramble", SCRAMBLE2X4:"2v2v2v2 Scramble",
+                FORTYBALL:"40ball" };
 /* Match play: holes won. Stroke play: one aggregate total for the round.
-   Only best ball is match play — both scrambles are decided on total strokes. */
+   Only best ball is match play — every scramble is decided on total strokes. */
 const isMatch  = g => g.type === "BESTBALL";
-const isStroke = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3";
-const isScramble = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3";
+const isStroke = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3"
+                   || g.type === "SCRAMBLE2X4";
+const isScramble = isStroke;
 const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
+
+/* How many sides a game has. Everything else here is two-sided — A against B,
+   one winner and one loser — so the count lives in one place rather than being
+   assumed at every call site. */
+const SIDES = { BESTBALL:2, SCRAMBLE4:2, SCRAMBLE3:2, FORTYBALL:2, SCRAMBLE2X4:4 };
+const sideCount = g => SIDES[g.type] || 2;
+const sides = g => Array.from({ length: sideCount(g) }, (_, i) => i);
+const isMulti = g => sideCount(g) > 2;
+const SIDE_CODES = ["A","B","C","D"];
 
 /* ============================================================
    §1.4–1.5  HANDICAPS
@@ -813,7 +828,7 @@ function teamHoleScore(g, t, h){
 function holeComplete(g, h){
   const hole = g.holes[h];
   if (hole.conceded !== null) return true;                      // §4
-  if (isScramble(g)) return hole.teamScore[0] != null && hole.teamScore[1] != null;
+  if (isScramble(g)) return sides(g).every(i => hole.teamScore[i] != null);
   return teamHoleScore(g,0,h) != null && teamHoleScore(g,1,h) != null;  // §5.3
 }
 function resolveHole(g, h){
@@ -857,7 +872,18 @@ function teamLabel(g, t){
   return names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
 }
 function teamShort(g, t){ return P(g.teams[t][0]).name; } // one name, for tight captions
-function winnerLabel(g, code){ return teamLabel(g, code === "A" ? 0 : 1); }
+
+/* "Blake & Dan vs Adam & Jason", or with four teams the lot of them separated
+   by v. Escaped here because it goes straight into a card. */
+function teamsLine(g){
+  const names = sides(g).map(i => esc(teamLabel(g, i)));
+  if (names.length === 2) return names[0] + " <b>vs</b> " + names[1];
+  return names.join(" <b>v</b> ");
+}
+function winnerLabel(g, code){
+  const i = SIDE_CODES.indexOf(code);
+  return teamLabel(g, i < 0 ? 0 : i);
+}
 
 function statusText(g, st){
   if (st.status === 0) return "ALL SQUARE";
@@ -920,9 +946,10 @@ function fbState(g){
 
 /* stroke play: lowest 18-hole total wins */
 function strokeTotals(g){
-  const t = [0,0], done = [0,0];
+  const ix = sides(g);
+  const t = ix.map(() => 0), done = ix.map(() => 0);
   holeList(g).forEach(hole => {
-    [0,1].forEach(i => {
+    ix.forEach(i => {
       const v = hole.teamScore[i];
       if (v != null){ t[i] += v; done[i]++; }
     });
@@ -931,13 +958,41 @@ function strokeTotals(g){
 }
 function strokeState(g){
   const { totals, holes } = strokeTotals(g);
-  const complete = holes[0] === 18 && holes[1] === 18;
+  const complete = holes.every(n => n === 18);
   if (!complete) return { done:false, result:null, totals, holes };
+  if (isMulti(g)){
+    const best = Math.min(...totals);
+    const winners = totals.map((v,i) => v === best ? i : -1).filter(i => i >= 0);
+    return { done:true, totals, holes,
+      result: { winner: winners.length === 1 ? SIDE_CODES[winners[0]] : "TIE",
+                label: totals.slice().sort((x,y) => x - y).join("\u2013") } };
+  }
   const [a,b] = totals;
   return { done:true, totals, holes,
     result: a < b ? {winner:"A", label:`${a}\u2013${b}`}
           : b < a ? {winner:"B", label:`${b}\u2013${a}`}
           : {winner:"TIE", label:`${a}\u2013${a}`} };
+}
+
+/* What each side got out of the game, as the leaderboard counts it. Two-sided
+   games are the obvious thing. With four teams the top two win and the bottom
+   two lose — and a tie straddling that line is a tie for everyone in it,
+   because there's no honest way to split second from third. */
+function teamOutcomes(g){
+  if (!gameResult(g)) return null;
+  if (!isMulti(g)){
+    const r = gameResult(g);
+    return sides(g).map(i =>
+      r.winner === "TIE" ? "T" : (r.winner === SIDE_CODES[i] ? "W" : "L"));
+  }
+  const { totals } = strokeTotals(g);
+  const slots = Math.floor(sideCount(g) / 2);          // two of four go through
+  const cut = totals.slice().sort((a,b) => a - b)[slots - 1];
+  const below = totals.filter(v => v < cut).length;
+  const atCut = totals.filter(v => v === cut).length;
+  const cutIsClean = atCut <= slots - below;
+  return totals.map(v =>
+    v < cut ? "W" : v > cut ? "L" : (cutIsClean ? "W" : "T"));
 }
 /* par for the holes a team has actually played, so a running total means something */
 function strokeParSoFar(g, t){
@@ -961,19 +1016,18 @@ function standings(){
   const rec = {};
   PLAYERS.forEach(p => rec[p.id] = { w:0, l:0, t:0, gp:0 });
   GAMES.forEach(g => {
-    const r = gameResult(g);
-    if (!r) return;
-    [0,1].forEach(t => {
-      const team = g.teams[t];
-      const side = t === 0 ? "A" : "B";
+    const out = teamOutcomes(g);
+    if (!out) return;
+    sides(g).forEach(t => {
+      const team = g.teams[t] || [];
       team.forEach(id => {
         /* A game can name someone who isn't on this year's roster — an old
            year read back, or a player removed after the fact. Skip them
            rather than throwing and taking the whole leaderboard down. */
         if (!rec[id]) return;
         rec[id].gp++;
-        if (r.winner === "TIE") rec[id].t++;
-        else if (r.winner === side) rec[id].w++;
+        if (out[t] === "T") rec[id].t++;
+        else if (out[t] === "W") rec[id].w++;
         else rec[id].l++;
       });
     });
@@ -1197,7 +1251,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0830";
+const BUILD = "2026-10-06.0950";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1838,6 +1892,14 @@ function migrateLoaded(){
   //    something to second-guess by hunting for a round to reattach to.
   GAMES.filter(g => g.roundId && !EV(g.roundId)).forEach(g => removeGame(g.id));
 
+  // 6b. a game must carry every side its type calls for. A 2v2v2v2 read back
+  //     from an older shape, or half-written, would otherwise throw the moment
+  //     anything iterated its teams.
+  GAMES.forEach(g => {
+    if (Array.isArray(g.teams)) return;        // step 7 deals with that shape
+    sides(g).forEach(i => { if (!Array.isArray(g.teams[i])) g.teams[i] = []; });
+  });
+
   // 7. teams stored as an array can't be written to Firestore
   GAMES.forEach(g => {
     if (Array.isArray(g.teams)){
@@ -2286,7 +2348,7 @@ function renderHome(){
         : "Gross — no handicaps";
       h += `<button class="gcard ${stt.cls==="done"?"done":""}" data-game="${g.id}">
         <div class="gtype">${LABEL[g.type]}</div>
-        <div class="gteams">${esc(teamLabel(g,0))} <b>vs</b> ${esc(teamLabel(g,1))}</div>
+        <div class="gteams">${teamsLine(g)}</div>
         <div class="gstate ${stt.cls}">${esc(stt.text)}</div>
         <div class="gmeta">${meta}${
           g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
@@ -2557,26 +2619,43 @@ function eventCard(e, ro, showDay){
            (BESTBALL / SCRAMBLE4 / SCRAMBLE3 / 40BALL)
    teamA/teamB: names joined with +   e.g.  Blake+Daniel
    ============================================================ */
-const CSV_HEAD = "day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4";
+/* Four player columns per side, four sides. c and d sit empty for everything
+   except a 2v2v2v2 — kept the same width as a and b so the block is one shape
+   rather than four different ones. */
+const CSV_SIDE_COLS = 4;
+const CSV_HEAD = "day,time,type,course,detail,player,notes,"
+  + ["a","b","c","d"].map(x => [1,2,3,4].map(n => x + n).join(",")).join(",");
+const CSV_WIDTH = CSV_HEAD.split(",").length;
+const csvRow = cells => {
+  const r = cells.slice(0, CSV_WIDTH);
+  while (r.length < CSV_WIDTH) r.push("");
+  return r.join(",");
+};
 
 /* Blank: headers plus empty rows to type into. Nothing pre-filled, so it can't
    be mistaken for the current schedule. */
-const CSV_TEMPLATE = CSV_HEAD + "\n" + Array(24).fill(",,,,,,,,,,,,,,").join("\n") + "\n";
+const CSV_TEMPLATE = CSV_HEAD + "\n"
+  + Array(24).fill(csvRow([])).join("\n") + "\n";
 
 /* Filled example, for reference rather than pasting back in. */
-const CSV_EXAMPLE =
-`${CSV_HEAD}
-Friday,2:20pm,TRAVEL-IN,,United 1442,Jason,ORD,,,,,,,,
-Friday,7:30pm,MEAL,,Welcome dinner,,Reservation under Eisenberg,,,,,,,,
-Saturday,8:10am,ROUND,Pine Hollow,,,,,,,,,,,
-Saturday,,GAME,,BESTBALL,,,Blake,Daniel,,,Dan,Howard,,
-Saturday,,GAME,,BESTBALL,,,Jason,Luke,,,Jake,Adam,,
-Saturday,1:40pm,ROUND,Marsh Ridge,,,,,,,,,,,
-Saturday,,GAME,,SCRAMBLE4,,,Blake,Daniel,Jason,Luke,Dan,Howard,Jake,Adam
-Sunday,1:15pm,ROUND,Stonebridge,,,,,,,,,,,
-Sunday,,GAME,,40BALL,,,Blake,Daniel,Jason,Luke,Dan,Howard,Jake,Adam
-Sunday,8:45pm,TRAVEL-OUT,,Delta 1190,Jake,ORD,,,,,,,,
-`;
+const CSV_EXAMPLE = [
+  CSV_HEAD,
+  csvRow(["Friday","2:20pm","TRAVEL-IN","","United 1442","Jason","ORD"]),
+  csvRow(["Friday","7:30pm","MEAL","","Welcome dinner","","Reservation under Eisenberg"]),
+  csvRow(["Saturday","8:10am","ROUND","Pine Hollow"]),
+  csvRow(["Saturday","","GAME","","BESTBALL","","","Blake","Daniel","","","Dan","Howard"]),
+  csvRow(["Saturday","","GAME","","BESTBALL","","","Jason","Luke","","","Jake","Adam"]),
+  csvRow(["Saturday","1:40pm","ROUND","Marsh Ridge"]),
+  csvRow(["Saturday","","GAME","","SCRAMBLE4","","","Blake","Daniel","Jason","Luke",
+          "Dan","Howard","Jake","Adam"]),
+  csvRow(["Sunday","8:00am","ROUND","Stonebridge"]),
+  csvRow(["Sunday","","GAME","","2V2V2V2","","","Blake","Daniel","","","Dan","Howard","","",
+          "Jason","Luke","","","Jake","Adam"]),
+  csvRow(["Sunday","1:15pm","ROUND","Stonebridge"]),
+  csvRow(["Sunday","","GAME","","40BALL","","","Blake","Daniel","Jason","Luke",
+          "Dan","Howard","Jake","Adam"]),
+  csvRow(["Sunday","8:45pm","TRAVEL-OUT","","Delta 1190","Jake","ORD"])
+].join("\n") + "\n";
 
 function splitCSVLine(line){
   // a tab-separated row (straight from a spreadsheet) needs no quote handling
@@ -2598,6 +2677,7 @@ function splitCSVLine(line){
 
 const FORMATS = { BESTBALL:"BESTBALL", "2V2":"BESTBALL", "BEST BALL":"BESTBALL",
   SCRAMBLE4:"SCRAMBLE4", "4V4":"SCRAMBLE4", SCRAMBLE3:"SCRAMBLE3", "3V3":"SCRAMBLE3",
+  SCRAMBLE2X4:"SCRAMBLE2X4", "2V2V2V2":"SCRAMBLE2X4", "2X4":"SCRAMBLE2X4",
   "40BALL":"FORTYBALL", FORTYBALL:"FORTYBALL" };
 
 /* Parse without touching live data — returns a plan plus any problems, so the
@@ -2621,8 +2701,8 @@ function parseCSV(text){
     const n = i + start + 1;
     const [day, time, typeRaw, course, detail, player, notes] =
       [0,1,2,3,4,5,6].map(k => row[k] || "");
-    const cellsA = [7,8,9,10].map(k => row[k] || "");
-    const cellsB = [11,12,13,14].map(k => row[k] || "");
+    const sideCells = [0,1,2,3].map(sideN =>
+      Array.from({length: CSV_SIDE_COLS}, (_, k) => row[7 + sideN*CSV_SIDE_COLS + k] || ""));
     const type = typeRaw.toUpperCase().trim();
     if (!type) return;
 
@@ -2655,12 +2735,21 @@ function parseCSV(text){
           if (!p) errors.push(`Line ${n}: no player called "${nm}".`);
           return p ? p.id : null;
         }).filter(Boolean);
-      const a = side(cellsA), b = side(cellsB);
       const need = NEEDED[fmt];
-      if (a.length !== need[0] || b.length !== need[1])
-        errors.push(`Line ${n}: ${LABEL[fmt]} needs ${need[0]} v ${need[1]}, got ${a.length} v ${b.length}.`);
+      const picked = need.map((_, k) => side(sideCells[k]));
+      if (picked.some((x, k) => x.length !== need[k]))
+        errors.push(`Line ${n}: ${LABEL[fmt]} needs ${need.join(" v ")}, got `
+          + picked.map(x => x.length).join(" v ") + ".");
+      /* Anyone in a column the format doesn't use is a mistake worth naming —
+         four names in c and d on a 2v2 means the row is in the wrong format. */
+      const spare = sideCells.slice(need.length)
+        .flatMap(c => c).map(x => x.trim()).filter(Boolean);
+      if (spare.length)
+        errors.push(`Line ${n}: ${LABEL[fmt]} has only ${need.length} sides, but `
+          + `"${spare.join('", "')}" ${spare.length === 1 ? "is" : "are"} in a later column.`);
       const g = { id: uid("g"), roundId: currentRound.id, type: fmt,
-                  teams:{0:a,1:b}, holes: blankHoles() };
+                  teams:{}, holes: blankHoles() };
+      picked.forEach((x, k) => g.teams[k] = x);
       if (fmt === "FORTYBALL") g.hidden = true;
       games.push(g);
       return;
@@ -2696,21 +2785,25 @@ function scheduleToCSV(){
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   ordered.forEach(e => {
     if (e.type === "ROUND"){
-      rows.push([e.day, e.time?fmtTime(e.time):"", "ROUND", esc2((C(e.courseId)||{}).name),
-        "", "", "", "", "", "", "", "", "", "", ""].join(","));
+      rows.push(csvRow([e.day, e.time?fmtTime(e.time):"", "ROUND",
+        esc2((C(e.courseId)||{}).name)]));
       GAMES.filter(g => g.roundId === e.id).forEach(g => {
-        const cells = t => { const a = g.teams[t].map(id => esc2((P(id)||{}).name));
-          while (a.length < 4) a.push(""); return a.slice(0,4); };
-        const fmt = g.type === "FORTYBALL" ? "40BALL" : g.type;
-        rows.push([e.day, "", "GAME", "", fmt, "", "", ...cells(0), ...cells(1)].join(","));
+        const cells = t => { const a = (g.teams[t]||[]).map(id => esc2((P(id)||{}).name));
+          while (a.length < CSV_SIDE_COLS) a.push(""); return a.slice(0, CSV_SIDE_COLS); };
+        const fmt = g.type === "FORTYBALL" ? "40BALL"
+                  : g.type === "SCRAMBLE2X4" ? "2V2V2V2" : g.type;
+        const all = [];
+        for (let k = 0; k < 4; k++) all.push(...(k < sideCount(g) ? cells(k)
+                                   : Array(CSV_SIDE_COLS).fill("")));
+        rows.push(csvRow([e.day, "", "GAME", "", fmt, "", "", ...all]));
       });
     } else if (e.type === "TRAVEL"){
-      rows.push([e.day, e.time?fmtTime(e.time):"", e.dir === "DEPARTURE" ? "TRAVEL-OUT" : "TRAVEL-IN", "",
-        esc2(e.title), esc2((P(e.pid)||{}).name), esc2(e.notes),
-        "", "", "", "", "", "", "", ""].join(","));
+      rows.push(csvRow([e.day, e.time?fmtTime(e.time):"",
+        e.dir === "DEPARTURE" ? "TRAVEL-OUT" : "TRAVEL-IN", "",
+        esc2(e.title), esc2((P(e.pid)||{}).name), esc2(e.notes)]));
     } else {
-      rows.push([e.day, e.time?fmtTime(e.time):"", e.type, esc2(e.location), esc2(e.title), "",
-        esc2(e.notes), "", "", "", "", "", "", "", ""].join(","));
+      rows.push(csvRow([e.day, e.time?fmtTime(e.time):"", e.type, esc2(e.location),
+        esc2(e.title), "", esc2(e.notes)]));
     }
   });
   return rows.join("\n");
@@ -2843,7 +2936,7 @@ function scoresToText(){
     games.forEach(g => {
       const course = courseOf(g);
       L.push("");
-      L.push(`${LABEL[g.type]}: ${teamLabel(g,0)}  vs  ${teamLabel(g,1)}`);
+      L.push(`${LABEL[g.type]}: ${sides(g).map(i => teamLabel(g,i)).join("  vs  ")}`);
       const res = gameResult(g);
       L.push("Result: " + (res
         ? (res.winner === "TIE" ? "tied " + res.label
@@ -2984,7 +3077,7 @@ function renderEventEditor(h, id){
       : `<p class="note">No games here, which is fine — the round still appears on the
          schedule. Add one when you know who's playing whom.</p>`;
     body += `<div class="acts cwrap" style="margin-top:10px">
-      ${["BESTBALL","SCRAMBLE4","SCRAMBLE3","FORTYBALL"].map(t =>
+      ${["BESTBALL","SCRAMBLE4","SCRAMBLE3","SCRAMBLE2X4","FORTYBALL"].map(t =>
         `<button class="btn ghost" data-addgame="${e.id}:${t}">+ ${LABEL[t]}</button>`).join("")}
     </div>`;
     h += panel("e:games", "Games in this round", body,
@@ -3006,13 +3099,18 @@ function renderEventEditor(h, id){
 }
 
 /* ---------- per-game roster editor ---------- */
-const NEEDED = { BESTBALL:[2,2], SCRAMBLE4:[4,4], SCRAMBLE3:[3,3], FORTYBALL:[4,4] };
+const NEEDED = { BESTBALL:[2,2], SCRAMBLE4:[4,4], SCRAMBLE3:[3,3],
+                 SCRAMBLE2X4:[2,2,2,2], FORTYBALL:[4,4] };
 
 function gameEditor(g){
   const need = NEEDED[g.type];
-  const a = g.teams[0].length, b = g.teams[1].length;
-  const okA = a === need[0], okB = b === need[1];
+  const ix = sides(g);
+  const counts = ix.map(i => (g.teams[i] || []).length);
   const played = holeList(g).some(hl => Object.keys(hl.scores||{}).length || hl.teamScore[0] != null);
+  const sideOf = pid => {
+    const i = ix.find(k => (g.teams[k] || []).includes(pid));
+    return i === undefined ? -1 : i;
+  };
 
   return `<div class="gedit">
     <div class="ev-top">
@@ -3023,17 +3121,19 @@ function gameEditor(g){
       re-score holes already played.</p>` : ""}
     <table class="rost"><tbody>
       ${PLAYERS.map(p => {
-        const t = g.teams[0].includes(p.id) ? 0 : g.teams[1].includes(p.id) ? 1 : -1;
+        const t = sideOf(p.id);
         return `<tr><td class="rn">${esc(p.name)}</td>
-          <td><button class="side ${t===0?"on a":""}" data-side="${g.id}:${p.id}:0">A</button></td>
-          <td><button class="side ${t===1?"on b":""}" data-side="${g.id}:${p.id}:1">B</button></td>
+          ${ix.map(i => `<td><button class="side ${t===i?"on "+SIDE_CODES[i].toLowerCase():""}"
+            data-side="${g.id}:${p.id}:${i}">${SIDE_CODES[i]}</button></td>`).join("")}
           <td><button class="side ${t===-1?"on out":""}" data-side="${g.id}:${p.id}:-1">Out</button></td>
         </tr>`;
       }).join("")}
     </tbody></table>
     <div class="rost-sum">
-      <span class="${okA?"":"bad"}">A: ${a}/${need[0]}</span>
-      <span class="${okB?"":"bad"}">B: ${b}/${need[1]}</span>
+      ${ix.map(i => `<span class="${counts[i]===need[i]?"":"bad"}">${SIDE_CODES[i]}: ${
+        counts[i]}/${need[i]}</span>`).join("")}
+      ${isMulti(g) ? `<button class="chip ${g.oneGroup?"on":""}" data-onegroup="${g.id}">${
+        g.oneGroup ? "All eight together" : "Two foursomes"}</button>` : ""}
       ${g.type==="FORTYBALL" ? `<button class="chip ${g.hidden?"on":""}"
         data-hidden="${g.id}">Hidden selections: ${g.hidden?"on":"off"}</button>` : ""}
     </div>
@@ -3063,16 +3163,26 @@ function pairMatrix(){
     PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; grpC[a.id][b.id] = 0; }); });
 
   GAMES.forEach(g => {
-    const A = g.teams[0] || [], B = g.teams[1] || [];
-    [...A, ...B].forEach(id => { if (played[id] != null) played[id]++; });
-    [A, B].forEach(team => team.forEach(a => team.forEach(b => {
+    const teams = sides(g).map(i => g.teams[i] || []);
+    const everyone = [].concat(...teams);
+    everyone.forEach(id => { if (played[id] != null) played[id]++; });
+    teams.forEach(team => team.forEach(a => team.forEach(b => {
       if (a !== b && withC[a]) withC[a][b]++;
     })));
-    A.forEach(a => B.forEach(b => { if (agC[a]){ agC[a][b]++; agC[b][a]++; } }));
+    /* Everyone not on your team is against you — with four teams that's the
+       other six, not just the other two. */
+    teams.forEach((team, i) => team.forEach(a => teams.forEach((other, j) => {
+      if (i === j) return;
+      other.forEach(b => { if (agC[a]) agC[a][b]++; });
+    })));
     /* A foursome is the group that walks the course together. In a 2v2 that's
        all four players. In a scramble or 40ball the two teams go out as
-       separate groups, so a team is its own foursome. */
-    const groups = g.type === "BESTBALL" ? [[...A, ...B]] : [A, B];
+       separate groups, so a team is its own foursome. Four teams of two play
+       as two foursomes unless the game says otherwise. */
+    const groups = g.type === "BESTBALL" ? [everyone]
+      : isMulti(g) ? (g.oneGroup ? [everyone]
+                                 : [[...teams[0], ...teams[1]], [...teams[2], ...teams[3]]])
+      : teams;
     groups.forEach(grp => grp.forEach(a => grp.forEach(b => {
       if (a !== b && grpC[a]) grpC[a][b]++;
     })));
@@ -3396,22 +3506,25 @@ function renderGame(){
     </div>`;
   } else if (isStroke(g)){
     const st = strokeState(g);
-    const thru = Math.max(st.holes[0], st.holes[1]);
-    const r0 = st.totals[0] - strokeParSoFar(g,0), r1 = st.totals[1] - strokeParSoFar(g,1);
+    const ix = sides(g);
+    const thru = Math.max(...st.holes);
+    /* With four teams the running order is the thing you actually want to see,
+       so the rows are sorted and the two going through are marked. */
+    const out2 = teamOutcomes(g);
+    const rows = ix.map(i => ({ i, tot: st.totals[i], holes: st.holes[i],
+                                rel: st.totals[i] - strokeParSoFar(g,i) }))
+      .sort((a,b) => (a.holes && b.holes) ? a.tot - b.tot : a.i - b.i);
     out += `<div class="banner ${st.done?"closed":""}">
       ${st.done ? `<div class="st">${st.result.winner==="TIE" ? "TIED"
         : `${winnerLabel(g,st.result.winner)} WIN`}</div>` : ""}
-      <div class="strokerow">
-        <span class="sname">${esc(teamLabel(g,0))}</span>
-        <span class="stot">${st.totals[0]}</span>
-        <span class="spar ${parClass(r0)}">${st.holes[0] ? toPar(r0) : ""}</span>
-      </div>
-      <div class="strokerow">
-        <span class="sname">${esc(teamLabel(g,1))}</span>
-        <span class="stot">${st.totals[1]}</span>
-        <span class="spar ${parClass(r1)}">${st.holes[1] ? toPar(r1) : ""}</span>
-      </div>
-      <div class="thru">${thru ? `Stroke play \u00b7 thru ${thru}` : "Stroke play \u00b7 not started"}</div>
+      ${rows.map(r => `<div class="strokerow${
+        out2 && out2[r.i] === "W" ? " through" : ""}">
+        <span class="sname">${esc(teamLabel(g, r.i))}</span>
+        <span class="stot">${r.tot}</span>
+        <span class="spar ${parClass(r.rel)}">${r.holes ? toPar(r.rel) : ""}</span>
+      </div>`).join("")}
+      <div class="thru">${thru ? `Stroke play \u00b7 thru ${thru}` : "Stroke play \u00b7 not started"}${
+        isMulti(g) ? " \u00b7 top two win" : ""}</div>
     </div>`;
   } else {
     const fs = fbState(g);
@@ -3453,7 +3566,7 @@ function renderGame(){
   if (hardLocked)
     out += `<p class="note warn">Match closed out. This hole is locked and not scored.</p>`;
 
-  [0,1].forEach(t => out += renderTeam(g, t, h, hardLocked));
+  sides(g).forEach(t => out += renderTeam(g, t, h, hardLocked));
 
   if (isMatch(g) && !hardLocked && !isArchive()){
     const hole = g.holes[h];
@@ -3469,7 +3582,7 @@ function renderGame(){
     if (hole.conceded !== null)
       out += `<p class="note warn">${esc(teamLabel(g,hole.conceded))} conceded — hole awarded, scoring skipped.</p>`;
     else if (!holeComplete(g,h))
-      out += `<p class="note">${isScramble(g) ? "Both teams need a score."
+      out += `<p class="note">${isScramble(g) ? "Every team needs a score."
         : "At least one player per side must hole out."}</p>`;
   }
 
@@ -3487,7 +3600,7 @@ function randomHole(g, h){
   hole.conceded = null;
 
   if (isScramble(g)){
-    [0,1].forEach(t => {
+    sides(g).forEach(t => {
       hole.teamScore[t] = Math.max(2, roll() - 1);
       pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
     });
@@ -4229,7 +4342,9 @@ function handleClick(el){
   if (el.dataset.addgame){
     const [rid, type] = el.dataset.addgame.split(":");
     const g = { id:"g" + Date.now().toString(36), roundId:rid, type,
-                teams:{0:[],1:[]}, holes:blankHoles() };
+                teams:{}, holes:blankHoles() };
+    /* As many empty sides as the type has — four for 2v2v2v2. */
+    sides(g).forEach(i => g.teams[i] = []);
     if (type === "FORTYBALL") g.hidden = true;
     GAMES.push(g); pushGame(g); render(); return;
   }
@@ -4245,10 +4360,17 @@ function handleClick(el){
     const [gid, pid, tRaw] = el.dataset.side.split(":");
     const g = GAMES.find(x => x.id === gid);
     const t = +tRaw;
-    g.teams[0] = g.teams[0].filter(x => x !== pid);
-    g.teams[1] = g.teams[1].filter(x => x !== pid);
+    /* Clear them off every side first — with four teams, moving someone from C
+       to A has to take them out of C, not just add them to A. */
+    sides(g).forEach(i => {
+      g.teams[i] = (g.teams[i] || []).filter(x => x !== pid);
+    });
     if (t >= 0) g.teams[t].push(pid);
     pushGame(g); render(); return;
+  }
+  if (el.dataset.onegroup){
+    const g = GAMES.find(x => x.id === el.dataset.onegroup);
+    g.oneGroup = !g.oneGroup; pushGame(g); render(); return;
   }
 
   if (el.id === "aunlock"){
