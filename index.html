@@ -291,14 +291,13 @@ select.tee{background:var(--paper-2);border:1px solid var(--rule);color:var(--in
 select.tee:focus{outline:none;border-color:var(--brass)}
 /* full-width picker — a row of buttons stops scaling once there are more than
    three or four courses */
+/* Native control on purpose. Stripping it with appearance:none to draw a
+   custom arrow left the chosen course invisible on iOS — a styled box with
+   nothing in it. The system select renders its value reliably and gives the
+   iPhone wheel picker, which beats a hand-drawn triangle. */
 select.sel{width:100%;background:var(--paper-2);border:1.5px solid var(--rule);
-  color:var(--ink);font-family:'Barlow Condensed',sans-serif;font-weight:700;
-  text-transform:uppercase;letter-spacing:.08em;font-size:15px;padding:12px 10px;
-  margin-top:4px;-webkit-appearance:none;appearance:none;
-  background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),
-    linear-gradient(135deg,var(--ink) 50%,transparent 50%);
-  background-position:calc(100% - 17px) 20px,calc(100% - 11px) 20px;
-  background-size:6px 6px,6px 6px;background-repeat:no-repeat}
+  color:var(--ink);font-family:'Barlow',sans-serif;font-weight:600;
+  font-size:16px;padding:11px 10px;margin-top:4px;border-radius:0}
 select.sel:focus{outline:none;border-color:var(--brass);background-color:var(--paper)}
 td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
@@ -597,7 +596,15 @@ const COURSES = [
     ]
   }
 ];
-const C = id => COURSES.find(c => c.id === id) || COURSES[0];
+/* Falling back to COURSES[0] is no help when there are no courses at all —
+   every caller does co.name or co.holes[h].par and the screen dies with it.
+   A placeholder keeps the app usable while the real course gets added. */
+const NO_COURSE = {
+  id: null, name: "No course set",
+  holes: Array.from({ length: 18 }, (_, i) => ({ par: 4, si: i + 1 })),
+  tees: [{ name: "—", rating: 72, slope: 113, par: 72 }]
+};
+const C = id => COURSES.find(c => c.id === id) || COURSES[0] || NO_COURSE;
 
 /* ---------- players ---------- */
 const PLAYERS = [
@@ -953,6 +960,64 @@ function standings(){
     .sort((a,b) => b.pts - a.pts || b.w - a.w || a.gp - b.gp || a.name.localeCompare(b.name));
 }
 
+/* The EIs played before this app existed, read off Blake's groupings sheet and
+   checked against its own "through 2025" totals — every player reconciles.
+   Written to the database once, on the first run that finds no history there;
+   after that the stored copy is the record and this is never consulted again,
+   so editing a year in the app sticks. */
+const HISTORY_SEED = {
+  "2021": { rows: [
+    {name:"Blake",w:2,l:1,t:0,gp:3},
+    {name:"Dan",w:2,l:1,t:0,gp:3},
+    {name:"Gabe",w:2,l:1,t:0,gp:3},
+    {name:"Adam",w:2,l:1,t:0,gp:3},
+    {name:"Howard",w:1,l:2,t:0,gp:3},
+    {name:"Luke",w:1,l:2,t:0,gp:3},
+    {name:"Jason",w:1,l:2,t:0,gp:3},
+    {name:"Daniel",w:1,l:2,t:0,gp:3}
+  ]},
+  "2022": { rows: [
+    {name:"Blake",w:3,l:0,t:1,gp:4},
+    {name:"Jason",w:3,l:1,t:0,gp:4},
+    {name:"Howard",w:1,l:0,t:3,gp:4},
+    {name:"Luke",w:1,l:1,t:2,gp:4},
+    {name:"Dan",w:1,l:2,t:1,gp:4},
+    {name:"Daniel",w:1,l:2,t:1,gp:4},
+    {name:"Adam",w:1,l:3,t:0,gp:4},
+    {name:"Gabe",w:0,l:2,t:2,gp:4}
+  ]},
+  "2023": { rows: [
+    {name:"Dan",w:3,l:1,t:0,gp:4},
+    {name:"Blake",w:3,l:1,t:0,gp:4},
+    {name:"Jason",w:3,l:1,t:0,gp:4},
+    {name:"Luke",w:2,l:2,t:0,gp:4},
+    {name:"Adam",w:2,l:2,t:0,gp:4},
+    {name:"Howard",w:2,l:2,t:0,gp:4},
+    {name:"Daniel",w:1,l:3,t:0,gp:4},
+    {name:"Jake",w:0,l:4,t:0,gp:4}
+  ]},
+  "2024": { rows: [
+    {name:"Daniel",w:4,l:1,t:0,gp:5},
+    {name:"Jake",w:3,l:2,t:0,gp:5},
+    {name:"Dan",w:3,l:2,t:0,gp:5},
+    {name:"Blake",w:2,l:3,t:0,gp:5},
+    {name:"Jason",w:2,l:3,t:0,gp:5},
+    {name:"Adam",w:2,l:3,t:0,gp:5},
+    {name:"Luke",w:2,l:2,t:0,gp:4},
+    {name:"Howard",w:1,l:3,t:0,gp:4}
+  ]},
+  "2025": { rows: [
+    {name:"Adam",w:4,l:1,t:0,gp:5},
+    {name:"Howard",w:3,l:1,t:0,gp:4},
+    {name:"Dan",w:3,l:2,t:0,gp:5},
+    {name:"Blake",w:3,l:2,t:0,gp:5},
+    {name:"Jake",w:2,l:3,t:0,gp:5},
+    {name:"Luke",w:2,l:2,t:0,gp:4},
+    {name:"Jason",w:1,l:4,t:0,gp:5},
+    {name:"Daniel",w:1,l:4,t:0,gp:5}
+  ]},
+};
+
 /* ============================================================
    HISTORY — records across every year
    Each year is a separate tournament in the database, so nothing here can be
@@ -1048,9 +1113,13 @@ function allTime(){
     });
     yearWinners(HIST.years[y].rows).forEach(n => { if (by[n]) by[n].wins++; });
   });
+  /* Ranked on percentage, not titles. Titles first looked sensible until the
+     real years went in: two of the five were dead heats, so a shared title
+     from seven games outranked a better record over twenty-one. Titles are
+     still shown beside the name — they're just not the ranking. */
   return Object.values(by)
     .map(r => ({ ...r, pts: r.w + r.t * 0.5, pct: winPct(r) }))
-    .sort((a,b) => b.wins - a.wins || b.pct - a.pct || b.gp - a.gp
+    .sort((a,b) => b.pct - a.pct || b.wins - a.wins || b.gp - a.gp
                 || a.name.localeCompare(b.name));
 }
 
@@ -1106,7 +1175,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0210";
+const BUILD = "2026-10-06.0450";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1637,6 +1706,11 @@ function migrateLoaded(){
     if (!e.id){ e.id = uid(e.type === "ROUND" ? "r" : "e"); changed = true; }
     if (!e.type){ e.type = "OTHER"; changed = true; }
     if (!e.day){ e.day = DAYS[0]; changed = true; }
+    /* Older builds wrote "New event" as a placeholder title, which then stuck
+       as though it were a name someone chose — and on a round it masked the
+       course name that belongs there. Clear it: a round then takes its
+       course's name, and anything else reads "Untitled event". */
+    if (e.title === "New event"){ e.title = ""; changed = true; }
   });
 
   // 2. attach orphaned games to a round, without inventing junk rounds.
@@ -1807,7 +1881,7 @@ function pushConfig(){
    ============================================================ */
 let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
-let editCourseId = COURSES[0].id;
+let editCourseId = (COURSES[0] || NO_COURSE).id;
 let editEvent = null;
 /* What the event looked like when the editor opened, so Back can put it back.
    Fields are saved as they're typed — that's what keeps eight phones in step —
@@ -2761,11 +2835,12 @@ function renderEventEditor(h, id){
        course it was already showing fires no change event at all, so nothing
        happened. An explicit placeholder makes the empty state real. */
     const known = COURSES.some(c => c.id === e.courseId);
-    h += `<label for="evcourse">Course \u2014 this also names the round</label>
+    h += `<label for="evcourse">Course${known ? " \u2014 " + esc(C(e.courseId).name)
+      : " \u2014 this also names the round"}</label>
     ${COURSES.length ? `<select class="sel" id="evcourse">
       <option value=""${known ? "" : " selected"}>Choose a course\u2026</option>
-      ${COURSES.map(c => `<option value="${c.id}"${c.id===e.courseId?" selected":""}>${
-        esc(c.name)}</option>`).join("")}
+      ${COURSES.map(c => `<option value="${c.id}"${
+        c.id===e.courseId?" selected":""}>${esc(c.name)}</option>`).join("")}
     </select>${known ? "" : `<p class="hint">Until this is set the round has no name,
       and handicaps can't be worked out.</p>`}`
     : `<p class="note warn">No courses yet \u2014 add one on the Field tab and it'll
@@ -3545,10 +3620,12 @@ function renderPlayers(){
 
   /* The course picker sits outside the sections: everything below is scoped to
      it, so it has to stay visible whichever section is open. */
-  h += `<h2 class="sec">Course</h2>
+  /* The name in the heading too: if the select ever renders oddly again, what
+     the rest of this screen is about is still readable. */
+  h += `<h2 class="sec">Course \u2014 ${esc(co.name)}</h2>
   ${COURSES.length ? `<select class="sel" id="crspick">
-    ${COURSES.map(c => `<option value="${c.id}"${c.id===editCourseId?" selected":""}>${
-      esc(c.name)}</option>`).join("")}
+    ${COURSES.map(c => `<option value="${c.id}"${
+      c.id===editCourseId?" selected":""}>${esc(c.name)}</option>`).join("")}
   </select>` : `<p class="note warn">No courses yet — add one below and it'll
     appear here and in the round editor.</p>`}
   <p class="note">${rounds.length
