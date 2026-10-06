@@ -1191,7 +1191,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0640";
+const BUILD = "2026-10-06.0655";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3886,8 +3886,24 @@ function handleClick(el){
     /* A check fires in the background so the published-build line is fresh
        the next time this is opened. */
     checkForUpdate(false);
+    /* What the app actually holds, per round. Both the Schedule and the Games
+       tab are drawn from exactly this, so when the two look like they disagree
+       this says which one is telling the truth — and whether a deleted game
+       has come back. */
+    const perRound = ROUNDS().map(r => {
+      const gs = GAMES.filter(g => g.roundId === r.id);
+      return "  " + (r.day || "?") + " \u00b7 " + eventName(r) + " \u2014 "
+        + gs.length + (gs.length === 1 ? " game" : " games")
+        + (gs.length ? " [" + gs.map(g => g.id).join(", ") + "]" : "");
+    }).join("\n");
+    const orphans = GAMES.filter(g => !g.roundId || !EV(g.roundId));
+
     const d = [
       "build: " + BUILD + "  schema " + SCHEMA,
+      "rounds and their games:\n" + (perRound || "  none"),
+      "games held: " + GAMES.length
+        + (orphans.length ? "  ** " + orphans.length + " ATTACHED TO NO ROUND **" : "")
+        + (deadGames.size ? "  (" + deadGames.size + " just deleted)" : ""),
       "published build: " + (latestBuild || "not checked yet")
         + (updateReady ? "  ** UPDATE AVAILABLE **" : ""),
       "server build: " + (serverBuild || "unknown") + (staleDevice ? "  ** THIS DEVICE IS OLDER **" : ""),
