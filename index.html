@@ -461,6 +461,26 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
   opacity:0;visibility:hidden;pointer-events:none;
   transition:transform .2s,opacity .2s;z-index:60}
 .toast.on{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible}
+
+/* update bar — sits over the tabs, because an out-of-date phone can't be left
+   quietly scoring into a build whose writes get ignored */
+/* bottom is set in JS to sit directly on top of the tab bar, whose height
+   depends on the phone's safe-area inset */
+.updbar{position:fixed;left:0;right:0;bottom:0;z-index:70;display:none;
+  align-items:center;gap:9px;background:var(--ink);color:var(--paper);
+  padding:11px 13px;border-bottom:1px solid var(--ink-soft)}
+.updbar.on{display:flex}
+.updbar-t{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.11em;font-size:13px;line-height:1.25}
+.updbar-t i{display:block;font-style:normal;font-weight:400;text-transform:none;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.02em;
+  opacity:.82;margin-top:2px}
+.updbar button{flex:none;background:var(--paper);color:var(--ink);
+  border:1.5px solid var(--paper);font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  font-size:12px;padding:9px 12px;cursor:pointer}
+.updbar button.ghost{background:none;color:var(--paper);border-color:rgba(233,228,214,.5)}
+.updbar.on ~ .toast{bottom:150px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 :focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 </style>
@@ -488,6 +508,7 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
   <button data-tab="players">Field</button>
 </nav>
 
+<div class="updbar" id="updbar"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1050,7 +1071,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-09-05.0138";
+const BUILD = "2026-10-05.2030";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1678,6 +1699,92 @@ function toast(msg){
   clearTimeout(t._x); t._x = setTimeout(() => t.classList.remove("on"), 1500);
 }
 
+/* ============================================================
+   VERSION CHECK
+   Everyone adds this to their home screen, and iOS caches that page hard —
+   which is how a phone ends up running a build from last week, going
+   read-only, and quietly not saving anyone's scores. Rather than telling
+   people to delete the icon and add it again, ask the published page what
+   build it is and, if it's newer, reload past the cache.
+
+   No service worker and no version file to keep in step: the build stamp
+   already lives in the page, so the page is the source of truth.
+   ============================================================ */
+/* Whatever this copy was served from — works on GitHub Pages, a local file
+   server, or a renamed repo, with no URL to keep up to date. */
+const APP_URL = location.href.split("#")[0].split("?")[0];
+let latestBuild = null;      // build stamp found on the published page
+let updateReady = false;     // published build is newer than this one
+let updDismissed = false;    // "Later" — stays hidden until the next check
+let updCheckedAt = 0;        // last attempt, successful or not
+let updChecking = false;
+const UPD_MIN_GAP = 120000;  // automatic checks: at most one every two minutes
+
+/* Stamps are "YYYY-MM-DD.HHMM", so a plain string compare is a date compare.
+   Anything that doesn't parse is treated as not-newer rather than nagging. */
+const buildIsNewer = (a, b) =>
+  /^\d{4}-\d{2}-\d{2}\./.test(String(a)) && String(a) > String(b);
+
+async function checkForUpdate(manual){
+  if (updChecking) return false;
+  if (typeof fetch !== "function") return false;
+  /* Automatic checks only off a web server: a page opened out of the Files
+     app can't fetch itself, and there'd be nothing newer to find. A manual
+     check still runs, so it can say so rather than appear to do nothing. */
+  if (!manual && !/^https?:$/.test(location.protocol)) return false;
+  if (!manual && Date.now() - updCheckedAt < UPD_MIN_GAP) return false;
+  updChecking = true;
+  updCheckedAt = Date.now();
+  try {
+    /* cache:"no-store" isn't reliably honoured by iOS standalone. The query
+       string is what actually defeats the cache. */
+    const res = await fetch(APP_URL + "?cb=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const m = /const BUILD\s*=\s*"([^"]+)"/.exec(await res.text());
+    if (!m) throw new Error("no build stamp on the published page");
+    latestBuild = m[1];
+    const was = updateReady;
+    updateReady = buildIsNewer(latestBuild, BUILD);
+    if (updateReady && !was) updDismissed = false;   // a newer one re-asks
+    paintUpdate();
+    if (staleDevice) render();                       // the banner changes with it
+    if (manual) toast(updateReady ? "Update available" : "Up to date");
+    return updateReady;
+  } catch (e){
+    if (manual) toast("Couldn't check — no connection?");
+    return false;
+  } finally {
+    updChecking = false;
+  }
+}
+
+function paintUpdate(){
+  const el = document.getElementById("updbar");
+  if (!el) return;
+  const show = updateReady && !updDismissed;
+  el.className = "updbar" + (show ? " on" : "");
+  /* Stack it on the tab bar rather than over it — the tabs are how you get
+     back to a scorecard, and this is a notice, not a lock screen. */
+  const tabs = document.querySelector(".tabs");
+  el.style.bottom = (tabs && tabs.offsetHeight ? tabs.offsetHeight : 0) + "px";
+  el.innerHTML = show
+    ? `<div class="updbar-t">New version ready
+         <i>${esc(latestBuild || "")} · this phone has ${esc(BUILD)}</i></div>
+       <button id="updnow">Update</button>
+       <button class="ghost" id="upddismiss">Later</button>`
+    : "";
+}
+
+/* A plain reload often serves the same cached page straight back, so the URL
+   has to change. Queued scores are in localStorage and survive this. */
+async function applyUpdate(){
+  try {
+    if (window.caches && caches.keys)
+      await Promise.all((await caches.keys()).map(k => caches.delete(k)));
+  } catch(e){}
+  location.replace(APP_URL + "?v=" + encodeURIComponent(latestBuild || Date.now()));
+}
+
 /* ---------- render router ---------- */
 function render(){
   const inGame = !!view.gameId;
@@ -1732,8 +1839,11 @@ function renderHome(){
       <div class="syncerr-t">This device is out of date</div>
       <div class="syncerr-c">running ${esc(BUILD)} \u00b7 current is ${esc(serverBuild||"newer")}</div>
       <div class="syncerr-h">Scores entered here won't be saved, because an older version can
-        undo other people's work. Delete the app from your home screen and add it again from
-        the link to update.</div>
+        undo other people's work.</div>
+      <div class="acts cwrap" style="margin-top:9px">
+        <button class="btn" id="updnow">Update now</button>
+        <button class="btn ghost" id="updcheck">Check again</button>
+      </div>
     </div>`;
   }
   if (SYNC.state === "error" && SYNC.err){
@@ -1809,8 +1919,14 @@ function renderHome(){
       </button>`;
     });
   });
+  h += `<div class="acts cwrap" style="margin-top:22px">
+    <button class="btn ghost" id="updcheck">Check for update</button>
+  </div>`;
   h += `<div class="footnote">Scores and setup are shared live across every phone and survive
-    a reload. Players, courses and the schedule are still placeholder data.</div>`;
+    a reload. Players, courses and the schedule are still placeholder data.<br>
+    This phone is on build <b>${esc(BUILD)}</b>${
+      latestBuild && !updateReady ? " — the latest" : ""}. Everyone needs the same build
+    before play, or an older phone's scores get ignored.</div>`;
   app.innerHTML = h;
 }
 
@@ -3222,9 +3338,22 @@ function handleClick(el){
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
+  if (el.id === "updnow"){ applyUpdate(); return; }
+  if (el.id === "upddismiss"){ updDismissed = true; paintUpdate(); return; }
+  if (el.id === "updcheck"){
+    toast("Checking…");
+    checkForUpdate(true).then(found => { if (!found) render(); });
+    return;
+  }
+
   if (el.id === "syncdot"){
+    /* A check fires in the background so the published-build line is fresh
+       the next time this is opened. */
+    checkForUpdate(false);
     const d = [
       "build: " + BUILD + "  schema " + SCHEMA,
+      "published build: " + (latestBuild || "not checked yet")
+        + (updateReady ? "  ** UPDATE AVAILABLE **" : ""),
       "server build: " + (serverBuild || "unknown") + (staleDevice ? "  ** THIS DEVICE IS OLDER **" : ""),
       "mode: " + (window.navigator.standalone ? "home screen app" : "browser"),
       "transport: " + (SYNC.transport || "-"),
@@ -3721,10 +3850,20 @@ migrateLoaded();
 applyQueueLocally();
 render();
 paintSync();
+paintUpdate();
 /* If the Firebase SDK can't load — no signal on first open, CDN blocked —
    the app keeps working locally instead of dying at boot. */
 try { initSync().catch(() => setSync("error")); }
 catch (e) { setSync("error"); }
+
+/* Check for a newer build on open, and again whenever the app comes back to
+   the foreground — which on a phone is every time it's picked up on the next
+   tee. Throttled, and silent when it fails: a dead spot shouldn't produce a
+   message about versions. */
+setTimeout(() => checkForUpdate(false), 1500);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) checkForUpdate(false);
+});
 </script>
 </body>
 </html>
