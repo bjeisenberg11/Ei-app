@@ -311,6 +311,12 @@ select.tee:focus{outline:none;border-color:var(--brass)}
   font-family:'Barlow',sans-serif;font-size:16px;color:var(--ink)}
 .sellist button:first-child{border-top:none}
 .sellist button.on{background:var(--ink);color:var(--paper);font-weight:600}
+/* time picker — hours then minutes, two taps */
+/* the phone's own time wheel */
+input.timein{flex:1;background:var(--paper-2);border:1.5px solid var(--rule);
+  color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:17px;
+  padding:11px 10px;border-radius:0;min-height:46px}
+input.timein:focus{outline:none;border-color:var(--brass);background:var(--paper)}
 td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
 table.ftbl td:nth-child(n+2),table.ttbl td:nth-child(n+2){text-align:right}
@@ -1191,7 +1197,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0710";
+const BUILD = "2026-10-06.0830";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2465,9 +2471,11 @@ function renderSchedule(){
       const untimed = evs.filter(e => !e.time);
       h += `<h2 class="sec">${day}</h2>`;
       [...timed, ...untimed].forEach(e => h += eventCard(e, ro));
+      /* One button. Two of them landed on the same editor with the same Type
+         row at the top of it, so the choice was made twice. It opens as a
+         round — far and away the most added — and the Type row changes it. */
       if (!ro) h += `<div class="acts cwrap" style="margin:2px 0 10px">
-        <button class="btn ghost addev" data-addround="${day}">+ Round</button>
-        <button class="btn ghost addev" data-addev="${day}">+ Other</button>
+        <button class="btn ghost addev" data-addround="${day}">+ Add to ${day}</button>
         ${evs.length ? `<button class="btn ghost dayclear" data-clearday="${day}">Clear ${day}</button>` : ""}
       </div>`;
     });
@@ -2922,9 +2930,8 @@ function renderEventEditor(h, id){
       ${DAYS.map(d => `<button class="btn ${e.day===d?"":"ghost"}" data-evday="${d}">${d.slice(0,3)}</button>`).join("")}
     </div>
 
-    <label for="evtime">Time \u2014 e.g. 8:10am (blank = TBD)</label>
-    <input id="evtime" data-evf="time" placeholder="8:10am"
-      value="${esc(e.time ? fmtTime(e.time) : "")}">
+    <label>Time</label>
+    ${timePicker(e)}
 
     ${isRound ? "" : `
     <label for="evloc">Location</label>
@@ -3158,6 +3165,22 @@ function coursePicker(which, currentId, emptyLabel){
       data-pickset="${which}:${c.id}">${esc(c.name)}</button>`).join("")}
   </div>`;
   return h;
+}
+
+/* ---------- time ----------
+   <input type="time"> is the iPhone's own wheel: hours, minutes, AM/PM, every
+   minute, in the phone's own format. It stores "HH:MM" in 24-hour, which is
+   exactly what the schedule already keeps.
+
+   I'd avoided native controls after a <select> rendered its text blank on the
+   phone, but that was a select problem — inputs render fine — and hand-drawing
+   a time picker to dodge it was the wrong call. */
+function timePicker(e){
+  return `<div class="acts cwrap" style="margin-top:4px">
+    <input type="time" class="timein" id="evtime" value="${esc(e.time || "")}">
+    <button class="btn ghost" data-settime="clear" style="flex:0 0 auto">TBD</button>
+  </div>
+  ${e.time ? "" : `<p class="hint">No time set \u2014 it'll show as TBD.</p>`}`;
 }
 
 /* ---------- collapsible sections ----------
@@ -4247,6 +4270,10 @@ function handleClick(el){
 
   if (el.dataset.pick){ pickOpen = pickOpen === el.dataset.pick ? null : el.dataset.pick;
                         render(); return; }
+  if (el.dataset.settime === "clear" && editEvent){
+    EV(editEvent).time = null;
+    queueConfig(); render(); return;
+  }
   if (el.dataset.pickset){
     const [which, cid] = el.dataset.pickset.split(":");
     pickOpen = null;
@@ -4496,6 +4523,15 @@ function handleClick(el){
 document.addEventListener("input", e => {
   const t = e.target;
 
+  /* The time wheel fires input as it spins and change when it's dismissed;
+     iOS isn't reliable about the second, so take whichever arrives. No
+     render() — redrawing would close the wheel mid-spin. */
+  if (t.id === "evtime" && editEvent){
+    EV(editEvent).time = t.value || null;
+    queueConfig();
+    return;
+  }
+
   /* the past-year form — kept in memory as it's typed, so a re-render for any
      other reason doesn't wipe what's been entered */
   if (histEdit && t.dataset){
@@ -4624,6 +4660,13 @@ function advanceCell(t){
 /* tee assignment */
 document.addEventListener("change", e => {
   const t = e.target;
+  if (t.id === "evtime" && editEvent){
+    /* No render(): the wheel is open on top of this, and redrawing would shut
+       it mid-spin. The card picks the new time up when the editor closes. */
+    EV(editEvent).time = t.value || null;
+    queueConfig();
+    return;
+  }
   if (t.dataset && t.dataset.tee != null){
     const pl = P(t.dataset.tee);
     pl.tees = pl.tees || {};
