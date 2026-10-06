@@ -291,14 +291,26 @@ select.tee{background:var(--paper-2);border:1px solid var(--rule);color:var(--in
 select.tee:focus{outline:none;border-color:var(--brass)}
 /* full-width picker — a row of buttons stops scaling once there are more than
    three or four courses */
-/* Native control on purpose. Stripping it with appearance:none to draw a
-   custom arrow left the chosen course invisible on iOS — a styled box with
-   nothing in it. The system select renders its value reliably and gives the
-   iPhone wheel picker, which beats a hand-drawn triangle. */
-select.sel{width:100%;background:var(--paper-2);border:1.5px solid var(--rule);
-  color:var(--ink);font-family:'Barlow',sans-serif;font-weight:600;
-  font-size:16px;padding:11px 10px;margin-top:4px;border-radius:0}
-select.sel:focus{outline:none;border-color:var(--brass);background-color:var(--paper)}
+/* Drawn in the app rather than a <select>. Two goes at styling the native
+   control both left its text invisible on this phone — first with
+   appearance:none, then with the system control — so this uses the same
+   buttons as everything else here, which demonstrably render. It still
+   behaves like a dropdown: tap to open, tap a course to choose it. */
+.selbtn{width:100%;display:flex;align-items:center;gap:9px;margin-top:4px;
+  background:var(--paper-2);border:1.5px solid var(--rule);cursor:pointer;
+  padding:12px 11px;text-align:left}
+.selbtn.on{border-color:var(--ink)}
+.selbtn-v{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.09em;font-size:15px;color:var(--ink)}
+.selbtn-v.none{color:var(--pencil)}
+.selbtn-x{flex:none;font-family:'IBM Plex Mono',monospace;font-size:11px;
+  color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em}
+.sellist{border:1.5px solid var(--ink);border-top:none;background:var(--paper-2)}
+.sellist button{display:block;width:100%;text-align:left;background:none;border:none;
+  border-top:1px solid var(--rule-soft);cursor:pointer;padding:13px 11px;
+  font-family:'Barlow',sans-serif;font-size:16px;color:var(--ink)}
+.sellist button:first-child{border-top:none}
+.sellist button.on{background:var(--ink);color:var(--paper);font-weight:600}
 td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
 table.ftbl td:nth-child(n+2),table.ttbl td:nth-child(n+2){text-align:right}
@@ -349,17 +361,21 @@ input.cc:disabled{background:transparent;color:var(--ink-soft)}
 
 /* editable scorecard */
 .cardwrap{overflow-x:auto;margin-top:11px;-webkit-overflow-scrolling:touch}
+/* inside a section, reclaim the section's own padding so the totals column
+   isn't the bit that falls off the right-hand edge */
+.pnl-b .cardwrap{margin-left:-13px;margin-right:-13px;padding:0 13px}
 table.card{border-collapse:collapse;width:100%;background:var(--paper-2)}
 table.card th,table.card td{border:1px solid var(--rule);padding:0;text-align:center}
 table.card .hd th{background:var(--ink);color:var(--paper);padding:5px 0;
   font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500}
-table.card th.rl{background:var(--paper-3);color:var(--ink);text-align:left;padding:5px 7px;
-  font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.11em;
-  font-size:10px;font-weight:700;white-space:nowrap;width:1%}
+table.card th.rl{background:var(--paper-3);color:var(--ink);text-align:left;padding:5px 4px;
+  font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.04em;
+  font-size:9px;font-weight:700;white-space:nowrap;width:1%}
 table.card .hd th.rl{background:var(--ink);color:var(--paper)}
 table.card td.tot,table.card th.tot{background:var(--paper-3);
-  font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;padding:5px 6px}
-input.cc{width:100%;min-width:30px;border:none;background:transparent;text-align:center;
+  font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:5px 3px;
+  width:1%;white-space:nowrap}
+input.cc{width:100%;min-width:23px;border:none;background:transparent;text-align:center;
   font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;color:var(--ink);
   padding:8px 0;-moz-appearance:textfield}
 input.cc:focus{outline:none;background:var(--brass);color:var(--paper)}
@@ -1175,7 +1191,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0450";
+const BUILD = "2026-10-06.0520";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2835,14 +2851,11 @@ function renderEventEditor(h, id){
        course it was already showing fires no change event at all, so nothing
        happened. An explicit placeholder makes the empty state real. */
     const known = COURSES.some(c => c.id === e.courseId);
-    h += `<label for="evcourse">Course${known ? " \u2014 " + esc(C(e.courseId).name)
+    h += `<label>Course${known ? " \u2014 " + esc(C(e.courseId).name)
       : " \u2014 this also names the round"}</label>
-    ${COURSES.length ? `<select class="sel" id="evcourse">
-      <option value=""${known ? "" : " selected"}>Choose a course\u2026</option>
-      ${COURSES.map(c => `<option value="${c.id}"${
-        c.id===e.courseId?" selected":""}>${esc(c.name)}</option>`).join("")}
-    </select>${known ? "" : `<p class="hint">Until this is set the round has no name,
-      and handicaps can't be worked out.</p>`}`
+    ${COURSES.length ? coursePicker("ev", known ? e.courseId : null, "Choose a course")
+      + (known ? "" : `<p class="hint">Until this is set the round has no name,
+        and handicaps can't be worked out.</p>`)
     : `<p class="note warn">No courses yet \u2014 add one on the Field tab and it'll
         appear here.</p>`}
     <label>Handicaps</label>
@@ -3025,6 +3038,28 @@ function renderPairs(){
 /* ---------- history ----------
    Every year at once, which is the one view that doesn't belong to the year
    you're looking at. The year chips are deliberately left off. */
+/* ---------- course picker ----------
+   A dropdown drawn with the app's own buttons. A native <select> rendered its
+   text invisible on the phone twice over — once with the control stripped for
+   a custom arrow, once with the system control left alone — and a picker you
+   can't read is worse than none. These are the same buttons used everywhere
+   else in the app, and they scale to any number of courses. */
+let pickOpen = null;            // "crs" (Field tab) | "ev" (round editor) | null
+
+function coursePicker(which, currentId, emptyLabel){
+  const open = pickOpen === which;
+  const cur = COURSES.find(c => c.id === currentId);
+  let h = `<button class="selbtn${open ? " on" : ""}" data-pick="${which}">
+    <span class="selbtn-v${cur ? "" : " none"}">${esc(cur ? cur.name : emptyLabel)}</span>
+    <span class="selbtn-x">${open ? "close" : "change"}</span>
+  </button>`;
+  if (open) h += `<div class="sellist">
+    ${COURSES.map(c => `<button class="${c.id === currentId ? "on" : ""}"
+      data-pickset="${which}:${c.id}">${esc(c.name)}</button>`).join("")}
+  </div>`;
+  return h;
+}
+
 /* ---------- collapsible sections ----------
    Several screens were one long scroll — the Field tab especially, which held
    handicaps, tees, the scorecard and the danger zone end to end. These make
@@ -3088,8 +3123,7 @@ function renderHistory(){
       <th>Player</th><th>EIs</th><th>W</th><th>L</th><th>T</th><th>GP</th><th>Win%</th>
     </tr></thead><tbody>`;
     all.forEach((p,i) => {
-      h += `<tr><td><span class="pos">${String(i+1).padStart(2,"0")}</span>${esc(p.name)}
-        ${p.wins ? `<span class="hcp"> ${p.wins}× winner</span>` : ""}</td>
+      h += `<tr><td><span class="pos">${String(i+1).padStart(2,"0")}</span>${esc(p.name)}</td>
         <td class="mono" style="color:var(--ink-faint)">${p.years}</td>
         <td class="mono">${p.w}</td><td class="mono">${p.l}</td><td class="mono">${p.t}</td>
         <td class="mono" style="color:var(--ink-faint)">${p.gp}</td>
@@ -3623,10 +3657,8 @@ function renderPlayers(){
   /* The name in the heading too: if the select ever renders oddly again, what
      the rest of this screen is about is still readable. */
   h += `<h2 class="sec">Course \u2014 ${esc(co.name)}</h2>
-  ${COURSES.length ? `<select class="sel" id="crspick">
-    ${COURSES.map(c => `<option value="${c.id}"${
-      c.id===editCourseId?" selected":""}>${esc(c.name)}</option>`).join("")}
-  </select>` : `<p class="note warn">No courses yet — add one below and it'll
+  ${COURSES.length ? coursePicker("crs", co.id, "Choose a course")
+    : `<p class="note warn">No courses yet \u2014 add one below and it'll
     appear here and in the round editor.</p>`}
   <p class="note">${rounds.length
       ? `Played ${rounds.join(", ")}.`
@@ -4091,6 +4123,16 @@ function handleClick(el){
     return;
   }
 
+  if (el.dataset.pick){ pickOpen = pickOpen === el.dataset.pick ? null : el.dataset.pick;
+                        render(); return; }
+  if (el.dataset.pickset){
+    const [which, cid] = el.dataset.pickset.split(":");
+    pickOpen = null;
+    if (which === "crs") editCourseId = cid;
+    else if (editEvent){ EV(editEvent).courseId = cid; queueConfig(); }
+    render(); return;
+  }
+
   if (el.dataset.panel){
     /* one section open at a time within a screen — that's the point of them */
     const [grp, name] = el.dataset.panel.split(":");
@@ -4462,12 +4504,7 @@ document.addEventListener("change", e => {
   }
   /* course pickers — a dropdown rather than a row of buttons, so the list
      still works once there are a dozen courses */
-  if (t.id === "crspick"){ editCourseId = t.value; render(); return; }
-  if (t.id === "evcourse" && editEvent){
-    if (!t.value) return;                 // the "choose a course" placeholder
-    EV(editEvent).courseId = t.value;
-    queueConfig(); render(); return;
-  }
+
 });
 
 /* tapping a cell selects it, so typing replaces rather than appends */
