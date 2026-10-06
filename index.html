@@ -1191,7 +1191,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0655";
+const BUILD = "2026-10-06.0710";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1516,7 +1516,7 @@ async function connectWith(i){
 
     startWatchdog(i);
     flushQueue();
-    kickServer(myGen, cfgRef);
+    kickServer(myGen, cfgRef, gamesRef);
 
   } catch (err){
     console.error(err);
@@ -1571,24 +1571,60 @@ let serverSeen = false;
 /* Firestore serves cached data immediately and may not open a network
    connection until something forces it — which is why scoring a hole "woke
    it up". A direct server read on startup does that deliberately. */
-async function kickServer(myGen, cfgRef){
+/* Pull the games straight from the server and replace the list with what's
+   actually there. Firestore will happily serve a collection listener from its
+   local cache indefinitely — so a phone could sit on a pre-delete snapshot of
+   the games for the whole weekend while its config was perfectly up to date.
+   That is what made deleted games look like they came back. */
+async function kickGames(myGen, gamesRef){
+  const { getDocsFromServer } = SYNC.api;
+  if (!getDocsFromServer) return false;
+  try {
+    const qs = await getDocsFromServer(gamesRef);
+    if (myGen !== gen) return false;
+    forgetDead();
+    const fresh = [];
+    const present = new Set();
+    qs.forEach(d => {
+      const v = d.data();
+      present.add(d.id);
+      if (!v || !v.id) return;
+      if (deadGames.has(v.id)) return;
+      fresh.push(v);
+    });
+    deadGames.forEach((t, id) => { if (!present.has(id)) deadGames.delete(id); });
+    GAMES = fresh;
+    applyQueueLocally();
+    SYNC.cache.games = false;
+    SYNC.seen.games = true;
+    migrateLoaded();
+    if (!document.querySelector("input:focus")) render();
+    return true;
+  } catch (e){ return false; }
+}
+
+async function kickServer(myGen, cfgRef, gamesRef){
   const { getDocFromServer } = SYNC.api;
   for (let n = 0; n < 6; n++){
-    if (myGen !== gen || serverSeen) return;
+    if (myGen !== gen) return;
+    /* Both of them. serverSeen used to be satisfied by the config read alone,
+       which is how the games list stayed on cache with nothing complaining. */
+    if (serverSeen && !SYNC.cache.games) return;
     try {
-      await getDocFromServer(cfgRef);
+      if (!serverSeen) await getDocFromServer(cfgRef);
       if (myGen !== gen) return;
       serverSeen = true;
       SYNC.cache.cfg = false;
       SYNC.seen.cfg = true;
       SYNC.err = null;
       rememberTransport(SYNC.transport);
+      const got = await kickGames(myGen, gamesRef);
+      if (myGen !== gen) return;
       setSync("live", { lastAt: new Date() });
       flushQueue();
-      return;
-    } catch (e){
-      await new Promise(r => setTimeout(r, 3000));
-    }
+      if (got || !SYNC.cache.games) return;
+    } catch (e){ /* fall through to the wait below */ }
+    await new Promise(r => setTimeout(r, 3000));
   }
 }
 
@@ -2153,6 +2189,20 @@ function renderHome(){
       <div class="acts cwrap" style="margin-top:9px">
         <button class="btn" id="updnow">Update now</button>
         <button class="btn ghost" id="updcheck">Check again</button>
+      </div>
+    </div>`;
+  }
+  /* Firestore can serve a collection listener from its cache indefinitely. If
+     that's happening the scores and games on screen may be out of date while
+     everything else looks fine, so say so rather than leave it buried in the
+     diagnostics. */
+  if (SYNC.on && SYNC.state === "live" && SYNC.cache.games){
+    h += `<div class="syncerr">
+      <div class="syncerr-t">Games may be out of date</div>
+      <div class="syncerr-h">This phone is showing its saved copy of the games \u2014 the
+        server hasn't sent a fresh one yet. Anything you change still saves normally.</div>
+      <div class="acts cwrap" style="margin-top:9px">
+        <button class="btn" id="refreshgames">Refresh from server</button>
       </div>
     </div>`;
   }
@@ -4218,6 +4268,13 @@ function handleClick(el){
   }
 
   /* ---- history ---- */
+  if (el.id === "refreshgames"){
+    if (!SYNC.on || !SYNC.api || !SYNC.db){ toast("Not connected"); return; }
+    toast("Refreshing\u2026");
+    const ref = SYNC.api.collection(SYNC.db, "tournaments", tidFor(activeYear), "games");
+    kickGames(gen, ref).then(ok => toast(ok ? "Up to date" : "Couldn't reach the server"));
+    return;
+  }
   if (el.id === "refreshhist"){ loadHistory(true); return; }
   if (el.id === "pastepast"){
     if (!isAdmin){ toast("Admin only"); return; }
