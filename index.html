@@ -1191,7 +1191,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0520";
+const BUILD = "2026-10-06.0545";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2142,15 +2142,20 @@ function renderHome(){
       <div class="syncerr-h">Scoring still works on this device meanwhile — it just won't share.</div>
     </div>`;
   }
-  const withGames = rounds.filter(r => GAMES.some(g => g.roundId === r.id));
-  if (!withGames.length)
+  /* Every round, not only the ones with games. Rounds without games became a
+     real thing when games were made optional, and filtering them out here left
+     the Games tab and the Schedule tab disagreeing about what was on that day
+     — two rounds on Thursday in one place, one in the other. A tee time is
+     worth seeing whether or not anyone's competing in it. */
+  const anyGames = GAMES.some(g => rounds.some(r => r.id === g.roundId));
+  if (!anyGames)
     h += `<p class="note" style="margin-top:20px">No games set up yet \u2014 add them on the
       Schedule tab.</p>`;
 
   const today = todayDay();
-  const daysWithGames = [...new Set(withGames.map(r => r.day))];
+  const daysWithGames = [...new Set(rounds.map(r => r.day))];
   const showAll = homeShowAll || !today || !daysWithGames.includes(today);
-  const shown = showAll ? withGames : withGames.filter(r => r.day === today);
+  const shown = showAll ? rounds : rounds.filter(r => r.day === today);
 
   if (!showAll && daysWithGames.length > 1)
     h += `<div class="todaybar">
@@ -2173,6 +2178,9 @@ function renderHome(){
     }
     h += `<p class="roundwhen">${esc(eventName(r))}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}</p>`;
     const inRound = GAMES.filter(g => g.roundId === r.id);
+    if (!inRound.length)
+      h += `<p class="note" style="text-align:left;margin:0 0 4px">No games set${
+        isAdmin || !SYNC.on ? " \u2014 add them on the Schedule tab" : ""}.</p>`;
     inRound.forEach(g => {
       const stt = gameStatusLabel(g);
       const meta = usesHcp(g)
