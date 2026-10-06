@@ -1218,7 +1218,7 @@ function gameStatusLabel(g){
 function currentHoleFor(g){
   if (isMatch(g)) return Math.min(matchState(g).played, 17);
   for (let i = 0; i < 18; i++){
-    if (!(g.holes[i].locked[0] && g.holes[i].locked[1])) return i;
+    if (!sides(g).every(t => g.holes[i].locked[t])) return i;
   }
   return 17;
 }
@@ -1251,7 +1251,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0950";
+const BUILD = "2026-10-06.1025";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3133,7 +3133,7 @@ function gameEditor(g){
       ${ix.map(i => `<span class="${counts[i]===need[i]?"":"bad"}">${SIDE_CODES[i]}: ${
         counts[i]}/${need[i]}</span>`).join("")}
       ${isMulti(g) ? `<button class="chip ${g.oneGroup?"on":""}" data-onegroup="${g.id}">${
-        g.oneGroup ? "All eight together" : "Two foursomes"}</button>` : ""}
+        g.oneGroup ? "All eight \u2014 not counted in pairings" : "Two foursomes"}</button>` : ""}
       ${g.type==="FORTYBALL" ? `<button class="chip ${g.hidden?"on":""}"
         data-hidden="${g.id}">Hidden selections: ${g.hidden?"on":"off"}</button>` : ""}
     </div>
@@ -3177,10 +3177,15 @@ function pairMatrix(){
     })));
     /* A foursome is the group that walks the course together. In a 2v2 that's
        all four players. In a scramble or 40ball the two teams go out as
-       separate groups, so a team is its own foursome. Four teams of two play
-       as two foursomes unless the game says otherwise. */
+       separate groups, so a team is its own foursome.
+
+       Four teams of two normally go out as two foursomes. If all eight walk
+       together the round contributes NOTHING here: it would add one to all 28
+       pairs at once, which says nothing about how well the field is mixed and
+       only burns through everyone's cap. Who's on your team and who you're
+       against still count — those stay meaningful either way. */
     const groups = g.type === "BESTBALL" ? [everyone]
-      : isMulti(g) ? (g.oneGroup ? [everyone]
+      : isMulti(g) ? (g.oneGroup ? []
                                  : [[...teams[0], ...teams[1]], [...teams[2], ...teams[3]]])
       : teams;
     groups.forEach(grp => grp.forEach(a => grp.forEach(b => {
@@ -3248,7 +3253,10 @@ function renderPairs(){
   });
   h += `</tbody></table>
     <div class="footnote">Red is a pair that never meets in that column's sense;
-    dark is more often than average. Worth settling before the weekend starts.</div>`;
+    dark is more often than average. Worth settling before the weekend starts.<br>
+    A round where all eight go out together is left out of <b>same foursome</b> \u2014 it would
+    add one to every pair at once, which says nothing about how the field is mixed. Team-mates
+    and opponents from that round still count.</div>`;
   app.innerHTML = h;
 }
 
@@ -3472,7 +3480,7 @@ function renderGame(){
   out += `<div class="hstrip">`;
   for (let i = 0; i < 18; i++){
     const done = isMatch(g) ? holeComplete(g,i)
-      : isStroke(g) ? (g.holes[i].teamScore[0] != null && g.holes[i].teamScore[1] != null)
+      : isStroke(g) ? sides(g).every(t => g.holes[i].teamScore[t] != null)
       : (g.holes[i].locked[0] && g.holes[i].locked[1]);
     let cls = "hcell";
     if (done && isMatch(g)){
@@ -4758,8 +4766,11 @@ document.addEventListener("input", e => {
    last one is the easiest mistake to make on a cart. */
 function maybeAdvance(g, h, msg){
   const hole = g.holes[h];
-  const bothIn = hole.locked[0] && hole.locked[1];
-  if (bothIn && h < 17){
+  /* Every side, not just the first two. With four teams this moved on as soon
+     as A and B were locked, which made it look like the hole had closed on C
+     and D before they'd put a score in. */
+  const allIn = sides(g).every(i => hole.locked[i]);
+  if (allIn && h < 17){
     view.hole = h + 1;
     toast(msg + " \u2014 on to " + (h + 2));
   } else {
