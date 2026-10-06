@@ -1191,7 +1191,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.0545";
+const BUILD = "2026-10-06.0640";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1497,8 +1497,17 @@ async function connectWith(i){
          here. Merging only ever added, so deleted games lingered forever and
          every re-import stacked another copy on top — which is why pair counts
          climbed past the number of games actually scheduled. */
+      forgetDead();
       const fresh = [];
-      qs.forEach(d => { const v = d.data(); if (v && v.id) fresh.push(v); });
+      qs.forEach(d => {
+        const v = d.data();
+        if (!v || !v.id) return;
+        if (deadGames.has(v.id)) return;      // deleted here; the server will catch up
+        fresh.push(v);
+      });
+      /* Once the server stops sending it, the tombstone has done its job. */
+      const present = new Set(); qs.forEach(d => present.add(d.id));
+      deadGames.forEach((t, id) => { if (!present.has(id)) deadGames.delete(id); });
       GAMES = fresh;
       applyQueueLocally();
       touchSync("games", qs);
@@ -1729,12 +1738,17 @@ function migrateLoaded(){
     if (e.title === "New event"){ e.title = ""; changed = true; }
   });
 
-  // 2. attach orphaned games to a round, without inventing junk rounds.
-  //    Match on the course first — that's what actually identifies a round —
-  //    and only create one if nothing suitable exists.
+  // 2. attach LEGACY games to a round — ones written before rounds had ids,
+  //    which carry a `round` label instead of a roundId.
+  //
+  //    Only those. A game whose roundId simply doesn't resolve any more is a
+  //    game whose round was DELETED, and inventing a replacement round for it
+  //    undid the deletion: the round came straight back under a new id, often
+  //    on the wrong day, and got written to the server. Those are step 6's
+  //    job, and step 6 could never run while this step kept adopting them.
   GAMES.forEach(g => {
-    if (g.roundId && EV(g.roundId)) return;
-    const cid = g.courseId || COURSES[0].id;
+    if (g.roundId) return;
+    const cid = g.courseId || (COURSES[0] || NO_COURSE).id;
     /* Only adopt an existing round when it's unambiguous. Two rounds at the
        same course would otherwise swallow every orphaned game. */
     const sameCourse = SCHEDULE.filter(e => e.type === "ROUND" && e.courseId === cid);
@@ -1776,15 +1790,11 @@ function migrateLoaded(){
     if (!e.mode){ e.mode = "RELATIVE"; changed = true; }
   });
 
-  // 6. drop games whose round was deleted — they can never be reached
-  const orphans = GAMES.filter(g => g.roundId && !EV(g.roundId));
-  if (orphans.length && !cfgDirty){
-    orphans.forEach(g => {
-      const cid = g.courseId || COURSES[0].id;
-      const sameCourse = SCHEDULE.filter(e => e.type === "ROUND" && e.courseId === cid);
-      if (sameCourse.length !== 1) removeGame(g.id);
-    });
-  }
+  // 6. drop games whose round was deleted — they can never be reached, and
+  //    leaving them meant the Games tab still listed a round the Schedule had
+  //    no record of. Deliberately unconditional: a deletion is a decision, not
+  //    something to second-guess by hunting for a round to reattach to.
+  GAMES.filter(g => g.roundId && !EV(g.roundId)).forEach(g => removeGame(g.id));
 
   // 7. teams stored as an array can't be written to Firestore
   GAMES.forEach(g => {
@@ -1857,10 +1867,32 @@ function pushGame(g){
     .then(() => setSync("live", {lastAt:new Date()}))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
+/* Deleting is asynchronous, but the games listener keeps firing meanwhile —
+   and it rebuilds the list from whatever the snapshot holds. A snapshot sent
+   before the delete landed (or served from cache) would put the game straight
+   back, which is why a deleted game kept reappearing. So a deleted id is
+   remembered and filtered out of incoming snapshots until the server stops
+   sending it. */
+const deadGames = new Map();          // game id -> when it was deleted
+const DEAD_FOR = 120000;              // give up remembering after two minutes
+
+function forgetDead(){
+  const now = Date.now();
+  deadGames.forEach((t, id) => { if (now - t > DEAD_FOR) deadGames.delete(id); });
+}
+
 function removeGame(gid){
   GAMES = GAMES.filter(g => g.id !== gid);
+  /* Drop any queued score writes for it too, or the next flush recreates the
+     document the delete just removed. */
+  if (queue.length){
+    const before = queue.length;
+    queue = queue.filter(it => it.gid !== gid);
+    if (queue.length !== before) saveQueue();
+  }
   if (isArchive()) return;
   if (!SYNC.on || !SYNC.api) return;
+  deadGames.set(gid, Date.now());
   const { doc, deleteDoc } = SYNC.api;
   deleteDoc(doc(SYNC.db, "tournaments", tidFor(activeYear), "games", gid))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (delete failed)" }));
@@ -1881,6 +1913,7 @@ async function resetTournament(){
   snap.forEach(d => { if (!ids.has(d.id)) setDoc(doc(gamesRef, d.id), {}, {merge:false}); });
 }
 
+let cfgRetry = false;
 function pushConfig(){
   if (staleDevice || isArchive()){ cfgDirty = false; return; }      // never write from an old build
   if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
@@ -1888,8 +1921,17 @@ function pushConfig(){
   setDoc(doc(SYNC.db, "tournaments", tidFor(activeYear)),
     { schema: SCHEMA, appBuild: BUILD, players: PLAYERS, courses: COURSES,
       schedule: SCHEDULE, days: DAYS }, { merge:true })
-    .then(() => { cfgDirty = false; setSync("live", {lastAt:new Date()}); })
-    .catch(e => setSync("error", { err: (e.code||e.message) + " (config write failed)" }));
+    .then(() => { cfgDirty = false; cfgRetry = false; setSync("live", {lastAt:new Date()}); })
+    .catch(e => {
+      setSync("error", { err: (e.code||e.message) + " (config write failed)" });
+      /* cfgDirty left set forever would make this phone permanently deaf to
+         the server: migrateLoaded stands down while it's set, and the config
+         listener ignores every incoming update. So retry once, and if that
+         fails too, let the server through again rather than sit there silently
+         out of step with everyone else. */
+      if (!cfgRetry){ cfgRetry = true; setTimeout(pushConfig, 3000); }
+      else { cfgRetry = false; cfgDirty = false; }
+    });
 }
 
 /* ============================================================
@@ -4041,7 +4083,9 @@ function handleClick(el){
       + ".\n\nThis can't be undone.")) return;
     games.forEach(g => removeGame(g.id));
     SCHEDULE = SCHEDULE.filter(e => e.day !== day);
-    queueConfig(); editEvent = null; render(); toast(day + " cleared"); return;
+    cfgDirty = true; clearTimeout(cfgTimer); pushConfig();
+    editEvent = null; editSnap = null; editIsNew = false;
+    render(); toast(day + " cleared"); return;
   }
   if (el.dataset.addtravel){
     const id = "e" + Date.now().toString(36);
@@ -4073,7 +4117,11 @@ function handleClick(el){
       + (kids.length ? " and its " + kids.length + " game(s)?" : "?"))) return;
     kids.forEach(g => removeGame(g.id));
     SCHEDULE = SCHEDULE.filter(x => x.id !== el.dataset.delev);
-    queueConfig(); editEvent = null; render(); return;
+    /* Straight out, not on the 700ms typing debounce. A deletion sitting in a
+       debounce is a deletion a server snapshot can arrive and undo. */
+    cfgDirty = true; clearTimeout(cfgTimer); pushConfig();
+    editEvent = null; editSnap = null; editIsNew = false;
+    render(); return;
   }
   if (el.dataset.evtype){
     const e = EV(editEvent); e.type = el.dataset.evtype;
