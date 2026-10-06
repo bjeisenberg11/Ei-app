@@ -745,6 +745,14 @@ function roundLabel(g){
 
 let DAYS = ["Friday","Saturday","Sunday","Monday"];
 
+/* The built-in defaults, snapshotted before anything from the server lands on
+   top of them. "Reset everything" needs something to reset TO — it used to
+   write the current data straight back, so it discarded nothing at all. */
+const DEFAULTS = JSON.parse(JSON.stringify({
+  players: PLAYERS, courses: COURSES, schedule: SCHEDULE, games: GAMES, days: DAYS
+}));
+const freshDefaults = () => JSON.parse(JSON.stringify(DEFAULTS));
+
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
                 SCRAMBLE3:"3v3 Scramble", SCRAMBLE2X4:"2v2v2v2 Scramble",
                 FORTYBALL:"40ball" };
@@ -866,12 +874,19 @@ function matchState(g){
 }
 /* ---------- team identity — always by player name, never "Team A/B" ---------- */
 function teamLabel(g, t){
-  const names = g.teams[t].map(id => P(id).name);
+  /* A side can be empty — a game added but not yet filled in — and can name
+     someone no longer on the roster. Neither should throw or print
+     "& undefined" onto a card. */
+  const names = (g.teams[t] || []).map(id => (P(id) || {}).name).filter(Boolean);
+  if (!names.length) return SIDE_CODES[t] ? "Team " + SIDE_CODES[t] : "Nobody yet";
   if (names.length === 1) return names[0];
   if (names.length === 2) return names.join(" & ");
   return names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
 }
-function teamShort(g, t){ return P(g.teams[t][0]).name; } // one name, for tight captions
+function teamShort(g, t){                       // one name, for tight captions
+  const first = (g.teams[t] || [])[0];
+  return (P(first) || {}).name || ("Team " + (SIDE_CODES[t] || "?"));
+}
 
 /* "Blake & Dan vs Adam & Jason", or with four teams the lot of them separated
    by v. Escaped here because it goes straight into a card. */
@@ -909,6 +924,10 @@ function fbAvailable(g, t, h){
 function fbBudget(g, t, h){
   const R = QUOTA - fbSpent(g, t);
   const H = 18 - fbHolesLocked(g, t);
+  /* With every hole locked there is nothing left to spend on. Without this,
+     min came out as R+4 and a finished round shouted "must take at least 4
+     this hole" in red on all 18. */
+  if (H <= 0) return { min:0, max:0, R, H, broken:false };
   const A = fbAvailable(g, t, h);
   const max = Math.min(A, R);
   const min = Math.max(0, R - 4 * (H - 1));
@@ -1208,10 +1227,23 @@ function gameStatusLabel(g){
     if (st.played === 0) return { text:"Not started", cls:"" };
     return { text:`${statusText(g,st)} · thru ${st.played}`, cls:"live" };
   }
+  /* Stroke play has to be handled before the 40ball text below, or every
+     scramble in progress reports a 40-ball budget it doesn't have. It only
+     showed once a score went in, which is why an unstarted scramble looked
+     fine. */
+  if (isStroke(g)){
+    const st = strokeState(g);
+    const thru = Math.max(...st.holes);
+    if (!thru) return { text:"Not started", cls:"" };
+    /* Totals in team order, so they line up with the names on the card. */
+    const line = sides(g).map(i => st.totals[i]).join(" \u2013 ");
+    return { text:`${line} \u00b7 thru ${thru}`, cls:"live" };
+  }
+
   const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
   if (la + lb === 0) return { text:"Not started", cls:"" };
   const r0 = fbTotal(g,0) - fbParBasis(g,0), r1 = fbTotal(g,1) - fbParBasis(g,1);
-  return { text:`${fbTotal(g,0)} (${toPar(r0)}) \u2013 ${fbTotal(g,1)} (${toPar(r1)}) · ` +
+  return { text:`${fbTotal(g,0)} (${toPar(r0)}) \u2013 ${fbTotal(g,1)} (${toPar(r1)}) \u00b7 ` +
                 `${fbSpent(g,0)}/40 & ${fbSpent(g,1)}/40 spent`, cls:"live" };
 }
 /* which hole to land on when jumping into a game — the next one needing action */
@@ -1251,7 +1283,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.1025";
+const BUILD = "2026-10-06.1140";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1882,7 +1914,11 @@ function migrateLoaded(){
   // 5. rounds must carry a course and a handicap mode
   SCHEDULE.forEach(e => {
     if (e.type !== "ROUND") return;
-    if (!e.courseId || !C(e.courseId)){ e.courseId = COURSES[0].id; changed = true; }
+    /* C() falls back, so it never returns falsy — this has to ask whether the
+       id actually resolves, or a round silently plays off the wrong card. */
+    if (!e.courseId || !COURSES.some(c => c.id === e.courseId)){
+      e.courseId = (COURSES[0] || NO_COURSE).id; changed = true;
+    }
     if (!e.mode){ e.mode = "RELATIVE"; changed = true; }
   });
 
@@ -1903,7 +1939,12 @@ function migrateLoaded(){
   // 7. teams stored as an array can't be written to Firestore
   GAMES.forEach(g => {
     if (Array.isArray(g.teams)){
-      g.teams = { 0: g.teams[0] || [], 1: g.teams[1] || [] };
+      /* Keyed by side, for as many sides as the type has. Hardcoding 0 and 1
+         here would quietly drop teams C and D of a 2v2v2v2 — and then write
+         the truncated version back to the server. */
+      const was = g.teams;
+      g.teams = {};
+      sides(g).forEach(i => g.teams[i] = was[i] || []);
       pushGame(g);
     }
   });
@@ -1941,6 +1982,11 @@ async function flushQueue(){
       if (/not-found|invalid-argument/i.test(code)){
         const g = GAMES.find(x => x.id === it.gid);
         if (g){ try { await setDoc(doc(SYNC.db,"tournaments",tidFor(activeYear),"games",it.gid), g); dequeue(it); continue; } catch(e){} }
+        /* The game is gone here AND on the server — deleted on another phone,
+           or replaced by an import. Nothing can ever write this score, and the
+           queue is strictly in order, so keeping it would block every later
+           write for every game, for good. Drop it. */
+        dequeue(it); continue;
       }
       break;                       // still offline — stop and retry later
     }
@@ -2004,17 +2050,32 @@ function removeGame(gid){
 
 /* config: players, courses, schedule — admin edits, low contention */
 /* deliberate, admin-only wipe back to the built-in defaults */
+/* Back to the built-in defaults, which is what the button promises. It used
+   to write the CURRENT players, courses, schedule and games straight back —
+   scores and all — so confirming the scariest dialog in the app discarded
+   nothing whatsoever. */
 async function resetTournament(){
-  if (!SYNC.on){ GAMES.forEach(g => g.holes = blankHoles()); render(); return; }
-  const { doc, setDoc, collection, getDocs } = SYNC.api;
+  const d = freshDefaults();
+  PLAYERS.length = 0;  d.players.forEach(x => PLAYERS.push(x));
+  COURSES.length = 0;  d.courses.forEach(x => COURSES.push(x));
+  SCHEDULE.length = 0; d.schedule.forEach(x => SCHEDULE.push(x));
+  DAYS.length = 0;     d.days.forEach(x => DAYS.push(x));
+  GAMES = d.games;
+  GAMES.forEach(g => g.holes = blankHoles());
+  editCourseId = (COURSES[0] || NO_COURSE).id;
+
+  if (!SYNC.on){ render(); return; }
+  const { doc, setDoc, deleteDoc, collection, getDocs } = SYNC.api;
   const cfgRef = doc(SYNC.db, "tournaments", tidFor(activeYear));
   const gamesRef = collection(SYNC.db, "tournaments", tidFor(activeYear), "games");
   await setDoc(cfgRef, { schema: SCHEMA, appBuild: BUILD, players: PLAYERS,
     courses: COURSES, schedule: SCHEDULE, days: DAYS });
+  /* Really delete what's no longer wanted, rather than leaving empty documents
+     behind to pile up in the collection. */
   const snap = await getDocs(gamesRef);
-  const ids = new Set(GAMES.map(g => g.id));
+  const keep = new Set(GAMES.map(g => g.id));
+  for (const d of snap.docs || []) if (!keep.has(d.id)) await deleteDoc(doc(gamesRef, d.id));
   for (const g of GAMES) await setDoc(doc(gamesRef, g.id), g);
-  snap.forEach(d => { if (!ids.has(d.id)) setDoc(doc(gamesRef, d.id), {}, {merge:false}); });
 }
 
 let cfgRetry = false;
@@ -2205,6 +2266,13 @@ function render(){
   $("#back").style.display = (inGame || editEvent) ? "block" : "none";
   if (inGame){
     const g = GAMES.find(x => x.id === view.gameId);
+    /* Someone else can delete this game while it's open. Without this the
+       whole screen threw and froze, and every later tap threw again. */
+    if (!g){
+      view.gameId = null;
+      toast("That game was removed");
+      return render();
+    }
     $("#ttl").textContent = LABEL[g.type];
     /* the round is usually named after its course, so don't print it twice */
     const r = roundOf(g);
@@ -2393,7 +2461,7 @@ function renderBoard(){
   </tr></thead><tbody>`;
   s.forEach((p,i) => {
     h += `<tr><td><span class="pos">${String(i+1).padStart(2,"0")}</span>${esc(p.name)}
-      <span class="hcp"> ${p.index.toFixed(1)} · ${esc(p.tee)}</span></td>
+      <span class="hcp"> ${p.index.toFixed(1)}</span></td>
       <td class="mono">${p.w}</td><td class="mono">${p.l}</td><td class="mono">${p.t}</td>
       <td class="mono" style="color:var(--ink-faint)">${p.gp}</td>
       <td class="pts">${p.pts % 1 ? p.pts.toFixed(1) : p.pts}</td></tr>`;
@@ -2473,10 +2541,12 @@ function renderSchedule(){
       <p class="hint" style="margin:0 0 8px">ROUND · GAME · MEAL · TRAVEL-IN · TRAVEL-OUT · OTHER</p>
       <label>detail</label>
       <p class="hint" style="margin:0 0 8px">A title \u2014 or for GAME rows the format:
-        BESTBALL, SCRAMBLE4, SCRAMBLE3, 40BALL</p>
-      <label>a1\u2013a4 / b1\u2013b4</label>
+        BESTBALL, SCRAMBLE4, SCRAMBLE3, 2V2V2V2, 40BALL</p>
+      <label>a1\u2013a4 / b1\u2013b4 / c1\u2013c4 / d1\u2013d4</label>
       <p class="hint" style="margin:0 0 10px">One player per cell \u2014 a1, a2 for a 2v2;
-        all four for a scramble or 40ball. Names must match the Field tab exactly.</p>
+        all four for a 4v4 scramble or 40ball. <b>2V2V2V2</b> is the only format that
+        uses c and d: two names in each of a, b, c and d. Names must match the Field
+        tab exactly.</p>
       <div class="acts cwrap">
         <button class="btn ghost" id="csvtemplate">Blank template</button>
         <button class="btn ghost" id="csvexample">Filled example</button>
@@ -2531,14 +2601,14 @@ function renderSchedule(){
       if (!evs.length && ro) return;
       const timed = evs.filter(e => e.time).sort((a,b) => a.time.localeCompare(b.time));
       const untimed = evs.filter(e => !e.time);
-      h += `<h2 class="sec">${day}</h2>`;
+      h += `<h2 class="sec">${esc(day)}</h2>`;
       [...timed, ...untimed].forEach(e => h += eventCard(e, ro));
       /* One button. Two of them landed on the same editor with the same Type
          row at the top of it, so the choice was made twice. It opens as a
          round — far and away the most added — and the Type row changes it. */
       if (!ro) h += `<div class="acts cwrap" style="margin:2px 0 10px">
-        <button class="btn ghost addev" data-addround="${day}">+ Add to ${day}</button>
-        ${evs.length ? `<button class="btn ghost dayclear" data-clearday="${day}">Clear ${day}</button>` : ""}
+        <button class="btn ghost addev" data-addround="${esc(day)}">+ Add to ${esc(day)}</button>
+        ${evs.length ? `<button class="btn ghost dayclear" data-clearday="${esc(day)}">Clear ${esc(day)}</button>` : ""}
       </div>`;
     });
   } else {
@@ -2944,17 +3014,20 @@ function scoresToText(){
         : "in progress"));
 
       if (isScramble(g) || isStroke(g)){
-        const hdr = ["Hole", "Par"].concat([teamShort(g,0), teamShort(g,1)]);
-        L.push("  " + hdr[0].padEnd(6) + hdr[1].padEnd(5) + hdr[2].padEnd(9) + hdr[3]);
+        /* Every side. This printed two columns however many teams were
+           playing, so a 2v2v2v2 exported half a scorecard — and this dump is
+           the backup of last resort. */
+        const ix = sides(g);
+        L.push("  " + "Hole".padEnd(6) + "Par".padEnd(5)
+               + ix.map(i => teamShort(g,i).slice(0,8).padEnd(9)).join("").trimEnd());
         holeList(g).forEach((hole, h) => {
-          const a = hole.teamScore[0], b = hole.teamScore[1];
-          if (a == null && b == null) return;
+          if (ix.every(i => hole.teamScore[i] == null)) return;
           L.push("  " + String(h+1).padEnd(6) + String(course.holes[h].par).padEnd(5)
-                 + String(a ?? "-").padEnd(9) + String(b ?? "-"));
+                 + ix.map(i => String(hole.teamScore[i] ?? "-").padEnd(9)).join("").trimEnd());
         });
         if (isStroke(g)){
           const t = strokeTotals(g).totals;
-          L.push("  TOTAL".padEnd(13) + String(t[0]).padEnd(9) + String(t[1]));
+          L.push("  TOTAL".padEnd(13) + ix.map(i => String(t[i]).padEnd(9)).join("").trimEnd());
         }
       } else {
         const ids = [...g.teams[0], ...g.teams[1]];
@@ -3020,7 +3093,7 @@ function renderEventEditor(h, id){
 
     <label>Day</label>
     <div class="acts cwrap">
-      ${DAYS.map(d => `<button class="btn ${e.day===d?"":"ghost"}" data-evday="${d}">${d.slice(0,3)}</button>`).join("")}
+      ${DAYS.map(d => `<button class="btn ${e.day===d?"":"ghost"}" data-evday="${esc(d)}">${esc(d.slice(0,3))}</button>`).join("")}
     </div>
 
     <label>Time</label>
@@ -3106,7 +3179,8 @@ function gameEditor(g){
   const need = NEEDED[g.type];
   const ix = sides(g);
   const counts = ix.map(i => (g.teams[i] || []).length);
-  const played = holeList(g).some(hl => Object.keys(hl.scores||{}).length || hl.teamScore[0] != null);
+  const played = holeList(g).some(hl => Object.keys(hl.scores||{}).length
+    || ix.some(i => hl.teamScore[i] != null));
   const sideOf = pid => {
     const i = ix.find(k => (g.teams[k] || []).includes(pid));
     return i === undefined ? -1 : i;
@@ -3307,7 +3381,7 @@ function timePicker(e){
    each screen a short list of things you can open, one at a time. Keys are
    prefixed by screen ("f:" for Field) so opening one closes its siblings
    rather than everything everywhere. */
-const openPanel = { f:"hcp", e:"det", h:null };
+const openPanel = { f:"hcp", e:null, h:null };
 
 function panel(key, title, body, meta){
   const [grp, name] = key.split(":");
@@ -3521,7 +3595,10 @@ function renderGame(){
     const out2 = teamOutcomes(g);
     const rows = ix.map(i => ({ i, tot: st.totals[i], holes: st.holes[i],
                                 rel: st.totals[i] - strokeParSoFar(g,i) }))
-      .sort((a,b) => (a.holes && b.holes) ? a.tot - b.tot : a.i - b.i);
+      /* Sides that haven't started sort last, then by total. Switching rule
+         per pair made this non-transitive, so the rows could come out in an
+         order that was neither. */
+      .sort((a,b) => (b.holes > 0) - (a.holes > 0) || a.tot - b.tot || a.i - b.i);
     out += `<div class="banner ${st.done?"closed":""}">
       ${st.done ? `<div class="st">${st.result.winner==="TIE" ? "TIED"
         : `${winnerLabel(g,st.result.winner)} WIN`}</div>` : ""}
@@ -3643,7 +3720,7 @@ function renderOtherBug(g){
   if (!sibs.length) return "";
   return sibs.map(s => {
     const st = gameStatusLabel(s);
-    const text = `${teamLabel(s,0)} vs ${teamLabel(s,1)} — ${st.text}`;
+    const text = `${sides(s).map(i => teamLabel(s,i)).join(" v ")} — ${st.text}`;
     const long = text.length > 34;
     const dur = Math.max(9, Math.round(text.length / 4));
     return `<button class="bug" data-game="${s.id}" data-jumphole="${currentHoleFor(s)}">
@@ -3868,7 +3945,10 @@ function renderPlayers(){
   const co = C(editCourseId);
   const ro = SYNC.on && !isAdmin;          // read-only for non-admins
   const dis = ro ? " disabled" : "";
-  const rounds = ROUNDS().filter(r => r.courseId === co.id).map(r => r.title);
+  /* Rounds are deliberately untitled — they're named after their course — so
+     reading .title here printed "Played , ." or "Played undefined." */
+  const rounds = ROUNDS().filter(r => r.courseId === co.id)
+    .map(r => r.day || eventName(r)).filter(Boolean);
 
   /* --- 1. indexes: one number per player, true everywhere --- */
   let h = ro
@@ -4117,7 +4197,7 @@ function handleClick(el){
       + "\n\nOK = retry the connection from scratch (clears the remembered transport).");
     if (again){
       try { localStorage.removeItem(TKEY); } catch(e){}
-      tried = 0; serverSeen = false;
+      serverSeen = false;
       setSync("connecting");
       connectWith(0);
     }
@@ -4143,7 +4223,7 @@ function handleClick(el){
     const dupes = [];
     GAMES.filter(g => g.roundId && EV(g.roundId)).forEach(g => {
       const key = g.roundId + "|" + g.type + "|" +
-        [...(g.teams[0]||[]), ...(g.teams[1]||[])].slice().sort().join(",");
+        sides(g).map(i => (g.teams[i]||[]).slice().sort().join("+")).join("|");
       if (seen[key]) dupes.push(g); else seen[key] = g;
     });
     strays.push(...dupes);
