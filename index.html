@@ -1274,7 +1274,17 @@ async function loadHistory(force){
     // years typed in from before the app existed
     try {
       const hs = await getDoc(doc(SYNC.db, "tournaments", "_history"));
-      const hv = hs.exists() ? (hs.data().years || {}) : {};
+      let hv = hs.exists() ? (hs.data().years || {}) : {};
+      /* First run: write the years that predate the app. Only ever when the
+         document is absent — once it exists it's the record, and a later
+         build must never overwrite what's been edited since. */
+      if (!hs.exists()){
+        try {
+          await SYNC.api.setDoc(doc(SYNC.db, "tournaments", "_history"),
+                                { years: HISTORY_SEED });
+          hv = HISTORY_SEED;
+        } catch(e){ hv = HISTORY_SEED; }   // show them even if the write failed
+      }
       HIST.recorded = hv;
       Object.keys(hv).forEach(y => {
         const rows = (hv[y].rows || []).filter(r => r && r.name);
