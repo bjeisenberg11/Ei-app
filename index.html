@@ -159,8 +159,14 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .banner.closed .strokerow + .strokerow{border-top-color:#3A5C46}
 .sname{flex:1;font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:14px;min-width:0}
-.stot{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600}
-.spar{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;width:34px;text-align:right}
+/* To par is the number that means something, so it leads and it's the big
+   one; the gross total trails it, smaller and muted. That's the order every
+   leaderboard uses. */
+.spar{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;
+  width:44px;text-align:right}
+.stot{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;
+  color:var(--ink-soft);width:28px;text-align:right}
+.banner.closed .stot{color:#B9CDBF}
 .spar.under{color:var(--pencil)}
 .banner.closed .spar.under{color:#E8A79A}
 .banner.closed .thru{color:#A9BFAE}
@@ -1321,7 +1327,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.0945";
+const BUILD = "2026-10-08.1015";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3643,8 +3649,8 @@ function renderGame(){
       ${rows.map(r => `<div class="strokerow${
         out2 && out2[r.i] === "W" ? " through" : ""}">
         <span class="sname">${esc(teamLabel(g, r.i))}</span>
-        <span class="stot">${r.tot}</span>
         <span class="spar ${parClass(r.rel)}">${r.holes ? toPar(r.rel) : ""}</span>
+        <span class="stot">${r.tot}</span>
       </div>`).join("")}
       <div class="thru">${thru ? `Stroke play \u00b7 thru ${thru}` : "Stroke play \u00b7 not started"}${
         isMulti(g) ? " \u00b7 top two win" : ""}</div>
@@ -3908,8 +3914,10 @@ function renderTeam(g, t, h, hardLocked){
     const ts = hole.teamScore[t];
     const tot = strokeTotals(g).totals[t];
     const rel = tot - strokeParSoFar(g, t);
-    head += `${ts != null ? ts : "\u2014"} <span class="tsub">tot ${tot}` +
-            `${strokeParSoFar(g,t) ? ` <span class="par ${parClass(rel)}">${toPar(rel)}</span>` : ""}</span>`;
+    /* Same order as the leaderboard above: to par first, gross after. */
+    head += `${ts != null ? ts : "\u2014"} <span class="tsub">` +
+            `${strokeParSoFar(g,t) ? `<span class="par ${parClass(rel)}">${toPar(rel)}</span> ` : ""}` +
+            `${tot}</span>`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   } else {
     const relT = fbTotal(g,t) - fbParBasis(g,t);

@@ -733,7 +733,12 @@ t("R42 stroke play shows no 40ball budget", () => isolate(() => {
   const heads = [...document.querySelectorAll(".team-score")].map(x => x.textContent);
   ok(heads.length, "no team headers rendered");
   ok(!heads.some(x => x.includes("/40")), "a scramble must not show the 40ball budget: " + heads.join(" | "));
-  ok(heads.some(x => /tot 16/.test(x)), "should show the running stroke total: " + heads.join(" | "));
+  /* The "tot" label went when to-par moved in front of the gross total; what
+     matters is that the running total is still there. */
+  ok(heads.some(x => /\b16\b/.test(x)),
+     "should show the running stroke total: " + heads.join(" | "));
+  ok(heads.some(x => /E|\+4/.test(x)),
+     "and the score to par: " + heads.join(" | "));
   w.eval('view.gameId=null; view.tab="home"; render();');
 }));
 
@@ -1599,6 +1604,45 @@ t("R99 scrambles show which tee each player is on", () => isolate(() => {
   // a player with no tee set falls back rather than printing undefined
   w.eval('delete PLAYERS[0].tees; render();');
   ok(!/undefined/.test(appHTML()), "a player with no tee recorded must not print undefined");
+}));
+
+t("R100 stroke play leads with the score to par", () => isolate(() => {
+  const w = dom.window;
+  /* Gross total first, to par trailing in small text, had it backwards: the
+     total means nothing without knowing the par played, which is the whole
+     reason the card label was rewritten too. */
+  w.eval(`GAMES.length = 0;
+    const g = { id:"gflip", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4",
+      teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes: blankHoles() };
+    const per = [[5,4,4,4,4,5],[4,4,4,4,4,4],[3,4,4,4,4,3],[4,4,4,4,4,3]];
+    for (let h = 0; h < 6; h++) per.forEach((row,i) => { g.holes[h].teamScore[i] = row[h]; });
+    GAMES.push(g); view.gameId = "gflip"; view.hole = 0; render();`);
+
+  const row = document.querySelector(".strokerow");
+  ok(row, "no leaderboard rows");
+  const kids = [...row.children].map(e => e.className.split(" ")[0]);
+  eq(kids.join(","), "sname,spar,stot", "order should be name, to par, then gross:");
+
+  // and the to-par is the bigger of the two
+  const css = html.slice(html.indexOf(".spar{"), html.indexOf(".spar{") + 200);
+  const sparSize = +(/font-size:(\d+)px/.exec(css) || [])[1];
+  const tcss = html.slice(html.indexOf(".stot{"), html.indexOf(".stot{") + 200);
+  const stotSize = +(/font-size:(\d+)px/.exec(tcss) || [])[1];
+  ok(sparSize > stotSize,
+     "to par should be the headline number (" + sparSize + "px vs " + stotSize + "px)");
+
+  // the values themselves are still right
+  const first = document.querySelector(".strokerow .spar").textContent.trim();
+  eq(first, "-2", "the leader is two under through six:");
+  eq(document.querySelector(".strokerow .stot").textContent.trim(), "22", "gross still shown:");
+
+  // the per-team header follows the same order
+  const sub = document.querySelector(".tsub");
+  ok(sub, "no team total");
+  ok(/^[+\-E]/.test(sub.textContent.trim()),
+     "the team header should lead with to par too: " + sub.textContent.trim());
+  ok(!/tot/.test(sub.textContent), "the 'tot' label is noise once the order is clear");
+  w.eval('view.gameId = null; render();');
 }));
 
 section("COLD REVIEW — found by a reviewer who hadn't seen the code")
