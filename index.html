@@ -115,7 +115,12 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
 .gstate{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;
   margin-top:6px;color:var(--ink-soft);line-height:1.35}
-.gstate.live{color:var(--pencil)}
+/* in progress, not a problem — red was reading as something wrong */
+.gstate.live{color:var(--brass)}
+.teetag{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500;
+  letter-spacing:.04em;color:var(--paper);background:var(--ink-faint);
+  padding:2px 5px;margin-left:6px;vertical-align:middle;white-space:nowrap}
+.rsep{color:var(--rule);margin:0 6px}
 .gstate.done{color:var(--ink);
   border-left:2px solid var(--ink);padding-left:7px}
 .gmeta{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
@@ -790,8 +795,14 @@ const courseOf = g => C((roundOf(g)||{}).courseId);
 const modeOf   = g => (roundOf(g)||{}).mode || "RELATIVE";
 
 function teeNameFor(pid, course){
-  return (P(pid).tees && P(pid).tees[course.id]) || course.tees[0].name;
+  const p = P(pid) || {};
+  return (p.tees && p.tees[course.id]) || (course.tees[0] || {}).name || "\u2014";
 }
+/* Which box someone is hitting from. In a scramble there are no handicaps, so
+   the tee is the only thing separating two players on paper — it belongs next
+   to the name rather than buried on the Field tab. */
+const teeTag = (pid, course) =>
+  `<span class="teetag">${esc(teeNameFor(pid, course))}</span>`;
 function teeOf(pid, course){
   return course.tees.find(t => t.name === teeNameFor(pid, course)) || course.tees[0];
 }
@@ -1235,9 +1246,29 @@ function gameStatusLabel(g){
     const st = strokeState(g);
     const thru = Math.max(...st.holes);
     if (!thru) return { text:"Not started", cls:"" };
-    /* Totals in team order, so they line up with the names on the card. */
-    const line = sides(g).map(i => st.totals[i]).join(" \u2013 ");
-    return { text:`${line} \u00b7 thru ${thru}`, cls:"live" };
+    /* Raw totals said nothing: "7 - 7 - 10 - 10" means nothing without knowing
+       the par played so far, and four bare numbers don't say whose they are.
+       Name whoever's ahead and by how much, which is what you'd ask. */
+    const started = sides(g).filter(i => st.holes[i] > 0);
+    const best = Math.min(...started.map(i => st.totals[i]));
+    const lead = started.filter(i => st.totals[i] === best);
+    const rel = st.totals[lead[0]] - strokeParSoFar(g, lead[0]);
+    const rest = started.filter(i => st.totals[i] > best).map(i => st.totals[i]);
+    const margin = rest.length ? Math.min(...rest) - best : 0;
+
+    let text;
+    if (lead.length === started.length){
+      text = started.length > 1 ? `All level ${toPar(rel)}` : `${toPar(rel)}`;
+    } else if (lead.length > 1){
+      text = `${lead.map(i => teamShort(g,i)).join(" / ")} tied ${toPar(rel)}`;
+    } else {
+      /* "Blake, Dan, Jason & Daniel" is too long for a card line, so a team of
+         more than two is named by its first player, same as the tie case. */
+      const who = (g.teams[lead[0]] || []).length > 2
+        ? teamShort(g, lead[0]) : teamLabel(g, lead[0]);
+      text = `${who} ${toPar(rel)}, leads by ${margin}`;
+    }
+    return { text:`${text} \u00b7 thru ${thru}`, cls:"live" };
   }
 
   const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
@@ -1283,7 +1314,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-06.1140";
+const BUILD = "2026-10-08.0940";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3196,7 +3227,7 @@ function gameEditor(g){
     <table class="rost"><tbody>
       ${PLAYERS.map(p => {
         const t = sideOf(p.id);
-        return `<tr><td class="rn">${esc(p.name)}</td>
+        return `<tr><td class="rn">${esc(p.name)}${teeTag(p.id, courseOf(g))}</td>
           ${ix.map(i => `<td><button class="side ${t===i?"on "+SIDE_CODES[i].toLowerCase():""}"
             data-side="${g.id}:${p.id}:${i}">${SIDE_CODES[i]}</button></td>`).join("")}
           <td><button class="side ${t===-1?"on out":""}" data-side="${g.id}:${p.id}:-1">Out</button></td>
@@ -3802,7 +3833,10 @@ function teamReady(g, t, h){
 function renderTeam(g, t, h, hardLocked){
   const hole = g.holes[h];
   const name = teamLabel(g, t);
-  const roster = g.teams[t].map(id => P(id).name).join(" · ");
+  const course = courseOf(g);
+  const roster = (g.teams[t] || [])
+    .map(id => esc((P(id) || {}).name || "?") + teeTag(id, course))
+    .join(`<span class="rsep">·</span>`);
   let inner = "", winCls = "";
 
   if (isMatch(g)){
@@ -3814,7 +3848,7 @@ function renderTeam(g, t, h, hardLocked){
 
   if (isScramble(g) || isStroke(g)){
     inner += `<div class="prow">
-      <span class="pname">${esc(roster)}</span>
+      <span class="pname">${roster}</span>
       ${stepper(`ts-${t}`, hole.teamScore[t], locked || hardLocked || hole.conceded!==null)}
       ${isStroke(g) && hole.teamScore[t] != null ? `<span class="pnet"><span class="par ${
         parClass(hole.teamScore[t] - courseOf(g).holes[h].par)}">${
