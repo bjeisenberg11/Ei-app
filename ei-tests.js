@@ -1542,18 +1542,32 @@ t("R98 a stroke-play card says who's ahead, not four bare numbers", () => isolat
   ok(/thru 3/.test(lead), "and how far they've got: " + lead);
   ok(!/7 . 9 . 10 . 11/.test(lead), "bare totals say nothing: " + lead);
 
-  // a tie for the lead names both
+  // a tie for the lead names both teams in full — "Blake / Jake" read as a
+  // pairing, and those two are on different teams
   const tie = mk("SCRAMBLE2X4", [7,7,10,10], 3);
   ok(/tied/.test(tie), "a shared lead should say tied: " + tie);
-  ok(/\//.test(tie), "and name both of them: " + tie);
+  ok(/ and /.test(tie), "the two teams should be joined by 'and', not a slash: " + tie);
+  ok(!/\//.test(tie), "a slash between names reads as a team: " + tie);
+  const t0 = w.eval('teamLabel(GAMES.find(g=>g.id==="gst"), 0)');
+  const t1 = w.eval('teamLabel(GAMES.find(g=>g.id==="gst"), 1)');
+  ok(tie.includes(t0) && tie.includes(t1),
+     "both tied teams should be named in full: " + tie);
+
+  // three or more tied is counted rather than listed
+  const many = mk("SCRAMBLE2X4", [7,7,7,10], 3);
+  ok(/3 teams tied/.test(many), "three tied teams should be counted: " + many);
+
+  // a team of more than two is named as a team, not as one person
+  const four = mk("SCRAMBLE4", [33,36], 9);
+  ok(/'s team/.test(four), "a 4v4 side should read as a team, not a player: " + four);
 
   // everybody level
   ok(/All level/.test(mk("SCRAMBLE2X4", [9,9,9,9], 3)), "four teams level");
   ok(/All level/.test(mk("SCRAMBLE4", [36,36], 9)), "two teams level");
 
-  // a team of more than two is named short, or the line runs off the card
+  // the line still has to fit a phone card
   const big = mk("SCRAMBLE4", [33,36], 9);
-  ok(big.length < 42, "the line must fit a phone card: " + big);
+  ok(big.length < 45, "the line must fit a phone card: " + big);
   ok(!/,.*,.*&/.test(big), "a 4v4 shouldn't list all four names: " + big);
 
   // nothing scored yet

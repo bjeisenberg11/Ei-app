@@ -894,6 +894,13 @@ function teamLabel(g, t){
   if (names.length === 2) return names.join(" & ");
   return names.slice(0, -1).join(", ") + " & " + names[names.length - 1];
 }
+/* A side's name for a one-line caption. Two players get both names; a bigger
+   team gets "Blake's team", because "Blake, Dan, Jason & Daniel" doesn't fit
+   and a bare "Blake" reads as one person rather than a side. */
+function sideName(g, t){
+  const n = (g.teams[t] || []).length;
+  return n > 2 ? teamShort(g, t) + "'s team" : teamLabel(g, t);
+}
 function teamShort(g, t){                       // one name, for tight captions
   const first = (g.teams[t] || [])[0];
   return (P(first) || {}).name || ("Team " + (SIDE_CODES[t] || "?"));
@@ -1259,14 +1266,14 @@ function gameStatusLabel(g){
     let text;
     if (lead.length === started.length){
       text = started.length > 1 ? `All level ${toPar(rel)}` : `${toPar(rel)}`;
-    } else if (lead.length > 1){
-      text = `${lead.map(i => teamShort(g,i)).join(" / ")} tied ${toPar(rel)}`;
+    } else if (lead.length === 2){
+      /* Joined with "and", and with both teams named in full. "Blake / Jake"
+         read as a pairing — they're on different teams. */
+      text = `${sideName(g, lead[0])} and ${sideName(g, lead[1])} tied ${toPar(rel)}`;
+    } else if (lead.length > 2){
+      text = `${lead.length} teams tied ${toPar(rel)}`;
     } else {
-      /* "Blake, Dan, Jason & Daniel" is too long for a card line, so a team of
-         more than two is named by its first player, same as the tie case. */
-      const who = (g.teams[lead[0]] || []).length > 2
-        ? teamShort(g, lead[0]) : teamLabel(g, lead[0]);
-      text = `${who} ${toPar(rel)}, leads by ${margin}`;
+      text = `${sideName(g, lead[0])} ${toPar(rel)}, leads by ${margin}`;
     }
     return { text:`${text} \u00b7 thru ${thru}`, cls:"live" };
   }
@@ -1314,7 +1321,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.0940";
+const BUILD = "2026-10-08.0945";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
