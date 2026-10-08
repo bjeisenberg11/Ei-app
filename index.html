@@ -110,6 +110,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .roundwhen{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.11em;font-size:12px;font-weight:700;color:var(--ink);
   margin:14px 0 7px;padding-left:3px;border-left:3px solid var(--brass)}
+.casual{font-weight:600;letter-spacing:.07em;color:var(--ink-soft);
+  border:1px solid var(--rule);border-radius:3px;padding:0 4px;margin-left:5px}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:16px;line-height:1.1}
 .gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
@@ -738,6 +740,23 @@ let SCHEDULE = [
 const EV = id => SCHEDULE.find(e => e.id === id);
 const ROUNDS = () => SCHEDULE.filter(e => e.type === "ROUND");
 function roundOf(g){ return EV(g.roundId) || ROUNDS()[0]; }
+
+/* Not every tee time is an EI round. 2026 opened with five of the eight playing
+   an extra 18 at Hammock Bay on Thursday morning — a real round on the
+   schedule, scored in the app like any other, but not part of the tournament.
+   The flag lives on the ROUND rather than the game: it's the round that is or
+   isn't sanctioned, and a round can hold more than one game.
+
+   Absent means it counts, so every round written by an older build — and every
+   past year read back out of Firestore — stays in the record untouched. Only
+   `counts === false` is excluded, and only from the things that are a record of
+   the tournament: standings and the pairings matrices.
+
+   Deliberately NOT via roundOf(), whose fallback to the first round would make
+   an orphan game inherit a flag that has nothing to do with it. */
+const roundCounts = r => !r || r.counts !== false;
+const gameCounts = g => roundCounts(EV(g.roundId));
+
 /* A round doesn't need a name — it's "the course, on this day at this time".
    A title is optional and only used if someone bothers to set one. */
 function eventName(e){
@@ -1059,6 +1078,10 @@ function standings(){
   const rec = {};
   PLAYERS.forEach(p => rec[p.id] = { w:0, l:0, t:0, gp:0 });
   GAMES.forEach(g => {
+    /* A casual round's games are scored and shown, they just never reach the
+       record — not as a win, not as a loss, not even as a game played, since
+       counting it as played with no result would drag win% down. */
+    if (!gameCounts(g)) return;
     const out = teamOutcomes(g);
     if (!out) return;
     sides(g).forEach(t => {
@@ -1327,7 +1350,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.1015";
+const BUILD = "2026-10-08.1140";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2448,7 +2471,8 @@ function renderHome(){
       h += `<h2 class="sec">${esc(r.day || "")}</h2>`;
       lastDay = r.day;
     }
-    h += `<p class="roundwhen">${esc(eventName(r))}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}</p>`;
+    h += `<p class="roundwhen">${esc(eventName(r))}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}${
+      roundCounts(r) ? "" : ` <span class="casual">casual</span>`}</p>`;
     const inRound = GAMES.filter(g => g.roundId === r.id);
     if (!inRound.length)
       h += `<p class="note" style="text-align:left;margin:0 0 4px">No games set${
@@ -2513,7 +2537,11 @@ function renderBoard(){
   h += `</tbody></table>
   <textarea id="exportbox" readonly style="display:none"></textarea>
   <div class="footnote">Win 1 point, tie 0.5, loss 0. Games played is shown because the 3v3
-  sits two players out, so records are not expected to be even.<br>
+  sits two players out, so records are not expected to be even.<br>${
+    ROUNDS().some(r => !roundCounts(r))
+      ? `Casual rounds (${ROUNDS().filter(r => !roundCounts(r)).map(r => esc(eventName(r)))
+          .join(", ")}) are left out of this table entirely \u2014 they're on the Games tab and
+         scored normally, they just aren't EI rounds.<br>` : ""}
   <b>Export</b> copies every score entered so far as plain text \u2014 worth doing at the end of
   each round as a backup.</div>`;
   app.innerHTML = h;
@@ -2699,6 +2727,10 @@ function eventCard(e, ro, showDay){
     sub = games.length
       ? games.map(g => LABEL[g.type]).join(" + ")
       : "No games set";
+    /* Say it here as well as in the editor: a casual round that looks identical
+       to a sanctioned one on the schedule is how someone ends up wondering why
+       Thursday morning never showed up on the Board. */
+    if (!roundCounts(e)) sub += " · casual, not in standings";
   } else if (e.location) sub = e.location;
 
   return `<div class="ev ${m.cls}">
@@ -2728,7 +2760,12 @@ function eventCard(e, ro, showDay){
 
    day, time, type, course, detail, player, notes, teamA, teamB
 
-   type:   ROUND | GAME | MEAL | TRAVEL-IN | TRAVEL-OUT | OTHER
+   type:   ROUND | ROUND-CASUAL | GAME | MEAL | TRAVEL-IN | TRAVEL-OUT | OTHER
+
+   ROUND-CASUAL is a round that isn't part of the tournament — its games are
+   scored and shown, but stay out of the standings and the pairings matrix. A
+   separate type rather than a flag in another column, so it reads for itself in
+   the spreadsheet and can't be lost by someone tidying up a stray word.
    detail: the title, or for a GAME row the format
            (BESTBALL / SCRAMBLE4 / SCRAMBLE3 / 40BALL)
    teamA/teamB: names joined with +   e.g.  Blake+Daniel
@@ -2768,6 +2805,8 @@ const CSV_EXAMPLE = [
   csvRow(["Sunday","1:15pm","ROUND","Stonebridge"]),
   csvRow(["Sunday","","GAME","","40BALL","","","Blake","Daniel","Jason","Luke",
           "Dan","Howard","Jake","Adam"]),
+  csvRow(["Monday","8:00am","ROUND-CASUAL","Pine Hollow"]),
+  csvRow(["Monday","","GAME","","BESTBALL","","","Blake","Dan","","","Jake","Adam"]),
   csvRow(["Sunday","8:45pm","TRAVEL-OUT","","Delta 1190","Jake","ORD"])
 ].join("\n") + "\n";
 
@@ -2827,11 +2866,16 @@ function parseCSV(text){
       errors.push(`Line ${n}: couldn't read the time "${time}". Try 8:10am or 1:15pm.`);
     }
 
-    if (type === "ROUND"){
+    if (type === "ROUND" || type === "ROUND-CASUAL"){
       const c = courseByName(course);
       if (!c) errors.push(`Line ${n}: no course called "${course}". Add it on the Field tab first.`);
+      /* Notes on a ROUND row used to be read and thrown away, so "two tee times,
+         1:03 and 1:12" survived the spreadsheet and then vanished — the round
+         editor has had a Notes field all along. Same round-trip gap the counts
+         flag would have had. */
       currentRound = { id: uid("r"), type:"ROUND", day: day || days[0], time: t || null,
-                       courseId: c ? c.id : (COURSES[0]||{}).id, mode:"RELATIVE" };
+                       courseId: c ? c.id : (COURSES[0]||{}).id, mode:"RELATIVE",
+                       counts: type === "ROUND", notes };
       events.push(currentRound);
       return;
     }
@@ -2899,8 +2943,9 @@ function scheduleToCSV(){
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
   ordered.forEach(e => {
     if (e.type === "ROUND"){
-      rows.push(csvRow([e.day, e.time?fmtTime(e.time):"", "ROUND",
-        esc2((C(e.courseId)||{}).name)]));
+      rows.push(csvRow([e.day, e.time?fmtTime(e.time):"",
+        roundCounts(e) ? "ROUND" : "ROUND-CASUAL",
+        esc2((C(e.courseId)||{}).name), "", "", esc2(e.notes)]));
       GAMES.filter(g => g.roundId === e.id).forEach(g => {
         const cells = t => { const a = (g.teams[t]||[]).map(id => esc2((P(id)||{}).name));
           while (a.length < CSV_SIDE_COLS) a.push(""); return a.slice(0, CSV_SIDE_COLS); };
@@ -3179,7 +3224,16 @@ function renderEventEditor(h, id){
     <div class="acts">
       <button class="btn ${e.mode!=="FULL"?"":"ghost"}" data-evmode="RELATIVE">Relative</button>
       <button class="btn ${e.mode==="FULL"?"":"ghost"}" data-evmode="FULL">Full</button>
-    </div>`;
+    </div>
+    <label>Counts toward the EI</label>
+    <div class="acts">
+      <button class="btn ${roundCounts(e)?"":"ghost"}" data-evcounts="1">Sanctioned</button>
+      <button class="btn ${roundCounts(e)?"ghost":""}" data-evcounts="0">Casual</button>
+    </div>
+    <p class="hint">${roundCounts(e)
+      ? "Results here go into the standings and the pairings matrix."
+      : "Scored and shown like any other round, but kept out of the standings and "
+        + "the pairings matrix — for an extra 18 that isn't part of the tournament."}</p>`;
   }
 
   h += `</div>`;
@@ -3281,6 +3335,11 @@ function pairMatrix(){
     PLAYERS.forEach(b => { withC[a.id][b.id] = 0; agC[a.id][b.id] = 0; grpC[a.id][b.id] = 0; }); });
 
   GAMES.forEach(g => {
+    /* Same rule as the leaderboard: a casual round is not a record of the
+       tournament, so it doesn't shape who still needs to be paired with whom.
+       Without this, five guys playing an extra 18 would read as the field
+       being well mixed. */
+    if (!gameCounts(g)) return;
     const teams = sides(g).map(i => g.teams[i] || []);
     const everyone = [].concat(...teams);
     everyone.forEach(id => { if (played[id] != null) played[id]++; });
@@ -3374,7 +3433,10 @@ function renderPairs(){
     dark is more often than average. Worth settling before the weekend starts.<br>
     A round where all eight go out together is left out of <b>same foursome</b> \u2014 it would
     add one to every pair at once, which says nothing about how the field is mixed. Team-mates
-    and opponents from that round still count.</div>`;
+    and opponents from that round still count.${
+      ROUNDS().some(r => !roundCounts(r))
+        ? `<br>Casual rounds don't appear anywhere here \u2014 they aren't a record of the
+           tournament, so they shouldn't make the field look better mixed than it is.` : ""}</div>`;
   app.innerHTML = h;
 }
 
@@ -4475,6 +4537,13 @@ function handleClick(el){
   if (el.dataset.evpid){ EV(editEvent).pid = el.dataset.evpid; queueConfig(); render(); return; }
   if (el.dataset.evdir){ EV(editEvent).dir = el.dataset.evdir; queueConfig(); render(); return; }
   if (el.dataset.evmode){ EV(editEvent).mode = el.dataset.evmode; queueConfig(); render(); return; }
+  /* Stored as an explicit false rather than deleted, so the choice survives a
+     round-trip through Firestore — and never as undefined, which Firestore
+     rejects outright. */
+  if (el.dataset.evcounts){
+    EV(editEvent).counts = el.dataset.evcounts === "1";
+    queueConfig(); render(); return;
+  }
 
   if (el.dataset.addgame){
     const [rid, type] = el.dataset.addgame.split(":");

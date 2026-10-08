@@ -30,11 +30,32 @@ The app covers:
   calculated per course and tee. A player's tee is stored per course. A round's
   `mode` is either `RELATIVE` (strokes off the lowest player in the game) or
   `FULL`.
+- **Sanctioned rounds**: a round carries `counts`. `counts === false` means it's
+  on the schedule and scored like any other, but **excluded from `standings()`
+  and `pairMatrix()`** — not as a win, not as a loss, not even as a game played,
+  since counting a played game with no result would drag win% down. 2026's
+  Thursday-morning fivesome at Hammock Bay is the case it exists for.
+  - **Absent means sanctioned** (`roundCounts = r => !r || r.counts !== false`),
+    so rounds from older builds and every past year read out of Firestore keep
+    their records. That's why there was no `SCHEMA` bump.
+  - Use `gameCounts(g)`, which resolves the round with `EV(g.roundId)` and
+    **not** `roundOf(g)` — the latter falls back to `ROUNDS()[0]`, which would
+    make an orphan game inherit whatever flag the first round happens to have.
+  - The flag is on the **round**, never the game: a round can hold several games
+    and it's the round that is or isn't part of the tournament.
 - **Board tab**: the leaderboard for the year (W/L/T, ranked on points) and
   a **History** view. History combines years the app scored with years from
   before the app (`HISTORY_SEED`) and ranks all-time records by win percentage.
+  History needs no special casing for the above: `recordsFor` runs `standings()`
+  inside `withYearData`, which swaps `SCHEDULE` in, so the round lookup resolves
+  against the right year.
 - **Schedule tab**: the weekend itinerary: travel, meals, rounds (`type:"ROUND"`)
-  and other events. Admins can edit it or bulk-import it as CSV.
+  and other events. Admins can edit it or bulk-import it as CSV. The CSV `type`
+  column takes `ROUND-CASUAL` for an unsanctioned round — a separate type rather
+  than a flag in another column, so it reads for itself in the spreadsheet.
+  Anything a ROUND row carries has to be written by **both** `parseCSV` and
+  `scheduleToCSV` or it's silently lost on a round trip; `notes` was dropped that
+  way for months (R109).
 - **Field tab**: players, handicap indexes, tees, courses, pairings matrix and
   admin setup.
 - **Admin mode**: unlocked with `ADMIN_CODE` (`"eagle"`, in the page source).
@@ -211,7 +232,12 @@ the dynamic `import()` fails and the app stays local), clicks through every
 screen, checks the scoring maths, and has one regression test per bug.
 The rule written in the file is that every bug gets a test on the same day.
 
-Current status against `index.html`: **138 passed, 0 failed**. The suite is
+Test numbers are **not** in file order — R65–R74 sit after R83–R100 — so take the
+next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
+tail -1` rather than from whatever precedes your insertion point. Two batches
+have collided this way already.
+
+Current status against `index.html`: **148 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

@@ -2078,6 +2078,129 @@ t("R74 one way to add to a day, not two that lead to the same screen", () => {
   ok(adds.length, "there should be a way to add something to a day");
 });
 
+section("casual rounds — on the schedule, out of the record");
+
+/* A round that isn't part of the tournament. Built on the existing four-team
+   helper so the game itself is known-finished and its outcomes already proved
+   elsewhere — the only thing under test here is whether it reaches the record. */
+function casualRoundGame(counts){
+  const w = dom.window;
+  w.eval(`GAMES.length = 0;
+    ROUNDS()[0].counts = ${counts === undefined ? "undefined" : JSON.stringify(counts)};
+    if (${counts === undefined}) delete ROUNDS()[0].counts;`);
+  fourTeamGame([70,72,74,76]);
+}
+const recOf = () => {
+  const by = {};
+  JSON.parse(dom.window.eval("JSON.stringify(standings())")).forEach(r => by[r.name] = r);
+  return by;
+};
+
+t("R101 a casual round reaches nobody's record", () => isolate(() => {
+  casualRoundGame(false);
+  const by = recOf();
+  ["Blake","Dan","Howard","Luke","Jake","Adam","Jason","Daniel"].forEach(n => {
+    eq(by[n].w, 0, n + " should have no win from a casual round:");
+    eq(by[n].l, 0, n + " should have no loss from a casual round:");
+    eq(by[n].t, 0, n + " should have no tie from a casual round:");
+    /* The one that matters most: counting it as played with no result would
+       quietly divide everyone's win% by a bigger number. */
+    eq(by[n].gp, 0, n + " should not even have a game played:");
+  });
+  eq(by["Blake"].pts, 0, "and no points:");
+}));
+
+t("R102 the same round sanctioned does reach the record", () => isolate(() => {
+  casualRoundGame(true);
+  const by = recOf();
+  eq(by["Blake"].w, 1, "sanctioned, so the win counts:");
+  eq(by["Blake"].gp, 1, "and the game played counts:");
+  eq(by["Jake"].l, 1, "and the bottom half takes the loss:");
+}));
+
+t("R103 a round with no flag at all counts — older builds wrote none", () => isolate(() => {
+  casualRoundGame(undefined);
+  ok(dom.window.eval("ROUNDS()[0].counts === undefined"), "the flag really is absent");
+  eq(recOf()["Blake"].gp, 1, "absent must mean sanctioned, not casual:");
+}));
+
+t("R104 a casual round is out of all three pairings tables", () => isolate(() => {
+  const w = dom.window;
+  casualRoundGame(false);
+  const m = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
+  eq(m.played["p1"], 0, "Blake played no counting game:");
+  eq(m.withC["p1"]["p2"], 0, "team-mates from a casual round don't count:");
+  eq(m.agC["p1"]["p3"], 0, "nor do opponents:");
+  eq(m.grpC["p1"]["p2"], 0, "nor the foursome:");
+
+  /* Same game, sanctioned — proves the zeros above came from the flag and not
+     from the game being unreadable. */
+  w.eval("ROUNDS()[0].counts = true;");
+  const m2 = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
+  eq(m2.withC["p1"]["p2"], 1, "sanctioned, so the pair counts:");
+  eq(m2.played["p1"], 1, "and the game is played:");
+}));
+
+t("R105 an orphan game doesn't inherit the first round's flag", () => isolate(() => {
+  /* gameCounts uses EV() directly rather than roundOf(), whose fallback to
+     ROUNDS()[0] would have made a game with no round casual the moment the
+     Thursday morning round was marked casual. */
+  const w = dom.window;
+  casualRoundGame(false);
+  w.eval('GAMES.find(g => g.id === "g2x4").roundId = "nope";');
+  eq(recOf()["Blake"].gp, 1, "an orphan counts — it has no round to be casual:");
+}));
+
+t("R106 the toggle is in the round editor and both ways work", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`isAdmin = true; ROUNDS()[0].counts = true;
+    editEvent = ROUNDS()[0].id; view.tab = "sched"; view.gameId = null; render();`);
+  const off = document.querySelector('[data-evcounts="0"]');
+  const on  = document.querySelector('[data-evcounts="1"]');
+  ok(off && on, "both buttons should be in the round editor");
+  click(off);
+  eq(w.eval("ROUNDS()[0].counts"), false, "tapping Casual should set it:");
+  w.eval(`editEvent = ROUNDS()[0].id; view.tab = "sched"; render();`);
+  click(document.querySelector('[data-evcounts="1"]'));
+  eq(w.eval("ROUNDS()[0].counts"), true, "and tapping Sanctioned should set it back:");
+  /* false, never undefined — Firestore rejects undefined outright. */
+  ok(w.eval('typeof ROUNDS()[0].counts === "boolean"'), "stored as a real boolean");
+}));
+
+t("R107 a casual round survives the CSV round trip", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`ROUNDS()[0].counts = false; ROUNDS()[1].counts = true;`);
+  const csv = w.eval("scheduleToCSV()");
+  ok(/(^|\n)[^,\n]*,[^,\n]*,ROUND-CASUAL,/.test(csv), "the export should say ROUND-CASUAL");
+  ok(/(^|\n)[^,\n]*,[^,\n]*,ROUND,/.test(csv), "and a sanctioned round should still say ROUND");
+  const plan = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv)}))`));
+  eq(plan.errors.length, 0, "a round trip should import cleanly: " + plan.errors.join(" | "));
+  const rounds = plan.events.filter(e => e.type === "ROUND");
+  eq(rounds.filter(r => r.counts === false).length, 1, "one casual round should come back:");
+  ok(rounds.every(r => typeof r.counts === "boolean"),
+     "and every imported round should carry an explicit boolean");
+}));
+
+t("R109 a round's notes survive the CSV round trip too", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`ROUNDS()[0].notes = "two tee times 1:03 and 1:12";`);
+  const csv = w.eval("scheduleToCSV()");
+  ok(/two tee times 1:03 and 1:12/.test(csv), "the export should carry the note");
+  const plan = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv)}))`));
+  eq(plan.errors.length, 0, "and still import cleanly: " + plan.errors.join(" | "));
+  eq(plan.events.filter(e => e.type === "ROUND")[0].notes,
+     "two tee times 1:03 and 1:12", "and come back on the round:");
+}));
+
+t("R108 the casual flag is visible on the schedule, not only in the editor", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`isAdmin = true; ROUNDS()[0].counts = false;
+    editEvent = null; view.gameId = null; view.tab = "sched"; schedMode = "timeline"; render();`);
+  ok(/casual/i.test(appHTML()), "the schedule should say so somewhere");
+  w.eval('view.tab = "home"; homeShowAll = true; render();');
+  ok(/casual/i.test(appHTML()), "and so should the Games tab");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
