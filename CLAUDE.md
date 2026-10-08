@@ -17,6 +17,13 @@ The app covers:
     `3&2`, dormie, and so on).
   - `SCRAMBLE4` / `SCRAMBLE3`: 4v4 and 3v3 scrambles, **stroke play** on
     one team score per hole, with no handicaps.
+  - `SCRAMBLE2X4`: 2v2v2v2 scramble. **Four** teams of two, stroke play, no
+    handicaps. The **top two teams win and the bottom two lose**; a tie
+    straddling that line is a tie for everyone in it, because second and third
+    can't be honestly separated. `g.oneGroup` records whether all eight played
+    as one group — if so the round is left out of the "same foursome" pairings
+    column, since adding one to all 28 pairs says nothing about how the field
+    is mixed.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
     18 holes. Selections are hidden from the other team until they are locked.
 - **Handicaps**: course handicap = `index × slope/113 + (rating − par)`,
@@ -48,7 +55,9 @@ static HTML file.
 | `ei-tests.js` | jsdom test suite: smoke, scoring logic and one regression test per past bug. |
 | `apple-touch-icon.png` | Home-screen icon. It has to be a real file because iOS ignores inline icons. |
 | `og-image.png` | Link-preview image, referenced by absolute GitHub Pages URL in the `og:`/`twitter:` meta tags. |
-| `ei-prototype.html`, `Index.html.html` | An older, byte-identical, pre-Firebase prototype (in-memory only). Not served as the app. Don't edit these by mistake for `index.html`. |
+
+(`ei-prototype.html` and `Index.html.html` were stale pre-Firebase copies and
+have been deleted.)
 
 All files have been committed as "Add files via upload", so the code has been
 edited elsewhere and uploaded through the GitHub web UI.
@@ -108,10 +117,16 @@ private group with no personal data. Don't present the admin code as security.
 tournaments/_index                 { years: ["2025","2026"], live: "2026" }   year registry
 tournaments/_history               { years: { "2021": { rows:[{name,w,l,t,gp}] }, ... } }  pre-app records
 tournaments/ei-{YEAR}              config: { schema, appBuild, players, courses, schedule, days }
-tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, hidden?, holes:{ "0":{...}, ..., "17":{...} } }
+tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, hidden?, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
 ```
 
-Each hole is `{ scores:{pid: n|"PU"}, teamScore:{0,1}, conceded, selected:{0:[],1:[]}, locked:{0,1} }`.
+Each hole is `{ scores:{pid: n|"PU"}, teamScore:{0..3}, conceded, selected:{0:[],1:[]}, locked:{0..3} }`.
+
+**Sides are not always two.** `SIDES[g.type]` gives the count, and
+`sides(g)` / `sideCount(g)` / `isMulti(g)` are the only correct way to iterate
+them — `teams` runs 0..3 for a `SCRAMBLE2X4`. Most bugs in this app's history
+are some helper hardcoding `[0,1]` or `locked[0] && locked[1]`; before writing
+either, check whether a four-team game can reach that line.
 
 **Shape rules that are easy to break and are covered by tests:**
 
@@ -143,7 +158,9 @@ Each hole is `{ scores:{pid: n|"PU"}, teamScore:{0,1}, conceded, selected:{0:[],
    `getDocsFromServer` reads, because Firestore will otherwise serve a stale
    cache indefinitely.
 6. A transport that worked and supports offline is remembered in
-   `localStorage["ei-transport"]`.
+   `localStorage["ei-transport"]`. Only transports that keep offline queueing
+   are remembered — remembering the no-cache fallback once lost offline support
+   permanently.
 7. Every attempt has a generation number (`gen`). Callbacks from an older
    attempt are ignored.
 
@@ -194,10 +211,40 @@ the dynamic `import()` fails and the app stays local), clicks through every
 screen, checks the scoring maths, and has one regression test per bug.
 The rule written in the file is that every bug gets a test on the same day.
 
-Current status against `index.html`: **75 passed, 11 failed**. The failures are
-UI-drift tests (course switcher, course delete, roster picker, clear stray
-games, and so on) whose selectors no longer match the current markup. Don't
-assume a red run was caused by your change; compare it against this baseline.
+Current status against `index.html`: **138 passed, 0 failed**. The suite is
+green — a red run means your change broke something, not drift. If you change
+markup a test selects on, fix the test in the same commit.
+
+Beyond the per-bug regressions there are a few structural guards worth knowing
+about, because they fail for reasons that aren't about the code you just wrote:
+
+- **R69** fails if a test leaves the tournament a different shape than it found
+  it. Wrap anything that replaces `SCHEDULE`/`GAMES` in `isolate()`. A test
+  that forgot this once left every later test running against a one-game
+  tournament, which is how a batch of deletion bugs got through a green suite.
+- **R49** fails if any function is defined twice — three were, 105 identical
+  lines apart, and the later definition silently won.
+- **R31** fails if a click handler has no markup that can trigger it.
+- `t()` is synchronous. Anything that awaits goes through `ta()`, or its
+  assertions run after the test has already been counted as passed.
+
+## UI decisions that look odd and aren't
+
+Three things in the view layer are deliberate and will look like mistakes:
+
+- **The course picker is drawn with the app's own buttons, not a `<select>`.**
+  Two attempts at a native select — one with `appearance:none` for a custom
+  arrow, one with the system control untouched — both rendered the chosen
+  course as an empty box on the owner's iPhone. R60 fails if a `<select class="sel">`
+  comes back. The current course name is also printed in the heading so it is
+  readable whatever a form control does.
+- **Time is `<input type="time">`.** That one *is* native, on purpose: it gives
+  the iPhone wheel, every minute, and its value is already the `"HH:MM"` the
+  schedule stores. The field does **not** re-render while it's being used —
+  redrawing mid-spin shuts the wheel.
+- **Long screens are collapsible sections** (`panel()`, `openPanel`), one open
+  at a time per screen. The Field tab was 66 input fields on one scroll. Tests
+  that need a control inside one call `openSection("f:card")` first.
 
 ## Conventions
 
@@ -211,3 +258,11 @@ assume a red run was caused by your change; compare it against this baseline.
   `migrateLoaded` step whenever the stored shape changes.
 - Never write code that recreates deleted data (games, rounds) or overwrites
   `_history` or an existing config wholesale. Several past bugs were exactly that.
+- Deleting is asynchronous and snapshots keep arriving, so `removeGame` keeps a
+  tombstone in `deadGames` for two minutes and both the listener and
+  `kickGames` filter against it. Without that a snapshot sent before the delete
+  landed puts the game straight back.
+- When you fix a branch that was wrong for one game type, grep for every other
+  place that branches the same way. "Why do both scrambles show 0/40" was fixed
+  once in the scorecard header and left unfixed in the card label for weeks,
+  because only the reported screen was looked at.
