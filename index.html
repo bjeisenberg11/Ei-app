@@ -165,8 +165,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
    screen outright. At 24px it was competing with four gross scores and losing;
    "the red numbers aren't really saying anything" was that, not the colour. */
 .banner .st{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:-0.01em;font-size:44px;line-height:0.98}
-.banner .st.small{font-size:26px;line-height:1.05;letter-spacing:.02em}
+  letter-spacing:0;font-size:30px;line-height:1.02}
+.banner .st.small{font-size:22px;line-height:1.1;letter-spacing:.02em}
 .banner .thru{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.12em;font-size:11px;font-weight:600;color:var(--ink-soft);margin-top:5px}
 .banner.closed{background:var(--ink);color:var(--paper)}
@@ -1392,7 +1392,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.2300";
+const BUILD = "2026-10-08.2315";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4140,11 +4140,15 @@ function renderPad(g, h, hardLocked){
   const e = currentEntry(g, h);
   if (!e) return "";
   const par = courseOf(g).holes[h].par;
-  /* Floor of 2, not 1. On a par 3 that's 2-6 rather than 1-5: a six on a short
-     hole happens most rounds, an ace has happened never. One goes through Any
-     number on the day it matters. */
+  /* Eagle up to triple bogey, on every hole. A triple is the score that
+     actually needs a key — it happens to everyone — and stopping at double
+     meant the most common bad hole fell through to Any number.
+     Floored at 2: a six on a par 3 happens most rounds, an ace has happened
+     never, so one goes through Any number on the day it matters. That makes a
+     par 3 five keys and everything else six. */
   const lo = Math.max(2, par - 2);
-  const keys = [lo, lo+1, lo+2, lo+3, lo+4];
+  const keys = [];
+  for (let n = lo; n <= par + 3; n++) keys.push(n);
   const isPU = e.pid && g.holes[h].scores[e.pid] === "PU";
 
   return `<div class="pad"><div class="pad-in">
@@ -4152,7 +4156,7 @@ function renderPad(g, h, hardLocked){
       <span class="pad-who">${esc(e.label)}</span>
       ${e.pid ? `<button class="pu ${isPU?"on":""}" data-pu="${e.pid}">Picked up</button>` : ""}
     </div>
-    <div class="pad-keys">
+    <div class="pad-keys" style="grid-template-columns:repeat(${keys.length},minmax(0,1fr))">
       ${keys.map(n => `<button data-setscore="${e.key}:${n}"
         class="${n < par ? "under" : ""} ${e.val === n ? "on" : ""}">${n}</button>`).join("")}
     </div>

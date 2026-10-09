@@ -38,9 +38,11 @@ The app covers:
   - `view.entry` is cleared in **`render()`** when the game or hole changes,
     against a module-level `padAt`. Nine call sites change a hole or a game, and
     clearing it at each is exactly how this app has produced bugs before.
-  - Keys run `max(2, par−2)` to `+4`, so a par 3 offers 2–6 — a six on a short
-    hole happens most rounds, an ace has happened never. `Any number` covers
-    the rest.
+  - Keys run `max(2, par−2)` to `par+3`: eagle through **triple bogey**, on
+    every hole. A triple is the score that most needs a key, and stopping at
+    double meant the commonest bad hole fell through to `Any number`. The floor
+    of 2 makes a par 3 five keys (2–6) and everything else six, so the grid's
+    column count is set per hole — an ace goes through `Any number`.
   - The pad sets `body.scoring`, which hides `.tabs` and makes room at the
     bottom. One class drives both halves so they can't get out of step, and
     `render()` removes it whenever the view isn't a game — Back in the header is

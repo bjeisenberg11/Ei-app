@@ -2261,9 +2261,10 @@ t("R111 the pad keys are centred on this hole's par", () => isolate(() => {
   const gid = openBestBall(0);
   const par = w.eval(`courseOf(GAMES.find(g=>g.id==="${gid}")).holes[0].par`);
   const keys = padKeys();
-  eq(keys.length, 5, "five keys:");
   eq(keys[0], Math.max(2, par - 2), "the lowest key should be two under par, floored at 2:");
-  eq(keys[4], Math.max(2, par - 2) + 4, "and they should run consecutively:");
+  eq(keys[keys.length - 1], par + 3,
+     "a triple bogey must be reachable on every hole, not just a double:");
+  eq(keys.join(","), keys.map((_, i) => keys[0] + i).join(","), "and they run consecutively:");
   ok(keys.includes(par), "par itself has to be on the pad");
   ok(!keys.includes(1), "a hole in one doesn't earn a key on every par 3");
 }));
