@@ -168,6 +168,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   width:44px;text-align:right}
 .stot{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;
   color:var(--ink-soft);width:28px;text-align:right}
+/* 40ball totals run to three digits — a 28px column clipped them. */
+.stot.wide{width:38px}
 .banner.closed .stot{color:#B9CDBF}
 .spar.under{color:var(--pencil)}
 .banner.closed .spar.under{color:#E8A79A}
@@ -266,6 +268,9 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .cor-row .par.over{color:var(--ink-faint)}
 .team-score .par{font-size:12px}
 .team-score .par.under{color:var(--pencil)}
+/* 40ball's team head leads with to par, so that one is sized up rather than
+   left at the 12px a trailing figure gets. */
+.team-score .parlead{font-size:18px;font-weight:700}
 .bar{height:9px;background:var(--paper-3);border:1px solid var(--rule);position:relative;overflow:hidden}
 .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ink)}
 .bar i.tight{background:var(--pencil)}
@@ -1309,9 +1314,21 @@ function gameStatusLabel(g){
 
   const la = fbHolesLocked(g,0), lb = fbHolesLocked(g,1);
   if (la + lb === 0) return { text:"Not started", cls:"" };
-  const r0 = fbTotal(g,0) - fbParBasis(g,0), r1 = fbTotal(g,1) - fbParBasis(g,1);
-  return { text:`${fbTotal(g,0)} (${toPar(r0)}) \u2013 ${fbTotal(g,1)} (${toPar(r1)}) \u00b7 ` +
-                `${fbSpent(g,0)}/40 & ${fbSpent(g,1)}/40 spent`, cls:"live" };
+  /* Reads the way the stroke-play label does: name whoever's ahead and say by
+     how much, in net to par. Two bare totals said nothing without knowing how
+     many scores each side had spent to get there. */
+  const rel = [0,1].map(t => fbTotal(g,t) - fbParBasis(g,t));
+  const started = [0,1].filter(t => fbSpent(g,t) > 0);
+  let text;
+  if (started.length === 1){
+    text = `${sideName(g, started[0])} ${toPar(rel[started[0]])}`;
+  } else if (rel[0] === rel[1]){
+    text = `All level ${toPar(rel[0])}`;
+  } else {
+    const lead = rel[0] < rel[1] ? 0 : 1;
+    text = `${sideName(g, lead)} ${toPar(rel[lead])}, leads by ${Math.abs(rel[0] - rel[1])}`;
+  }
+  return { text:`${text} \u00b7 ${fbSpent(g,0)}/40 & ${fbSpent(g,1)}/40`, cls:"live" };
 }
 /* which hole to land on when jumping into a game — the next one needing action */
 function currentHoleFor(g){
@@ -1350,7 +1367,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.2330";
+const BUILD = "2026-10-08.2345";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3718,14 +3735,23 @@ function renderGame(){
         isMulti(g) ? " \u00b7 top two win" : ""}</div>
     </div>`;
   } else {
+    /* Same shape as stroke play: net to par leads, the gross total trails it
+       smaller. Here it isn't only a matter of emphasis — mid-round the two
+       teams have usually spent different numbers of scores, so "142 — 144"
+       compares unlike things. Net to par is measured against the par of the
+       holes each score actually came from, so it's the one honest read until
+       both sides have spent all 40. */
     const fs = fbState(g);
-    const rel0 = fbTotal(g,0) - fbParBasis(g,0), rel1 = fbTotal(g,1) - fbParBasis(g,1);
+    const rel = [0,1].map(t => fbTotal(g,t) - fbParBasis(g,t));
     out += `<div class="banner ${fs.done?"closed":""}">
-      <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
-        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
-        : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
-      <div class="thru">${esc(teamLabel(g,0))} ${fbSpent(g,0)}/40 (${toPar(rel0)}) ·
-        ${esc(teamLabel(g,1))} ${fbSpent(g,1)}/40 (${toPar(rel1)})</div>
+      ${fs.done ? `<div class="st">${fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
+        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`}</div>` : ""}
+      ${[0,1].map(t => `<div class="strokerow">
+        <span class="sname">${esc(teamLabel(g,t))}</span>
+        <span class="spar ${parClass(rel[t])}">${fbSpent(g,t) ? toPar(rel[t]) : ""}</span>
+        <span class="stot wide">${fbTotal(g,t)}</span>
+      </div>`).join("")}
+      <div class="thru">40ball · ${fbSpent(g,0)}/40 and ${fbSpent(g,1)}/40 spent</div>
     </div>`;
   }
 
@@ -3982,8 +4008,11 @@ function renderTeam(g, t, h, hardLocked){
             `${tot}</span>`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   } else {
+    /* To par first here too, with the gross total and the budget trailing. */
     const relT = fbTotal(g,t) - fbParBasis(g,t);
-    head += `${fbTotal(g,t)} <span class="par ${parClass(relT)}">${toPar(relT)}</span> \u00b7 ${fbSpent(g,t)}/40`;
+    head += `${fbSpent(g,t)
+      ? `<span class="par parlead ${parClass(relT)}">${toPar(relT)}</span>` : "\u2014"} ` +
+      `<span class="tsub">${fbTotal(g,t)} \u00b7 ${fbSpent(g,t)}/40</span>`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   }
   head += `</span></div>`;

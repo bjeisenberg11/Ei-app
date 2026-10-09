@@ -2201,6 +2201,84 @@ t("R108 the casual flag is visible on the schedule, not only in the editor", () 
   ok(/casual/i.test(appHTML()), "and so should the Games tab");
 }));
 
+section("40ball reads in net to par, like stroke play");
+
+/* A 40ball where team 0 spends two scores on hole 1 and team 1 spends three.
+   The exact figures depend on who gets a stroke there, so the tests read them
+   back rather than assuming — the first draft hard-coded them, forgot the
+   handicaps and failed on numbers that were correct. What matters is that the
+   two sides have spent DIFFERENT numbers of scores, which is the case a bare
+   total gets wrong. */
+function fortyBallState(){
+  const w = dom.window;
+  return w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    g.holes = blankHoles();
+    const par = courseOf(g).holes[0].par;
+    const a = g.teams[0], b = g.teams[1];
+    g.holes[0].scores[a[0]] = par - 1; g.holes[0].scores[a[1]] = par;
+    g.holes[0].selected[0] = [a[0], a[1]];
+    g.holes[0].locked[0] = true;
+    g.holes[0].scores[b[0]] = par; g.holes[0].scores[b[1]] = par;
+    g.holes[0].scores[b[2]] = par + 1;
+    g.holes[0].selected[1] = [b[0], b[1], b[2]];
+    g.holes[0].locked[1] = true;
+    isAdmin = true; view.gameId = g.id; view.hole = 0; render();
+    return JSON.stringify({ id: g.id,
+      rel0: fbTotal(g,0) - fbParBasis(g,0), rel1: fbTotal(g,1) - fbParBasis(g,1),
+      tot0: fbTotal(g,0), tot1: fbTotal(g,1),
+      spent0: fbSpent(g,0), spent1: fbSpent(g,1) });
+  })()`);
+}
+
+t("R110 the 40ball banner leads with to par and trails the gross total", () => isolate(() => {
+  const w = dom.window;
+  const s = JSON.parse(fortyBallState());
+  eq(s.spent0, 2, "A spent two scores:");
+  eq(s.spent1, 3, "B spent three, so their raw totals are not comparable:");
+  const rows = [...document.querySelectorAll(".banner .strokerow")];
+  eq(rows.length, 2, "one row per side, same shape as stroke play:");
+  /* Order within the row is the whole ask: name, to par, then the total. */
+  const cls = [...rows[0].children].map(c => c.className.split(" ")[0]);
+  eq(cls.join(","), "sname,spar,stot", "to par must come before the gross total:");
+  eq(rows[0].querySelector(".spar").textContent.trim(), w.eval(`toPar(${s.rel0})`),
+     "A's figure should be its net to par:");
+  eq(rows[0].querySelector(".stot").textContent.trim(), String(s.tot0),
+     "with the gross total trailing it:");
+  eq(rows[0].querySelector(".spar").className.split(" ")[1], w.eval(`parClass(${s.rel0})`),
+     "and coloured by whether that's under or over:");
+}));
+
+t("R111 the 40ball card label names the leader in to par, not two totals", () => isolate(() => {
+  const w = dom.window;
+  const s = JSON.parse(fortyBallState());
+  const lab = JSON.parse(w.eval(
+    `JSON.stringify(gameStatusLabel(GAMES.find(g=>g.id==="${s.id}")))`));
+  const lead = s.rel0 <= s.rel1 ? 0 : 1;
+  const relLead = w.eval(`toPar(${lead === 0 ? s.rel0 : s.rel1})`);
+  ok(lab.text.indexOf(relLead) !== -1,
+     "the leader's to par should be in the label: " + lab.text);
+  if (s.rel0 !== s.rel1)
+    ok(lab.text.indexOf("leads by " + Math.abs(s.rel0 - s.rel1)) !== -1,
+       "and the margin, measured in to par: " + lab.text);
+  ok(!new RegExp(`${s.tot0}\\s*\\(`).test(lab.text),
+     "the old 'total (to par)' shape should be gone: " + lab.text);
+  ok(/40/.test(lab.text), "the budget still belongs in the label: " + lab.text);
+}));
+
+t("R112 a 40ball team head leads with to par as well", () => isolate(() => {
+  const w = dom.window;
+  const s = JSON.parse(fortyBallState());
+  const head = document.querySelector(".team .team-score");
+  ok(head, "no team head on the 40ball card");
+  const lead = head.querySelector(".parlead");
+  ok(lead, "the to-par figure should be the sized-up one");
+  eq(lead.textContent.trim(), w.eval(`toPar(${s.rel0})`), "and it should be A's net to par:");
+  ok(head.querySelector(".tsub"), "the gross total and budget trail it");
+  ok(head.textContent.indexOf(w.eval(`toPar(${s.rel0})`)) < head.textContent.indexOf("/40"),
+     "to par has to come before the budget in the head too");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
