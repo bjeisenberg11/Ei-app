@@ -26,27 +26,6 @@ The app covers:
     is mixed.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
     18 holes. Selections are hidden from the other team until they are locked.
-- **The score pad**: scores are entered from a pad docked where the tab bar is,
-  not from `−`/`+` steppers (gone; a 7 on a par 5 was five taps on a moving
-  cart). Tapping a player's `.chipscore` aims the pad at them; a pad key writes
-  the number and **auto-advances** to the next empty entry on the same side,
-  then the other side. Tapping the key a score is already on clears it.
-  - `entryList(g, h)` is the ordered list of things that take a score on this
-    hole — one per side for a scramble (`ts-<t>`), one per player otherwise
-    (`sc-<id>`). `currentEntry` / `advanceEntry` move the aim; `view.entry`
-    holds it and is view state only, never stored or synced.
-  - `view.entry` is cleared in **`render()`** when the game or hole changes,
-    against a module-level `padAt`. Nine call sites change a hole or a game, and
-    clearing it at each is exactly how this app has produced bugs before.
-  - Keys run `max(2, par−2)` to `par+3`: eagle through **triple bogey**, on
-    every hole. A triple is the score that most needs a key, and stopping at
-    double meant the commonest bad hole fell through to `Any number`. The floor
-    of 2 makes a par 3 five keys (2–6) and everything else six, so the grid's
-    column count is set per hole — an ace goes through `Any number`.
-  - The pad sets `body.scoring`, which hides `.tabs` and makes room at the
-    bottom. One class drives both halves so they can't get out of step, and
-    `render()` removes it whenever the view isn't a game — Back in the header is
-    how you leave.
 - **Handicaps**: course handicap = `index × slope/113 + (rating − par)`,
   calculated per course and tee. A player's tee is stored per course. A round's
   `mode` is either `RELATIVE` (strokes off the lowest player in the game) or
@@ -170,12 +149,6 @@ them — `teams` runs 0..3 for a `SCRAMBLE2X4`. Most bugs in this app's history
 are some helper hardcoding `[0,1]` or `locked[0] && locked[1]`; before writing
 either, check whether a four-team game can reach that line.
 
-Use **`sideOfPlayer(g, id)`** to find a player's side, never
-`g.teams[0].includes(id) ? 0 : 1` — that was written twice, answers 1 for a
-player who isn't in the game at all, and would answer 1 for someone on side C.
-Only BESTBALL and FORTYBALL score individuals today, so neither copy was wrong
-yet; R118 stops it being wrong the first time something else does.
-
 **Shape rules that are easy to break and are covered by tests:**
 
 - `holes` and `teams` are **maps keyed by index**, not arrays. Firestore rejects
@@ -264,13 +237,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Tests that enter a score go through the **`padScore(key, n)`** helper (tap the
-chip, tap the key) rather than clicking a stepper. They must also wipe the hole
-first — the early smoke tests aren't isolated and leave scores on `g1` hole 0,
-which made the pad start somewhere other than the top of the card and quietly
-broke two assertions about where it starts. `openBestBall()` does this.
-
-Current status against `index.html`: **157 passed, 0 failed**. The suite is
+Current status against `index.html`: **148 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

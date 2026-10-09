@@ -44,19 +44,6 @@ function isolate(fn){
   }
 }
 
-/* Enter a score the way a thumb does: tap the chip to aim the pad, then tap a
-   key on the pad. Replaces the old −/+ stepper, which took one tap per stroke.
-   4 is on the pad for every par, since the keys run par−2 to par+2. */
-function padScore(key, n){
-  const w = dom.window;
-  const chip = document.querySelector(`[data-entry="${key}"]`);
-  ok(chip, "no score chip for " + key);
-  chip.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-  const k = document.querySelector(`[data-setscore="${key}:${n}"]`);
-  ok(k, "the pad has no key for " + n + " on this hole");
-  k.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-}
-
 const eq = (a, b, m) => { if (a !== b) throw new Error((m||"") + ` expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m || "expected truthy"); };
 const section = s => console.log("\n" + s);
@@ -108,13 +95,7 @@ section("SMOKE — in-game controls");
 openGame("g1");
 t("strokes grid toggles", () => { click(document.getElementById("togglestrokes"));
   ok(document.querySelector("table.sgrid"), "grid did not appear"); });
-t("score pad writes a score", () => {
-  const w = dom.window;
-  const key = w.eval(`"sc-" + GAMES.find(x=>x.id==="g1").teams[0][0]`);
-  padScore(key, 4);
-  eq(w.eval(`GAMES.find(x=>x.id==="g1").holes[view.hole].scores[GAMES.find(x=>x.id==="g1").teams[0][0]]`),
-     4, "two taps should put a 4 on the card:");
-});
+t("score stepper", () => click(document.querySelector("[data-step]")));
 t("pickup", () => click(document.querySelector("[data-pu]")));
 t("concede", () => click(document.querySelector("[data-concede]")));
 t("hole nav", () => { click(document.getElementById("next")); click(document.querySelectorAll("[data-hole]")[5]); });
@@ -201,8 +182,7 @@ t("points: win 1, tie 0.5, loss 0", () => {
 section("REGRESSION — bugs that already bit us once");
 
 t("R1 renderGame and its helpers all exist", () => {
-  ["renderGame","renderTeam","renderCorridor","scoreChip","renderPad",
-   "entryList","currentEntry","advanceEntry","sideOfPlayer","netCell",
+  ["renderGame","renderTeam","renderCorridor","stepper","netCell",
    "renderStrokeGrid","renderOtherBug","strokesHereLine","matchLocked",
    "cardBlock","updateCardMsg","refreshCH"].forEach(fn =>
      ok(html.includes("function " + fn) || html.includes("const " + fn),
@@ -767,7 +747,7 @@ t("R43 a locked hole can't be conceded", () => isolate(() => {
   w.eval('SYNC.on=false; isAdmin=true; view.tab="home"; view.gameId=null; render();');
   const gid = w.eval('GAMES.find(x=>x.type==="BESTBALL").id');
   w.eval(`view.gameId="${gid}"; view.hole=0; render();`);
-  padScore(w.eval(`"sc-" + GAMES.find(g=>g.id==="${gid}").teams[0][0]`), 4);
+  document.querySelector("[data-step]").dispatchEvent(new w.MouseEvent("click",{bubbles:true}));
   document.querySelector("[data-lockteam]").dispatchEvent(new w.MouseEvent("click",{bubbles:true}));
   const a = document.querySelector('[data-concede="0"]');
   const b = document.querySelector('[data-concede="1"]');
@@ -786,11 +766,10 @@ t("R44 locking both sides moves to the next hole", () => isolate(() => {
   w.eval(`view.gameId="${gid}"; view.hole=0; render();`);
   const fire = sel => { const els=[...document.querySelectorAll(sel)];
     els[els.length-1].dispatchEvent(new w.MouseEvent("click",{bubbles:true})); };
-  padScore(w.eval(`"sc-" + GAMES.find(g=>g.id==="${gid}").teams[0][0]`), 4);
+  document.querySelector("[data-step]").dispatchEvent(new w.MouseEvent("click",{bubbles:true}));
   document.querySelector("[data-lockteam]").dispatchEvent(new w.MouseEvent("click",{bubbles:true}));
   eq(w.eval("view.hole"), 0, "one side locking should not advance:");
-  padScore(w.eval(`"sc-" + GAMES.find(g=>g.id==="${gid}").teams[1][0]`), 4);
-  fire("[data-lockteam]");
+  fire("[data-step]"); fire("[data-lockteam]");
   eq(w.eval("view.hole"), 1, "both sides locked should advance:");
   w.eval(`view.hole=17; render();`);
   w.eval(`(function(){const g=GAMES.find(x=>x.id==="${gid}");
@@ -2220,142 +2199,6 @@ t("R108 the casual flag is visible on the schedule, not only in the editor", () 
   ok(/casual/i.test(appHTML()), "the schedule should say so somewhere");
   w.eval('view.tab = "home"; homeShowAll = true; render();');
   ok(/casual/i.test(appHTML()), "and so should the Games tab");
-}));
-
-section("the score pad — what replaced the steppers");
-
-/* Open the first best ball with admin on, and wipe the hole first. The early
-   smoke tests aren't isolated, so they leave scores on g1 hole 0 — inheriting
-   those made the pad start somewhere other than the top of the card and two of
-   these tests assert on exactly that. Every test here restores the world
-   through isolate(). */
-function openBestBall(hole){
-  const w = dom.window;
-  const h = hole || 0;
-  const gid = w.eval('GAMES.find(x=>x.type==="BESTBALL").id');
-  w.eval(`(function(){
-    const g = GAMES.find(x => x.id === "${gid}");
-    [${h}, 5].forEach(i => { g.holes[i].scores = {}; g.holes[i].locked = {};
-                             g.holes[i].conceded = null; });
-    SYNC.on = false; isAdmin = true; editEvent = null;
-    view.gameId = "${gid}"; view.hole = ${h}; view.entry = null;
-  })(); render();`);
-  return gid;
-}
-const padKeys = () => [...document.querySelectorAll("[data-setscore]")]
-  .map(b => +b.dataset.setscore.split(":")[1]);
-const aimedAt = () => {
-  const c = document.querySelector(".chipscore.on");
-  return c ? c.dataset.entry : null;
-};
-
-t("R110 the pad opens aimed at the first player with no score", () => isolate(() => {
-  const w = dom.window;
-  const gid = openBestBall(0);
-  const first = w.eval(`"sc-" + GAMES.find(g=>g.id==="${gid}").teams[0][0]`);
-  eq(aimedAt(), first, "a fresh hole should start at the top of the card:");
-}));
-
-t("R111 the pad keys are centred on this hole's par", () => isolate(() => {
-  const w = dom.window;
-  const gid = openBestBall(0);
-  const par = w.eval(`courseOf(GAMES.find(g=>g.id==="${gid}")).holes[0].par`);
-  const keys = padKeys();
-  eq(keys[0], Math.max(2, par - 2), "the lowest key should be two under par, floored at 2:");
-  eq(keys[keys.length - 1], par + 3,
-     "a triple bogey must be reachable on every hole, not just a double:");
-  eq(keys.join(","), keys.map((_, i) => keys[0] + i).join(","), "and they run consecutively:");
-  ok(keys.includes(par), "par itself has to be on the pad");
-  ok(!keys.includes(1), "a hole in one doesn't earn a key on every par 3");
-}));
-
-t("R112 after a score the pad moves to the next player, not back to the top", () => isolate(() => {
-  const w = dom.window;
-  const gid = openBestBall(0);
-  const team0 = JSON.parse(w.eval(`JSON.stringify(GAMES.find(g=>g.id==="${gid}").teams[0])`));
-  padScore("sc-" + team0[0], 4);
-  eq(aimedAt(), "sc-" + team0[1],
-     "entering a score should hand the pad to this side's other player:");
-  padScore("sc-" + team0[1], 4);
-  const team1 = JSON.parse(w.eval(`JSON.stringify(GAMES.find(g=>g.id==="${gid}").teams[1])`));
-  eq(aimedAt(), "sc-" + team1[0], "and then cross to the other side:");
-}));
-
-t("R113 tapping the key a score is already on clears it", () => isolate(() => {
-  const w = dom.window;
-  const gid = openBestBall(0);
-  const pid = w.eval(`GAMES.find(g=>g.id==="${gid}").teams[0][0]`);
-  padScore("sc-" + pid, 4);
-  eq(w.eval(`GAMES.find(g=>g.id==="${gid}").holes[0].scores["${pid}"]`), 4, "written:");
-  /* The pad has moved on, so aim it back before tapping the same key again —
-     which is what a person correcting a mis-tap does. */
-  padScore("sc-" + pid, 4);
-  eq(w.eval(`GAMES.find(g=>g.id==="${gid}").holes[0].scores["${pid}"]`), undefined,
-     "the same key again should clear it, with no minus button to hunt for:");
-}));
-
-t("R114 a locked side can't be scored through the pad", () => isolate(() => {
-  const w = dom.window;
-  const gid = openBestBall(0);
-  const pid = w.eval(`GAMES.find(g=>g.id==="${gid}").teams[0][0]`);
-  padScore("sc-" + pid, 4);
-  w.eval(`GAMES.find(g=>g.id==="${gid}").holes[0].locked[0] = true; render();`);
-  const chip = document.querySelector(`[data-entry="sc-${pid}"]`);
-  ok(chip.disabled, "a locked player's chip should be dead");
-  /* And there is no key on the pad that could write to them either — the pad
-     only ever renders for an entry that isn't locked. */
-  ok(!document.querySelector(`[data-setscore^="sc-${pid}:"]`),
-     "the pad should not offer keys for a locked player");
-  eq(w.eval(`GAMES.find(g=>g.id==="${gid}").holes[0].scores["${pid}"]`), 4,
-     "and the score that was there must survive:");
-}));
-
-t("R115 changing hole re-aims the pad instead of pointing at the old entry", () => isolate(() => {
-  const w = dom.window;
-  const gid = openBestBall(0);
-  const team0 = JSON.parse(w.eval(`JSON.stringify(GAMES.find(g=>g.id==="${gid}").teams[0])`));
-  padScore("sc-" + team0[0], 4);
-  eq(aimedAt(), "sc-" + team0[1], "moved on within hole 1:");
-  w.eval("view.hole = 5; render();");
-  eq(aimedAt(), "sc-" + team0[0],
-     "a new hole should start at the top again, not wherever the last one ended:");
-}));
-
-t("R116 the pad takes the tab bar's place, and gives it back", () => isolate(() => {
-  const w = dom.window;
-  openBestBall(0);
-  ok(document.querySelector(".pad"), "the scorecard should have a pad");
-  ok(document.body.classList.contains("scoring"),
-     "the body needs the class or the tabs and the pad overlap");
-  w.eval('view.gameId = null; view.tab = "home"; render();');
-  ok(!document.body.classList.contains("scoring"),
-     "leaving the scorecard must put the tab bar back");
-  ok(!document.querySelector(".pad"), "and take the pad away");
-}));
-
-t("R117 a four-team scramble gets four pad entries, one per team", () => isolate(() => {
-  const w = dom.window;
-  w.eval(`GAMES.length = 0;`);
-  fourTeamGame([70, 72, 74, 76]);
-  w.eval(`GAMES.find(g=>g.id==="g2x4").holes[3].teamScore = {};
-          isAdmin = true; view.gameId = "g2x4"; view.hole = 3; render();`);
-  const list = JSON.parse(w.eval(
-    'JSON.stringify(entryList(GAMES.find(g=>g.id==="g2x4"), 3).map(e => e.key))'));
-  eq(list.join(","), "ts-0,ts-1,ts-2,ts-3", "four teams, four entries:");
-  padScore("ts-2", 5);
-  eq(w.eval('GAMES.find(g=>g.id==="g2x4").holes[3].teamScore[2]'), 5,
-     "side C must take its own score, not side A's:");
-}));
-
-t("R118 sideOfPlayer answers for every side and refuses a stranger", () => isolate(() => {
-  const w = dom.window;
-  w.eval(`GAMES.length = 0;`);
-  fourTeamGame([70, 72, 74, 76]);
-  const f = k => w.eval(`sideOfPlayer(GAMES.find(g=>g.id==="g2x4"), "${k}")`);
-  eq(f("p1"), 0, "p1 is on A:");
-  eq(f("p5"), 2, "p5 is on C, not the 1 that `teams[0].includes() ? 0 : 1` gave:");
-  eq(f("p7"), 3, "p7 is on D:");
-  eq(f("nobody"), null, "someone not in the game has no side:");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

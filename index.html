@@ -150,23 +150,9 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hkey i.sw.h{background:var(--rule)}
 
 /* match banner */
-.banner{border:1.5px solid var(--ink);background:var(--paper-2);padding:10px 12px;margin-top:10px;text-align:center}
-/* The roster is its own wrapping flex row rather than relying on white-space:
-   the names are separated by styled spans with their own margins, so there was
-   no reliable break opportunity and the fourth player ran off the screen. */
-.prow.rosterrow{align-items:flex-start}
-.prow.rosterrow .pname{display:flex;flex-wrap:wrap;align-items:center;gap:2px 0;
-  flex:1 1 0;min-width:0;white-space:normal;overflow:visible;line-height:1.45}
-.prow.rosterrow .rsep{margin:0 5px}
-.hstroke-row{display:flex;align-items:center;gap:9px;margin-top:7px}
-.hstroke-row .hstrokes{flex:1;margin:0;min-width:0}
-.hstroke-row .chip{flex:none}
-/* The match state is the one thing you open this screen to read, so it wins the
-   screen outright. At 24px it was competing with four gross scores and losing;
-   "the red numbers aren't really saying anything" was that, not the colour. */
+.banner{border:1.5px solid var(--ink);background:var(--paper-2);padding:13px;margin-top:12px;text-align:center}
 .banner .st{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:0;font-size:30px;line-height:1.02}
-.banner .st.small{font-size:22px;line-height:1.1;letter-spacing:.02em}
+  letter-spacing:.02em;font-size:24px;line-height:1.05}
 .banner .thru{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.12em;font-size:11px;font-weight:600;color:var(--ink-soft);margin-top:5px}
 .banner.closed{background:var(--ink);color:var(--paper)}
@@ -191,7 +177,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   color:var(--pencil);padding:1px 6px;margin-top:6px}
 
 /* hole header */
-.hhead{display:flex;align-items:baseline;gap:9px;margin:11px 0 2px}
+.hhead{display:flex;align-items:baseline;gap:9px;margin:18px 0 4px}
 .hnum{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:30px;line-height:1}
 .hinfo{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.11em;font-size:12px;font-weight:600;color:var(--ink-soft)}
@@ -242,40 +228,12 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .sgrid-key{font-size:12.5px;color:var(--ink-soft);margin:8px 0 0}
 .hstrokes{font-size:13px;color:var(--ink-soft);margin:2px 0 0}
 .hstrokes b{color:var(--pencil);font-weight:600}
-/* The score chip replaced a −/+ stepper. A 7 on a par 5 was five taps on a
-   moving cart; now the chip picks the player and the pad below writes the
-   number, so any score is two taps and the next player is one. */
-.chipscore{font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;
-  min-width:52px;min-height:44px;padding:0 10px;border:1.5px solid var(--rule);
-  background:var(--paper-3);color:var(--ink);cursor:pointer}
-.chipscore.empty{color:var(--ink-faint)}
-.chipscore.on{border-color:var(--ink);border-width:2.5px;background:var(--paper)}
-.chipscore:disabled{opacity:.5;cursor:default}
-
-/* The pad docks where the tab bar was. On this screen the tabs were competing
-   for the only part of the screen a thumb reaches without regripping, and Back
-   in the header already gets you out. */
-body.scoring .tabs{display:none}
-body.scoring{padding-bottom:calc(186px + env(safe-area-inset-bottom))}
-.pad{position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--paper);
-  border-top:2px solid var(--ink);padding:11px 16px calc(13px + env(safe-area-inset-bottom));
-  box-shadow:0 -6px 18px rgba(18,50,31,.09)}
-.pad-in{max-width:620px;margin:0 auto}
-.pad-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
-.pad-who{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.05em;font-size:17px;min-width:0;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
-.pad-keys{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
-.pad-keys button{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;
-  min-height:56px;border:1.5px solid var(--rule);background:var(--paper-2);color:var(--ink);
-  cursor:pointer}
-.pad-keys button.under{color:var(--pencil)}
-.pad-keys button.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
-.pad-keys button.on.under{color:#E8A79A}
-.pad-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px}
-.pad-note{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
-  letter-spacing:.1em;font-size:10px;font-weight:600;color:var(--ink-faint);min-width:0}
-.pad .btn,.pad .chip{flex:none}
+.step{display:inline-flex;align-items:center;border:1px solid var(--rule)}
+.step button{width:32px;height:30px;border:none;background:var(--paper-3);color:var(--ink);
+  font-size:16px;cursor:pointer;line-height:1}
+.step .val{width:34px;text-align:center;font-family:'IBM Plex Mono',monospace;
+  font-weight:600;font-size:15px;background:var(--paper-2)}
+.step .val.empty{color:var(--ink-soft)}
 .pu{border:1px solid var(--rule);background:var(--paper-3);color:var(--ink-soft);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:10px;
   letter-spacing:.1em;padding:0 7px;height:32px;cursor:pointer}
@@ -1392,7 +1350,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.2315";
+const BUILD = "2026-10-08.2330";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2211,11 +2169,7 @@ function pushConfig(){
 /* ============================================================
    VIEW STATE
    ============================================================ */
-/* `entry` is which score the pad is aimed at, as an entryList key. It's view
-   state only — never stored, never synced — and it's cleared whenever the hole
-   or the game changes, so the pad can't come back pointing at someone who
-   isn't on this hole. */
-let view = { tab:"home", gameId:null, hole:0, entry:null };
+let view = { tab:"home", gameId:null, hole:0 };
 let showStrokes = false;
 let editCourseId = (COURSES[0] || NO_COURSE).id;
 let editEvent = null;
@@ -2371,20 +2325,8 @@ async function applyUpdate(){
 }
 
 /* ---------- render router ---------- */
-/* Which game and hole the pad's aim belongs to. Clearing `view.entry` at each
-   of the nine places that change a hole or a game is exactly how this app has
-   produced bugs before, so it's cleared in one place that can't be forgotten. */
-let padAt = { gameId: null, hole: null };
-
 function render(){
   const inGame = !!view.gameId;
-  if (padAt.gameId !== view.gameId || padAt.hole !== view.hole){
-    view.entry = null;
-    padAt = { gameId: view.gameId, hole: view.hole };
-  }
-  /* Leaving the scorecard has to put the tab bar back, whichever way you left
-     — Back, a tab, or the open game being deleted under you. */
-  if (!inGame) document.body.classList.remove("scoring");
   /* Back is for anywhere that isn't a top-level tab — a game, or an editor.
      Without it the only way out of an editor was the button at the bottom of
      a long form. */
@@ -3742,13 +3684,10 @@ function renderGame(){
   /* banner */
   if (isMatch(g)){
     const st = matchState(g);
-    const txt = st.closed ? `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`
-      : st.result ? (st.result.winner==="TIE"?"HALVED":`${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
-      : statusText(g, st);
-    /* "2 UP" wants all 44px. "BLAKE & DANIEL WIN 4&3" at 44px is four wrapped
-       lines, so anything long steps down rather than taking over the screen. */
     out += `<div class="banner ${st.closed?"closed":""}">
-      <div class="st ${txt.length > 16 ? "small" : ""}">${txt}</div>
+      <div class="st">${st.closed ? `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`
+        : st.result ? (st.result.winner==="TIE"?"HALVED":`${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`)
+        : statusText(g, st)}</div>
       <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
         !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
       ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
@@ -3781,11 +3720,10 @@ function renderGame(){
   } else {
     const fs = fbState(g);
     const rel0 = fbTotal(g,0) - fbParBasis(g,0), rel1 = fbTotal(g,1) - fbParBasis(g,1);
-    const ftxt = fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
-        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
-        : `${fbTotal(g,0)} — ${fbTotal(g,1)}`;
     out += `<div class="banner ${fs.done?"closed":""}">
-      <div class="st ${ftxt.length > 16 ? "small" : ""}">${ftxt}</div>
+      <div class="st">${fs.done ? (fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
+        : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`)
+        : `${fbTotal(g,0)} — ${fbTotal(g,1)}`}</div>
       <div class="thru">${esc(teamLabel(g,0))} ${fbSpent(g,0)}/40 (${toPar(rel0)}) ·
         ${esc(teamLabel(g,1))} ${fbSpent(g,1)}/40 (${toPar(rel1)})</div>
     </div>`;
@@ -3801,15 +3739,16 @@ function renderGame(){
       <button id="next" ${h===17?"disabled":""}>&rarr;</button>
     </span></div>`;
 
-  /* Strokes-here and the all-strokes toggle share one line with each other
-     rather than taking a full-width button each. Between the banner and the
-     first player there used to be a test bar, a sentence and a button — three
-     bands of furniture before the thing you came to do, which is most of why
-     the second team sat below the fold. */
+  if (!isArchive()) out += `<div class="testbar">
+    <span class="testbar-t">Test</span>
+    <button class="btn ghost" id="randhole">Random scores</button>
+    <button class="btn ghost" id="reset">Reset game</button>
+  </div>`;
+
+  out += strokesHereLine(g, h);
   if (usesHcp(g)){
-    out += `<div class="hstroke-row">
-      ${strokesHereLine(g, h)}
-      <button class="chip" id="togglestrokes">${showStrokes?"Hide":"Strokes"}</button>
+    out += `<div class="acts" style="margin-top:8px">
+      <button class="btn ghost" id="togglestrokes">${showStrokes?"Hide":"Show"} all strokes</button>
     </div>`;
     if (showStrokes) out += renderStrokeGrid(g, h);
   }
@@ -3838,18 +3777,7 @@ function renderGame(){
         : "At least one player per side must hole out."}</p>`;
   }
 
-  /* Below the card, not above it. It's for exercising the 40ball budget, not
-     for playing, and at the top it pushed the second team off the screen. */
-  if (!isArchive()) out += `<div class="testbar">
-    <span class="testbar-t">Test</span>
-    <button class="btn ghost" id="randhole">Random scores</button>
-    <button class="btn ghost" id="reset">Reset game</button>
-  </div>`;
 
-  out += renderPad(g, h, hardLocked);
-  /* The class drives both halves of the swap — tab bar out, room at the bottom
-     for the pad — so the two can't get out of step. */
-  document.body.classList.toggle("scoring", out.indexOf('class="pad"') !== -1);
 
   app.innerHTML = out;
 }
@@ -3948,57 +3876,6 @@ function renderStrokeGrid(g, h){
   return out;
 }
 
-/* Which side a player is on. `g.teams[0].includes(id) ? 0 : 1` was written in
-   two places, and it silently answers 1 for a player who isn't in the game at
-   all — and would answer 1 for someone on side C of a four-team game. Only
-   BESTBALL and FORTYBALL score individuals today, so neither was wrong yet;
-   this stops it being wrong the first time something else does. */
-function sideOfPlayer(g, id){
-  const t = sides(g).find(i => (g.teams[i] || []).includes(id));
-  return t === undefined ? null : t;
-}
-
-/* Everything on this hole that takes a score, in the order you'd enter them.
-   One entry per side for a scramble, one per player otherwise. The pad writes
-   to whichever is selected, and moves to the next one that's still empty. */
-function entryList(g, h){
-  const hole = g.holes[h];
-  if (isScramble(g) || isStroke(g))
-    return sides(g).map(t => ({
-      key: "ts-" + t, side: t,
-      label: sideName(g, t),
-      val: hole.teamScore[t],
-      locked: !!hole.locked[t] || hole.conceded !== null
-    }));
-  const out = [];
-  sides(g).forEach(t => (g.teams[t] || []).forEach(id => out.push({
-    key: "sc-" + id, side: t, pid: id,
-    label: (P(id) || {}).name || "?",
-    val: hole.scores[id],
-    locked: !!hole.locked[t] || hole.conceded !== null
-  })));
-  return out;
-}
-
-/* The entry the pad is pointing at: whatever was tapped, else the first one
-   still waiting for a number, else the first that can be changed at all. */
-function currentEntry(g, h){
-  const list = entryList(g, h).filter(e => !e.locked);
-  if (!list.length) return null;
-  return list.find(e => e.key === view.entry)
-      || list.find(e => e.val == null)
-      || list[0];
-}
-
-/* After a number goes in, point at the next empty one on the same side, then
-   any other empty one. Nothing left empty means stay put rather than jumping
-   somewhere surprising. */
-function advanceEntry(g, h, from){
-  const list = entryList(g, h).filter(e => !e.locked && e.val == null && e.key !== from.key);
-  const next = list.find(e => e.side === from.side) || list[0];
-  view.entry = next ? next.key : from.key;
-}
-
 /* gross → adjustment → net */
 /* gross → handicap adjustment → net, with the net shown against par */
 function toPar(n){ return n === 0 ? "E" : (n > 0 ? "+" + n : String(n)); }
@@ -4030,7 +3907,6 @@ function teamReady(g, t, h){
 
 function renderTeam(g, t, h, hardLocked){
   const hole = g.holes[h];
-  const sel = currentEntry(g, h);
   const name = teamLabel(g, t);
   const course = courseOf(g);
   const roster = (g.teams[t] || [])
@@ -4046,13 +3922,9 @@ function renderTeam(g, t, h, hardLocked){
   const locked = hole.locked[t];
 
   if (isScramble(g) || isStroke(g)){
-    /* A scramble roster is four names with tee tags. On one line with the score
-       chip the fourth name was cut off mid-word, so the names get the full
-       width and wrap, and the chip sits under them on the right. */
-    inner += `<div class="prow rosterrow">
+    inner += `<div class="prow">
       <span class="pname">${roster}</span>
-      ${scoreChip(`ts-${t}`, hole.teamScore[t], locked || hardLocked || hole.conceded!==null,
-                  sel && sel.key === `ts-${t}`)}
+      ${stepper(`ts-${t}`, hole.teamScore[t], locked || hardLocked || hole.conceded!==null)}
       ${isStroke(g) && hole.teamScore[t] != null ? `<span class="pnet"><span class="par ${
         parClass(hole.teamScore[t] - courseOf(g).holes[h].par)}">${
         toPar(hole.teamScore[t] - courseOf(g).holes[h].par)}</span></span>` : ""}
@@ -4065,8 +3937,7 @@ function renderTeam(g, t, h, hardLocked){
       const v = hole.scores[id];
       inner += `<div class="prow">
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${scoreChip(`sc-${id}`, v==="PU"?null:v, locked || hardLocked || hole.conceded!==null,
-                    sel && sel.key === `sc-${id}`)}
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked || hardLocked || hole.conceded!==null)}
         ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
           ${locked||hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
@@ -4086,7 +3957,7 @@ function renderTeam(g, t, h, hardLocked){
       inner += `<div class="prow">
         <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${scoreChip(`sc-${id}`, v==="PU"?null:v, locked, sel && sel.key === `sc-${id}`)}
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked)}
         ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}" ${locked?"disabled":""}>PU</button>
       </div>`;
@@ -4132,47 +4003,12 @@ function renderTeam(g, t, h, hardLocked){
   return `<div class="team ${winCls} ${locked?"islocked":""}">${head}${inner}</div>${extra}`;
 }
 
-/* The pad: five keys centred on this hole's par, docked where the tab bar was
-   and never scrolling away. Par 3 offers 2-6, par 5 offers 3-7, so the number
-   you want is almost always on screen and anything else is one more tap. */
-function renderPad(g, h, hardLocked){
-  if (isArchive() || hardLocked) return "";
-  const e = currentEntry(g, h);
-  if (!e) return "";
-  const par = courseOf(g).holes[h].par;
-  /* Eagle up to triple bogey, on every hole. A triple is the score that
-     actually needs a key — it happens to everyone — and stopping at double
-     meant the most common bad hole fell through to Any number.
-     Floored at 2: a six on a par 3 happens most rounds, an ace has happened
-     never, so one goes through Any number on the day it matters. That makes a
-     par 3 five keys and everything else six. */
-  const lo = Math.max(2, par - 2);
-  const keys = [];
-  for (let n = lo; n <= par + 3; n++) keys.push(n);
-  const isPU = e.pid && g.holes[h].scores[e.pid] === "PU";
-
-  return `<div class="pad"><div class="pad-in">
-    <div class="pad-top">
-      <span class="pad-who">${esc(e.label)}</span>
-      ${e.pid ? `<button class="pu ${isPU?"on":""}" data-pu="${e.pid}">Picked up</button>` : ""}
-    </div>
-    <div class="pad-keys" style="grid-template-columns:repeat(${keys.length},minmax(0,1fr))">
-      ${keys.map(n => `<button data-setscore="${e.key}:${n}"
-        class="${n < par ? "under" : ""} ${e.val === n ? "on" : ""}">${n}</button>`).join("")}
-    </div>
-    <div class="pad-foot">
-      <span class="pad-note">Par ${par}${e.pid && strokesOn(e.pid, g, h)
-        ? ", one shot here" : ""}</span>
-      <button class="chip" data-anynumber="${e.key}">Any number</button>
-    </div>
-  </div></div>`;
-}
-
-/* Tapping the chip aims the pad at this entry; the number itself comes from
-   the pad. The chip is 44px so it's hittable one-handed. */
-function scoreChip(key, val, disabled, selected){
-  return `<button class="chipscore ${val==null?"empty":""} ${selected?"on":""}"
-    data-entry="${key}" ${disabled?"disabled":""}>${val==null?"–":val}</button>`;
+function stepper(key, val, disabled){
+  return `<span class="step">
+    <button data-step="${key}:-1" ${disabled?"disabled":""}>−</button>
+    <span class="val ${val==null?"empty":""}">${val==null?"–":val}</span>
+    <button data-step="${key}:1" ${disabled?"disabled":""}>+</button>
+  </span>`;
 }
 
 /* §8.4 / §8.6 — the 40ball budget corridor */
@@ -4915,48 +4751,31 @@ function handleClick(el){
   if (el.id === "prev"){ view.hole = Math.max(0, h-1); render(); return; }
   if (el.id === "next"){ view.hole = Math.min(17, h+1); render(); return; }
 
-  /* Aim the pad at this entry. No score is written \u2014 that's the next tap. */
-  if (el.dataset.entry){ view.entry = el.dataset.entry; render(); return; }
-
-  if (el.dataset.setscore || el.dataset.anynumber){
-    const hole = g.holes[h];
-    let key, n;
-    if (el.dataset.setscore){
-      const parts = el.dataset.setscore.split(":");
-      key = parts[0]; n = +parts[1];
-    } else {
-      key = el.dataset.anynumber;
-      const raw = prompt("Score for this hole", "");
-      if (raw === null) return;
-      n = parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 1 || n > 20){ toast("A score from 1 to 20"); return; }
-    }
+  if (el.dataset.step){
+    const [key, dRaw] = el.dataset.step.split(":");
+    const d = +dRaw;
     const [kind, ref] = key.split("-");
-    const side = kind === "ts" ? +ref : sideOfPlayer(g, ref);
-    if (side === null){ toast("That player isn't in this game"); return; }
-    if (hole.locked[side]){ toast("Locked \u2014 admin can reopen"); return; }
-    /* Tapping the key a score is already on clears it, so a mis-tap is undone
-       the same way it was made rather than by hunting for a minus. */
-    const cur = kind === "ts" ? hole.teamScore[side] : hole.scores[ref];
-    const clear = el.dataset.setscore && cur === n;
+    const hole = g.holes[h];
     if (kind === "ts"){
-      if (clear) delete hole.teamScore[side]; else hole.teamScore[side] = n;
-      pushHole(g, h, `teamScore.${side}`, clear ? null : n);
+      const t = +ref;
+      if (hole.locked[t]){ toast("Locked \u2014 admin can reopen"); return; }
+      const cur = hole.teamScore[t] ?? courseOf(g).holes[h].par - d;
+      hole.teamScore[t] = Math.max(1, Math.min(14, cur + d));
+      pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
     } else {
-      if (clear) delete hole.scores[ref]; else hole.scores[ref] = n;
-      pushHole(g, h, `scores.${ref}`, clear ? null : n);
-    }
-    if (!clear){
-      const e = entryList(g, h).find(x => x.key === key);
-      if (e) advanceEntry(g, h, e);
+      const side = g.teams[0].includes(ref) ? 0 : 1;
+      if (hole.locked[side]){ toast("Locked \u2014 admin can reopen"); return; }
+      const cur = (hole.scores[ref] === "PU" || hole.scores[ref] == null)
+        ? courseOf(g).holes[h].par - d : hole.scores[ref];
+      hole.scores[ref] = Math.max(1, Math.min(14, cur + d));
+      pushHole(g, h, `scores.${ref}`, hole.scores[ref]);
     }
     render(); return;
   }
 
   if (el.dataset.pu){
     const hole = g.holes[h], id = el.dataset.pu;
-    const side = sideOfPlayer(g, id);
-    if (side === null){ toast("That player isn't in this game"); return; }
+    const side = g.teams[0].includes(id) ? 0 : 1;
     if (hole.locked[side]){ toast("Locked \u2014 admin can reopen"); return; }
     if (hole.scores[id] === "PU"){
       delete hole.scores[id];
