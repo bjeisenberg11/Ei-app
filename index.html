@@ -179,7 +179,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
    score is what's being read hole to hole, the skins are the running argument. */
 .hg-v{display:block}
 .hg-sk{display:block;font-size:8.5px;font-weight:700;color:var(--brass);
-  letter-spacing:-.02em;margin-top:1px}
+  letter-spacing:-.02em;margin-top:3px;line-height:1}
 .hg:not(.skins) .hg-s{padding:5px 0 4px}
 /* Under par red, over par blue, par plain — the same three everywhere a score
    is shown, including the number you are changing with the stepper. */
@@ -217,6 +217,15 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 /* 40ball totals run to three digits — a 28px column clipped them. */
 .stot.wide{width:38px}
 .banner.closed .stot{color:#B9CDBF}
+/* The skins banner says again what the Tot column already says, so it reads
+   as a summary rather than the headline and is sized like one. */
+.banner.tight{padding:8px 11px}
+.banner.tight .strokerow{padding:3px 2px;gap:8px}
+.banner.tight .sname{font-size:12.5px}
+.banner.tight .spar{font-size:16px;width:38px}
+.banner.tight .stot{font-size:11px;width:24px}
+.banner.tight .thru{font-size:10px;margin-top:4px}
+.banner.tight .st{font-size:18px}
 .spar.under{color:var(--pencil)}
 .banner.closed .spar.under{color:#E8A79A}
 /* The closed banner is light-on-dark, so over par needs a lighter blue
@@ -1534,7 +1543,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0135";
+const BUILD = "2026-10-10.0150";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3924,7 +3933,12 @@ function holeGrid(g){
         v == null ? "" : v}</span>${
         won ? `<span class="hg-sk">${fmtSkins(won)}</span>` : ""}</button>`;
     }
-    o += `<span class="hg-c hg-tot">${any ? tot : ""}</span>`;
+    /* The skins total lives under the gross in the same column, in the same
+       small type as a hole's. Everything about a side is then in one row, and
+       the leaderboard underneath is only confirming it. */
+    const skTot = sk ? skinRow.reduce((n, r) => n + (r ? r[t] : 0), 0) : 0;
+    o += `<span class="hg-c hg-tot"><span class="hg-v">${any ? tot : ""}</span>${
+      sk && any ? `<span class="hg-sk">${fmtSkins(skTot)}</span>` : ""}</span>`;
   });
   return o + `</div></div>`;
 }
@@ -4003,7 +4017,7 @@ function renderGame(){
     const rows = sides(g).map(i => ({ i, sk: sk.totals[i], tot: str.totals[i],
                                       holes: str.holes[i] }))
       .sort((a,b) => (b.holes > 0) - (a.holes > 0) || b.sk - a.sk || a.i - b.i);
-    out += `<div class="banner ${sk.done?"closed":""}">
+    out += `<div class="banner tight ${sk.done?"closed":""}">
       ${sk.done ? `<div class="st">${sk.result.winner==="TIE" ? "TIED"
         : `${winnerLabel(g,sk.result.winner)} WIN`}</div>` : ""}
       ${rows.map(r => `<div class="strokerow${

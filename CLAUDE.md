@@ -287,8 +287,13 @@ about, because they fail for reasons that aren't about the code you just wrote:
   back nine sits empty all morning. `syncHoleStrip()` runs after `renderGame()`
   and scrolls the hole being scored into the middle; without it the strip sits
   on hole 1 all afternoon. In a skins game each cell carries what the hole was
-  worth under what was scored on it (`.hg-sk`). Match play and 40ball keep the
-  plain 1–18 `.hstrip`, because neither has a single number per team per hole.
+  worth under what was scored on it (`.hg-sk`), and the Tot column carries the
+  skins total under the gross in that same small type — so a side's whole
+  afternoon is one row. Match play and 40ball keep the plain 1–18 `.hstrip`,
+  because neither has a single number per team per hole.
+- The skins banner under the card is `.banner.tight`: once the Tot column
+  carries both numbers the banner is confirming, not announcing, and it's
+  sized like it.
 - **Nothing on a grid is labelled with a truncated name** (R126). A row is
   `sideName(g, t)`, which gives both names for a pair and "Blake's team" for a
   side too big to name. The pairings matrix headings are whole names turned
