@@ -155,7 +155,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
    lets a column be wide enough to hold a score and the skins it won. */
 .hgwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0 0;
   border:1px solid var(--rule);background:var(--paper-2)}
-.hg{display:grid;grid-template-columns:106px repeat(18,31px) 40px;width:max-content;
+.hg{display:grid;grid-template-columns:122px repeat(18,31px) 42px;width:max-content;
   font-family:'IBM Plex Mono',monospace;font-size:12px}
 .hg-lab{position:sticky;left:0;z-index:2;background:var(--paper-2);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
@@ -181,6 +181,20 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hg-sk{display:block;font-size:8.5px;font-weight:700;color:var(--brass);
   letter-spacing:-.02em;margin-top:3px;line-height:1}
 .hg:not(.skins) .hg-s{padding:5px 0 4px}
+/* To par under the gross reads in the par colours, not the skins brass. */
+.hg-sk.under{color:var(--pencil)}
+.hg-sk.over{color:var(--over)}
+.hg-sk.even{color:var(--ink-soft)}
+/* Where a side stands, beside its name — the rows themselves never move, so
+   the stepper under them stays where your thumb left it. */
+.hg-rk{display:inline-block;min-width:13px;margin-right:4px;flex:none;text-align:center;
+  font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:700;
+  color:var(--ink-faint);border:1px solid var(--rule-soft);line-height:12px}
+.hg-rk.in{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+/* One line instead of a box, for a game still being played. */
+.cardcap{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.12em;font-size:11px;font-weight:600;color:var(--ink-soft);
+  text-align:center;margin-top:9px}
 /* Under par red, over par blue, par plain — the same three everywhere a score
    is shown, including the number you are changing with the stepper. */
 .under{color:var(--pencil)}
@@ -1543,7 +1557,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0150";
+const BUILD = "2026-10-10.0205";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3912,33 +3926,54 @@ function renderHistory(){
    rather than four names that would set the label column by the longest one. */
 function holeGrid(g){
   const ix = sides(g), course = courseOf(g), sk = isSkins(g);
+  /* Precomputed once: holeSkins walks every side, so calling it per cell would
+     be eighteen times the work for the same eighteen answers. */
+  const skinRow = sk ? Array.from({ length:18 }, (_, i) => holeSkins(g, i)) : null;
+  const skTot = t => skinRow.reduce((n, r) => n + (r ? r[t] : 0), 0);
+  const str = strokeTotals(g);
+
+  /* Where each side stands, printed beside its name rather than by sorting the
+     rows. The rows must not move: the stepper you're about to press is
+     directly below them, and a card that rearranges itself when someone holes
+     a putt loses your place every time. Skins rank high-to-low; stroke play
+     ranks on to par so far, which is the only honest comparison while sides
+     are different numbers of holes in. */
+  const anyPlay = ix.some(t => str.holes[t] > 0);
+  const rankVal = t => sk ? -skTot(t) : str.totals[t] - strokeParSoFar(g, t);
+  const vals = ix.map(rankVal);
+  const ordered = vals.slice().sort((a, b) => a - b);
+  const rankOf = t => ordered.indexOf(vals[t]) + 1;
+
   let o = `<div class="hgwrap"><div class="hg${sk ? " skins" : ""}">`;
   o += `<span class="hg-lab hg-corner">Hole</span>`;
   for (let i = 0; i < 18; i++)
     o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}" data-hole="${i}">${
       i + 1}</button>`;
   o += `<span class="hg-c hg-n hg-tot">Tot</span>`;
-  /* Precomputed once: holeSkins walks every side, so calling it per cell would
-     be eighteen times the work for the same eighteen answers. */
-  const skinRow = sk ? Array.from({ length:18 }, (_, i) => holeSkins(g, i)) : null;
   ix.forEach(t => {
-    o += `<span class="hg-lab">${esc(sideName(g, t))}</span>`;
+    o += `<span class="hg-lab">${anyPlay
+      ? `<span class="hg-rk${rankOf(t) <= Math.floor(sideCount(g) / 2) && isMulti(g)
+          ? " in" : ""}">${rankOf(t)}</span>` : ""}${esc(sideName(g, t))}</span>`;
     let tot = 0, any = false;
     for (let i = 0; i < 18; i++){
       const v = g.holes[i].teamScore[t];
       if (v != null){ tot += v; any = true; }
       const won = skinRow && skinRow[i] ? skinRow[i][t] : 0;
+      /* The badge slot is always drawn in a skins game, empty or not. Drawing
+         it only where a skin was won made those cells two lines and the rest
+         one, so the scores sat at different heights across a row. */
       o += `<button class="hg-c hg-s ${v == null ? "" : parClass(v - course.holes[i].par)}${
         i === view.hole ? " cur" : ""}" data-hole="${i}"><span class="hg-v">${
         v == null ? "" : v}</span>${
-        won ? `<span class="hg-sk">${fmtSkins(won)}</span>` : ""}</button>`;
+        sk ? `<span class="hg-sk">${won ? fmtSkins(won) : ""}</span>` : ""}</button>`;
     }
-    /* The skins total lives under the gross in the same column, in the same
-       small type as a hole's. Everything about a side is then in one row, and
-       the leaderboard underneath is only confirming it. */
-    const skTot = sk ? skinRow.reduce((n, r) => n + (r ? r[t] : 0), 0) : 0;
-    o += `<span class="hg-c hg-tot"><span class="hg-v">${any ? tot : ""}</span>${
-      sk && any ? `<span class="hg-sk">${fmtSkins(skTot)}</span>` : ""}</span>`;
+    /* Under the gross, the number that actually decides the game: skins in a
+       skins game, to par in a scramble. Everything about a side is then in one
+       row, which is what lets the box underneath go away. */
+    const rel = tot - strokeParSoFar(g, t);
+    o += `<span class="hg-c hg-tot"><span class="hg-v">${any ? tot : ""}</span>` +
+      `<span class="hg-sk ${sk ? "" : parClass(rel)}">${
+        !any ? "" : sk ? fmtSkins(skTot(t)) : toPar(rel)}</span></span>`;
   });
   return o + `</div></div>`;
 }
@@ -4008,52 +4043,35 @@ function renderGame(){
       ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
     </div>`;
   } else if (isSkins(g)){
-    /* Skins lead, gross total trails. The gross is worth keeping on screen —
-       it's what everyone is shouting out on the green — but it decides nothing
-       here, so it can't be the big number. */
+    /* The card above already carries every side's skins and gross, in order,
+       with the rank beside the name. A box repeating it mid-round was the
+       same four numbers twice on one screen, so while the game is live this
+       is one caption line and nothing else. The box comes back for the
+       result, which is worth a moment on screen. */
     const sk = skinsState(g);
-    const str = strokeTotals(g);
-    const out2 = teamOutcomes(g);
-    const rows = sides(g).map(i => ({ i, sk: sk.totals[i], tot: str.totals[i],
-                                      holes: str.holes[i] }))
-      .sort((a,b) => (b.holes > 0) - (a.holes > 0) || b.sk - a.sk || a.i - b.i);
-    out += `<div class="banner tight ${sk.done?"closed":""}">
-      ${sk.done ? `<div class="st">${sk.result.winner==="TIE" ? "TIED"
-        : `${winnerLabel(g,sk.result.winner)} WIN`}</div>` : ""}
-      ${rows.map(r => `<div class="strokerow${
-        out2 && out2[r.i] === "W" ? " through" : ""}">
-        <span class="sname">${esc(teamLabel(g, r.i))}</span>
-        <span class="spar">${sk.holes ? fmtSkins(r.sk) : ""}</span>
-        <span class="stot wide">${r.tot}</span>
-      </div>`).join("")}
-      <div class="thru">${sk.holes ? `Skins · two a hole · thru ${sk.holes}`
-        : "Skins · two a hole · not started"} · top two win</div>
-    </div>`;
+    out += sk.done
+      ? `<div class="banner tight closed">
+          <div class="st">${sk.result.winner === "TIE" ? "TIED"
+            : `${winnerLabel(g, sk.result.winner)} WIN`}</div>
+          <div class="thru">${esc(sk.result.label)} · skins</div>
+        </div>`
+      : `<div class="cardcap">${sk.holes
+          ? `Skins · two a hole · thru ${sk.holes}`
+          : "Skins · two a hole · not started"} · top two win</div>`;
   } else if (isStroke(g)){
+    /* Same as skins: the card above carries every side's gross and to par with
+       its rank beside the name, so a box repeating it mid-round is the same
+       numbers twice. One caption while it's live, the box for the result. */
     const st = strokeState(g);
-    const ix = sides(g);
     const thru = Math.max(...st.holes);
-    /* With four teams the running order is the thing you actually want to see,
-       so the rows are sorted and the two going through are marked. */
-    const out2 = teamOutcomes(g);
-    const rows = ix.map(i => ({ i, tot: st.totals[i], holes: st.holes[i],
-                                rel: st.totals[i] - strokeParSoFar(g,i) }))
-      /* Sides that haven't started sort last, then by total. Switching rule
-         per pair made this non-transitive, so the rows could come out in an
-         order that was neither. */
-      .sort((a,b) => (b.holes > 0) - (a.holes > 0) || a.tot - b.tot || a.i - b.i);
-    out += `<div class="banner ${st.done?"closed":""}">
-      ${st.done ? `<div class="st">${st.result.winner==="TIE" ? "TIED"
-        : `${winnerLabel(g,st.result.winner)} WIN`}</div>` : ""}
-      ${rows.map(r => `<div class="strokerow${
-        out2 && out2[r.i] === "W" ? " through" : ""}">
-        <span class="sname">${esc(teamLabel(g, r.i))}</span>
-        <span class="spar ${parClass(r.rel)}">${r.holes ? toPar(r.rel) : ""}</span>
-        <span class="stot">${r.tot}</span>
-      </div>`).join("")}
-      <div class="thru">${thru ? `Stroke play \u00b7 thru ${thru}` : "Stroke play \u00b7 not started"}${
-        isMulti(g) ? " \u00b7 top two win" : ""}</div>
-    </div>`;
+    out += st.done
+      ? `<div class="banner tight closed">
+          <div class="st">${st.result.winner === "TIE" ? "TIED"
+            : `${winnerLabel(g, st.result.winner)} WIN`}</div>
+          <div class="thru">${esc(st.result.label)}</div>
+        </div>`
+      : `<div class="cardcap">${thru ? `Stroke play · thru ${thru}`
+          : "Stroke play · not started"}${isMulti(g) ? " · top two win" : ""}</div>`;
   } else {
     /* Same shape as stroke play: net to par leads, the gross total trails it
        smaller. Here it isn't only a matter of emphasis — mid-round the two

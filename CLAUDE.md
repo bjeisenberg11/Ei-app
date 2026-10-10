@@ -291,9 +291,17 @@ about, because they fail for reasons that aren't about the code you just wrote:
   skins total under the gross in that same small type — so a side's whole
   afternoon is one row. Match play and 40ball keep the plain 1–18 `.hstrip`,
   because neither has a single number per team per hole.
-- The skins banner under the card is `.banner.tight`: once the Tot column
-  carries both numbers the banner is confirming, not announcing, and it's
-  sized like it.
+- **The leaderboard box only appears for a result.** While a game is live the
+  card already carries every side's totals, so the box was the same numbers
+  twice on one screen; `.cardcap` is one line in its place. Where each side
+  stands is a `.hg-rk` badge beside its name, filled dark for the ones going
+  through. The rows are never sorted: the stepper is directly under them, and
+  a card that rearranges when someone holes a putt loses your place. The rank
+  is worked out on **to par**, not gross, so sides different numbers of holes
+  in still compare honestly (R100).
+- In a skins game the badge slot under a score is drawn in **every** cell,
+  empty or not. Drawing it only where a skin was won made those cells two
+  lines and the rest one, so scores sat at different heights along a row.
 - **Nothing on a grid is labelled with a truncated name** (R126). A row is
   `sideName(g, t)`, which gives both names for a pair and "Blake's team" for a
   side too big to name. The pairings matrix headings are whole names turned

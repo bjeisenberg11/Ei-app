@@ -1619,42 +1619,51 @@ t("R99 scrambles show which tee each player is on", () => isolate(() => {
   ok(!/undefined/.test(appHTML()), "a player with no tee recorded must not print undefined");
 }));
 
-t("R100 stroke play leads with the score to par", () => isolate(() => {
+t("R100 stroke play is read on to par, not on the gross", () => isolate(() => {
   const w = dom.window;
-  /* Gross total first, to par trailing in small text, had it backwards: the
-     total means nothing without knowing the par played, which is the whole
-     reason the card label was rewritten too. */
+  /* Gross first with to par trailing had it backwards: a total means nothing
+     without the par played. The leaderboard box that made that point is gone
+     while a game is live — the card carries it — so the guarantee lives in the
+     total column and in how the rank beside each name is worked out. */
   w.eval(`GAMES.length = 0;
     const g = { id:"gflip", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4",
       teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes: blankHoles() };
     const per = [[5,4,4,4,4,5],[4,4,4,4,4,4],[3,4,4,4,4,3],[4,4,4,4,4,3]];
     for (let h = 0; h < 6; h++) per.forEach((row,i) => { g.holes[h].teamScore[i] = row[h]; });
-    GAMES.push(g); view.gameId = "gflip"; view.hole = 0; render();`);
+    GAMES.push(g); view.tab = "home"; editEvent = null;
+    view.gameId = "gflip"; view.hole = 0; render();`);
 
-  const row = document.querySelector(".strokerow");
-  ok(row, "no leaderboard rows");
-  const kids = [...row.children].map(e => e.className.split(" ")[0]);
-  eq(kids.join(","), "sname,spar,stot", "order should be name, to par, then gross:");
+  const tots = [...document.querySelectorAll(".hg-tot")].slice(1);   // skip the heading
+  eq(tots.length, 4, "a total cell per side:");
+  ok(tots[0].querySelector(".hg-v").textContent.trim(), "the gross total should be there");
+  ok(/^[+\-E]/.test(tots[0].querySelector(".hg-sk").textContent.trim()),
+     "and to par under it: " + tots[0].textContent.trim());
 
-  // and the to-par is the bigger of the two
-  const css = html.slice(html.indexOf(".spar{"), html.indexOf(".spar{") + 200);
-  const sparSize = +(/font-size:(\d+)px/.exec(css) || [])[1];
-  const tcss = html.slice(html.indexOf(".stot{"), html.indexOf(".stot{") + 200);
-  const stotSize = +(/font-size:(\d+)px/.exec(tcss) || [])[1];
-  ok(sparSize > stotSize,
-     "to par should be the headline number (" + sparSize + "px vs " + stotSize + "px)");
+  /* No box repeating it while the game is live. */
+  ok(!document.querySelector(".strokerow"),
+     "a live game shouldn't carry a leaderboard the card already is");
+  ok(document.querySelector(".cardcap"), "just a caption saying what's being played");
 
-  // the values themselves are still right
-  const first = document.querySelector(".strokerow .spar").textContent.trim();
-  eq(first, "-2", "the leader is two under through six:");
-  eq(document.querySelector(".strokerow .stot").textContent.trim(), "22", "gross still shown:");
-
-  // the per-team header follows the same order
-  const sub = document.querySelector(".tsub");
+  /* The team head leads with to par as well. */
+  const sub = document.querySelector(".team .team-score");
   ok(sub, "no team total");
-  ok(/^[+\-E]/.test(sub.textContent.trim()),
-     "the team header should lead with to par too: " + sub.textContent.trim());
-  ok(!/tot/.test(sub.textContent), "the 'tot' label is noise once the order is clear");
+  ok(/[+\-E]/.test(sub.textContent), "the team head should show to par: " + sub.textContent.trim());
+
+  /* And the rank really is to par, not gross: a side six holes in at six under
+     has a far bigger total than one a single hole in at one under, and must
+     still rank ahead of it. */
+  w.eval(`(function(){
+    const g = GAMES[0], co = courseOf(g);
+    g.holes = blankHoles();
+    for (let h = 0; h < 6; h++) g.holes[h].teamScore[0] = co.holes[h].par - 1;
+    g.holes[0].teamScore[1] = co.holes[0].par - 1;
+    render();
+  })()`);
+  const ranks = [...document.querySelectorAll(".hg-lab .hg-rk")].map(x => x.textContent.trim());
+  eq(ranks.length, 4, "a rank beside every side:");
+  eq(ranks[0], "1", "six under through six should lead:");
+  ok(+ranks[1] > 1,
+     "one under through one must not, despite the far lower gross: " + ranks.join(","));
   w.eval('view.gameId = null; render();');
 }));
 
@@ -2634,13 +2643,19 @@ t("R125 the card shows every team's score, in colour, with no name printed twice
        "hole 10 sits in the same row as hole 1:");
     /* Full names, because four columns of initials made Dan and Daniel the
        same label — the thing that was wrong with the pairings grid. */
-    const labs = [...blocks[0].querySelectorAll(".hg-lab")].slice(1).map(x => x.textContent.trim());
+    /* The rank badge shares the label, so read the name past it. */
+    const labs = [...blocks[0].querySelectorAll(".hg-lab")].slice(1).map(x => {
+      const rk = x.querySelector(".hg-rk");
+      return x.textContent.trim().slice(rk ? rk.textContent.trim().length : 0);
+    });
     eq(labs.length, 4, "a row per team:");
     /* Uppercased by CSS, so compare the text the markup actually carries. A
        pair gets both names; a bigger side gets sideName's "X's team", which is
        the app's existing answer to a label that won't fit. */
     labs.forEach((l,i) => eq(l, w.eval(`sideName(GAMES[0], ${i})`),
       "team rows are labelled with the whole side:"));
+    ok(blocks[0].querySelector(".hg-lab .hg-rk"),
+       "and carry the side's rank, so the rows never have to be re-sorted");
 
     /* And the team block below no longer prints those same names again. */
     const blocksOut = [...document.querySelectorAll(".team")];
