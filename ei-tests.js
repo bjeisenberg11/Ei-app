@@ -2391,6 +2391,190 @@ t("R116 a four-team game counts only under playing with", () => isolate(() => {
   eq(m2.agC.p1.p3, 1, "a best ball still records opponents:");
 }));
 
+/* ---------- skins, and tees that belong to a team ---------- */
+
+/* One hole of a four-team game, scored, so holeSkins can be read straight back. */
+function skinsHole(scores, opts){
+  const w = dom.window;
+  return JSON.parse(w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gsk", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4", skins:true,
+                teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]},
+                holes: blankHoles() };
+    Object.assign(g, ${JSON.stringify(opts || {})});
+    ${JSON.stringify(scores)}.forEach((v, i) => { g.holes[0].teamScore[i] = v; });
+    GAMES.push(g);
+    return JSON.stringify(holeSkins(g, 0));
+  })()`));
+}
+
+t("R117 two skins a hole, split across the places a tie covers", () => isolate(() => {
+  /* Twelfths of a skin, so every split that can arise is a whole number. */
+  eq(skinsHole([4,5,5,5]).join(","), "12,4,4,4",
+     "Blake's example: a skin to the 4, a third each to the three 5s sharing second:");
+  eq(skinsHole([5,5,5,5]).join(","), "6,6,6,6",
+     "all four level is half a skin each:");
+  eq(skinsHole([4,4,5,5]).join(","), "12,12,0,0",
+     "two clear of the field take one each:");
+  eq(skinsHole([4,5,5,6]).join(","), "12,6,6,0",
+     "a tie for second splits the one skin second is worth:");
+  eq(skinsHole([4,4,4,5]).join(","), "8,8,8,0",
+     "three tied for the lead share both skins:");
+  eq(skinsHole([6,5,4,5]).join(","), "0,6,12,6",
+     "and the twelfths come back in side order, not in finishing order:");
+  /* Two skins a hole, always — if the arithmetic ever stopped adding to 24 the
+     leaderboard would quietly drift. */
+  [[4,5,5,5],[5,5,5,5],[4,4,5,5],[4,5,5,6],[4,4,4,5],[3,9,9,9]].forEach(sc =>
+    eq(skinsHole(sc).reduce((a,b) => a+b, 0), 24,
+       "a hole must always award exactly two skins, " + sc.join("/") + ":"));
+}));
+
+t("R118 a hole pays nothing until every team is in", () => isolate(() => {
+  const w = dom.window;
+  skinsHole([4,5,5,5]);
+  w.eval(`GAMES[0].holes[0].teamScore[3] = null;`);
+  eq(w.eval("JSON.stringify(holeSkins(GAMES[0], 0))"), "null",
+     "with one team still out there, nobody can know who the best two are:");
+  eq(JSON.parse(w.eval("JSON.stringify(skinTotals(GAMES[0]))")).holes, 0,
+     "so the hole doesn't count toward the running total either:");
+}));
+
+t("R119 skins decide the game, and the top two still go through", () => isolate(() => {
+  const w = dom.window;
+  /* A deliberately awkward field: side D wins the most strokes outright but
+     side A picks up more skins, so strokes and skins disagree. */
+  w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gsk", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4", skins:true,
+                teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]},
+                holes: blankHoles() };
+    /* A and B take both skins on seventeen holes by a single stroke, then
+       blow the eighteenth up. C and D pick up the skins there and finish
+       seven strokes better on gross — so gross and skins disagree flatly. */
+    for (let h = 0; h < 18; h++){
+      g.holes[h].teamScore[0] = 4;
+      g.holes[h].teamScore[1] = 4;
+      g.holes[h].teamScore[2] = 5;
+      g.holes[h].teamScore[3] = 5;
+    }
+    g.holes[0].teamScore[0] = 30; g.holes[0].teamScore[1] = 30;
+    g.holes[0].teamScore[2] = 6;  g.holes[0].teamScore[3] = 6;
+    GAMES.push(g);
+  })()`);
+  const st = JSON.parse(w.eval("JSON.stringify(skinsState(GAMES[0]))"));
+  eq(st.done, true, "eighteen complete holes should close the game:");
+  eq(st.totals.join(","), "204,204,12,12",
+     "A and B split both skins on seventeen holes; C and D split them on the blow-up:");
+  eq(st.result.winner, "TIE", "A and B finish level on skins:");
+  const out = JSON.parse(w.eval("JSON.stringify(teamOutcomes(GAMES[0]))"));
+  eq(out.join(","), "W,W,L,L", "the two on the most skins go through, not the lowest gross:");
+  /* The gross really does disagree — this is the point of the test. */
+  const str = JSON.parse(w.eval("JSON.stringify(strokeTotals(GAMES[0]).totals)"));
+  ok(str[2] < str[0] && str[3] < str[1],
+     "C and D should be the better two on gross, so the two scorings disagree: " + str.join("/"));
+}));
+
+t("R120 a 2v2v2v2 without the flag is still the stroke play it always was", () => isolate(() => {
+  const w = dom.window;
+  /* Last year's game is sitting in Firestore with no skins flag on it. If the
+     format itself changed, re-reading it would rescore the round and move the
+     all-time records. */
+  eq(fourTeamGame([70,72,74,76]), "[70,72,74,76]", "a plain four-team game totals on strokes:");
+  ok(!w.eval('isSkins(GAMES.find(x=>x.id==="g2x4"))'), "and must not be read as skins");
+  eq(JSON.parse(w.eval('JSON.stringify(gameResult(GAMES.find(x=>x.id==="g2x4")))')).winner, "A",
+     "the lowest total still wins it:");
+  eq(outcomes().join(","), "W,W,L,L", "and the top two on strokes still go through:");
+}));
+
+t("R121 a team's tee overrides the man's, for that game only", () => isolate(() => {
+  const w = dom.window;
+  const saved = w.eval(`JSON.stringify({ tees: COURSES[0].tees,
+    assign: PLAYERS.map(p => p.tees && p.tees[COURSES[0].id]) })`);
+  try {
+    w.eval(`(function(){
+      const c = COURSES[0];
+      c.tees = [{name:"Black", rating:74.0, slope:138, par:72},
+                {name:"Purple", rating:62.8, slope:102, par:72}];
+      PLAYERS.forEach(p => { p.tees = p.tees || {}; p.tees[c.id] = "Black"; });
+    })()`);
+    skinsHole([4,4,4,4], { tees: { 0:"Purple" } });
+    eq(w.eval('teeNameIn(GAMES[0], "p1", COURSES[0])'), "Purple",
+       "a man on the side with a team tee plays that box:");
+    eq(w.eval('teeNameIn(GAMES[0], "p5", COURSES[0])'), "Black",
+       "a side with none falls back to what the Field tab says:");
+    eq(w.eval('teeNameFor("p1", COURSES[0])'), "Black",
+       "and the man's own tee is left exactly as it was:");
+    /* The tee is for reading, not for scoring — these formats take no
+       handicaps, so it must never reach the course handicap. */
+    eq(w.eval('courseHcp("p1", COURSES[0])'), w.eval('courseHcp("p1", COURSES[0])'),
+       "course handicap is still computed from the player's own tee:");
+  } finally {
+    w.eval(`(function(){
+      const o = JSON.parse(${JSON.stringify(saved)}), c = COURSES[0];
+      c.tees = o.tees;
+      PLAYERS.forEach((p, i) => {
+        if (o.assign[i] == null) { if (p.tees) delete p.tees[c.id]; }
+        else { p.tees = p.tees || {}; p.tees[c.id] = o.assign[i]; }
+      });
+    })()`);
+  }
+}));
+
+t("R122 skins and team tees survive the CSV, both directions", () => isolate(() => {
+  const w = dom.window;
+  const saved = w.eval(`JSON.stringify(COURSES[0].tees)`);
+  try {
+    w.eval(`COURSES[0].tees = [{name:"Black",rating:74,slope:138,par:72},
+                               {name:"Blue",rating:72.5,slope:134,par:72},
+                               {name:"Purple",rating:62.8,slope:102,par:72}];`);
+    const co = w.eval("COURSES[0].name");
+    const csv = "day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4,d1,d2,d3,d4\n"
+      + `Thursday,1:03pm,ROUND,${co}\n`
+      + "Thursday,,GAME,,2V2V2V2-8,,Skins. Tees: Black / Blue / Purple / own,"
+      + "Blake,Daniel,,,Dan,Howard,,,Jason,Luke,,,Jake,Adam\n";
+    const plan = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv)}))`));
+    eq(plan.errors.length, 0, "it should import cleanly: " + plan.errors.join(" | "));
+    const g = plan.games[0];
+    eq(g.skins, true, "the word Skins in the notes turns the game into skins:");
+    eq(g.tees[0], "Black", "the first team's box comes off the list:");
+    eq(g.tees[2], "Purple", "and so does the third's:");
+    ok(!(g.tees && g.tees[3]), "\"own\" leaves that team on each man's own tee");
+
+    w.eval(`SCHEDULE = ${JSON.stringify(plan.events)};
+            GAMES = ${JSON.stringify(plan.games)}.map(x => { x.holes = blankHoles(); return x; });`);
+    const back = w.eval("scheduleToCSV()");
+    ok(/Skins/.test(back), "the export has to write Skins back or it's lost on a round trip");
+    ok(/Tees: Black \/ Blue \/ Purple \/ own/.test(back),
+       "and the four boxes with it: " + (/.*Tees:[^\n]*/.exec(back)||[""])[0]);
+    const again = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(back)}))`));
+    eq(again.games[0].skins, true, "skins survives the round trip:");
+    eq(again.games[0].tees[1], "Blue", "and so do the tees:");
+
+    /* A tee name the course doesn't have is a mistake worth naming, not a
+       silently dropped box. */
+    const bad = csv.replace("Tees: Black / Blue / Purple / own", "Tees: Tartan");
+    const p2 = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(bad)}))`));
+    ok(p2.errors.some(x => /Tartan/.test(x)), "an unknown tee should be reported: "
+       + p2.errors.join(" | "));
+  } finally {
+    w.eval(`COURSES[0].tees = ${saved};`);
+  }
+}));
+
+t("R123 the skins card says skins, not strokes", () => isolate(() => {
+  const w = dom.window;
+  skinsHole([4,5,5,5]);
+  w.eval(`view.tab = "home"; view.gameId = "gsk"; view.hole = 0;
+          editEvent = null; render();`);
+  const txt = document.getElementById("app").textContent;
+  ok(/Skins/.test(txt), "the banner should say what's being played");
+  ok(/two a hole/.test(txt), "and how much is on each hole");
+  ok(!/Stroke play/.test(txt), "it must not also claim stroke play");
+  const label = JSON.parse(w.eval('JSON.stringify(gameStatusLabel(GAMES[0]))'));
+  ok(/lead on 1\b/.test(label.text), "the card label should name the leader and their skins: " + label.text);
+  ok(/thru 1/.test(label.text), "and how far they are: " + label.text);
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

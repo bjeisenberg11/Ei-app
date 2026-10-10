@@ -17,13 +17,34 @@ The app covers:
     `3&2`, dormie, and so on).
   - `SCRAMBLE4` / `SCRAMBLE3`: 4v4 and 3v3 scrambles, **stroke play** on
     one team score per hole, with no handicaps.
-  - `SCRAMBLE2X4`: 2v2v2v2 scramble. **Four** teams of two, stroke play, no
-    handicaps. The **top two teams win and the bottom two lose**; a tie
-    straddling that line is a tie for everyone in it, because second and third
-    can't be honestly separated. `g.oneGroup` records whether all eight played
-    as one group — if so the round is left out of the "same foursome" pairings
-    column, since adding one to all 28 pairs says nothing about how the field
-    is mixed.
+  - `SCRAMBLE2X4`: 2v2v2v2 scramble. **Four** teams of two, no handicaps. The
+    **top two teams win and the bottom two lose**; a tie straddling that line
+    is a tie for everyone in it, because second and third can't be honestly
+    separated. `g.oneGroup` records whether all eight played as one group — if
+    so the round is left out of the "same foursome" pairings column, since
+    adding one to all 28 pairs says nothing about how the field is mixed.
+    - **Scored on skins when `g.skins` is set**, otherwise on strokes. Two
+      skins a hole, to the two best team scores; a tie takes the skins for the
+      places it covers and splits them, so `4,5,5,5` is one skin and a third
+      each, and all four level is a half each. Counted in **twelfths**
+      (`SKIN = 12`) because every split that can arise divides into twelve
+      exactly — a weekend of thirds stored as `0.33` would not add up, and
+      `teamOutcomes` reads these totals. `holeSkins` returns `null` until
+      every side has scored: you can't know the best two while one is still out
+      there. `gameResult` must test `isSkins` **before** `isStroke`, since a
+      skins game is still a `SCRAMBLE2X4`.
+    - The flag is **absent-means-strokes** on purpose. Changing the format
+      itself would re-score every stored 2v2v2v2 and move the all-time
+      records.
+    - `g.tees` is a per-side tee name (`{0:"Black",1:"Blue",…}`) for a
+      four-team game, since the teams are levelled by the boxes rather than by
+      handicaps and the same man plays a different tee depending on his
+      partner. It is **display only** — `teeNameIn` uses it, `courseHcp`
+      never does, and these formats take no handicaps anyway.
+    - Both ride in the GAME row's **`notes`** column as words — `Skins. Tees:
+      Black / Blue / Members / Purple` — rather than more format suffixes, and
+      `scheduleToCSV` writes the same sentence back. `own` leaves a side on
+      each man's own tee.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
     18 holes. Selections are hidden from the other team until they are locked.
 - **Handicaps**: course handicap = `index × slope/113 + (rating − par)`,
@@ -237,7 +258,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **148 passed, 0 failed**. The suite is
+Current status against `index.html`: **162 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

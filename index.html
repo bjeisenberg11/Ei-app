@@ -271,6 +271,7 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 /* 40ball's team head leads with to par, so that one is sized up rather than
    left at the 12px a trailing figure gets. */
 .team-score .parlead{font-size:18px;font-weight:700}
+.team-score .skin{color:var(--brass);font-weight:700}
 .bar{height:9px;background:var(--paper-3);border:1px solid var(--rule);position:relative;overflow:hidden}
 .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ink)}
 .bar i.tight{background:var(--pencil)}
@@ -458,6 +459,17 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
 .rost-sum{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:9px;
   font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
 .rost-sum .bad{color:var(--pencil);font-weight:600}
+/* Tees per team, for a 2v2v2v2 levelled by the boxes rather than by handicaps.
+   Two columns on a phone, so four teams are two short rows and not a scroll. */
+.teeset{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;margin-top:10px;
+  padding-top:9px;border-top:1px solid var(--rule-soft)}
+.teeset-t{grid-column:1/-1;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.07em;font-size:12px;color:var(--ink-soft)}
+.teepick{display:flex;align-items:center;gap:6px;min-width:0}
+.teepick .tp-side{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;
+  width:19px;height:19px;line-height:19px;text-align:center;border:1px solid var(--rule);
+  flex:none}
+.teepick select.tee{font-size:14px;padding:6px 4px;min-width:0}
 
 /* pairing matrix */
 .pmwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px}
@@ -834,11 +846,26 @@ function teeNameFor(pid, course){
   const p = P(pid) || {};
   return (p.tees && p.tees[course.id]) || (course.tees[0] || {}).name || "\u2014";
 }
+/* In a 2v2v2v2 the box belongs to the team, not the man. The four teams are
+   levelled against each other by sending them off different tees, so the same
+   player is on a different box depending on who he was drawn with — which a
+   tee stored per player per course cannot say. A tee set on the game wins for
+   that game only, and only for display: the formats that carry team tees take
+   no handicaps, so this never reaches courseHcp. */
+const gameTee = (g, t) => (g.tees && g.tees[t]) || null;
+function sideOfPlayer(g, pid){
+  const i = sides(g).find(k => (g.teams[k] || []).includes(pid));
+  return i === undefined ? -1 : i;
+}
+function teeNameIn(g, pid, course){
+  const t = sideOfPlayer(g, pid);
+  return (t >= 0 && gameTee(g, t)) || teeNameFor(pid, course);
+}
 /* Which box someone is hitting from. In a scramble there are no handicaps, so
    the tee is the only thing separating two players on paper — it belongs next
    to the name rather than buried on the Field tab. */
-const teeTag = (pid, course) =>
-  `<span class="teetag">${esc(teeNameFor(pid, course))}</span>`;
+const teeTag = (g, pid, course) =>
+  `<span class="teetag">${esc(teeNameIn(g, pid, course))}</span>`;
 function teeOf(pid, course){
   return course.tees.find(t => t.name === teeNameFor(pid, course)) || course.tees[0];
 }
@@ -1047,6 +1074,64 @@ function strokeState(g){
           : {winner:"TIE", label:`${a}\u2013${a}`} };
 }
 
+/* ---------- skins, for a four-team game ----------
+   Two skins on every hole, to the two best team scores. A tie takes the skins
+   for the places it covers and splits them evenly: 4,5,5,5 is a skin to the 4
+   and a third each to the 5s, because those three are sharing second, third
+   and fourth and only second carries a skin. All four level is half each.
+
+   Everything is counted in twelfths of a skin, because every split that can
+   arise — two skins across one to four teams, or one skin across two or three
+   — divides into twelve exactly. A weekend of thirds stored as 0.33 would not
+   add up, and the leaderboard reads these totals. */
+const SKIN = 12, HOLE_SKINS = 2;
+const isSkins = g => isMulti(g) && g.skins === true;
+const fmtSkins = u => {
+  const v = u / SKIN;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0$/, "");
+};
+/* twelfths won by each side on one hole, or null until every side has scored —
+   you can't know who the best two are while one of them is still out there. */
+function holeSkins(g, h){
+  const ix = sides(g);
+  const hole = g.holes[h];
+  const sc = ix.map(i => hole.teamScore[i]);
+  if (sc.some(v => v == null)) return null;
+  const order = ix.slice().sort((a, b) => sc[a] - sc[b] || a - b);
+  const out = ix.map(() => 0);
+  for (let k = 0; k < order.length; ){
+    let j = k;
+    while (j + 1 < order.length && sc[order[j + 1]] === sc[order[k]]) j++;
+    let pot = 0;
+    for (let m = k; m <= j; m++) if (m < HOLE_SKINS) pot += SKIN;
+    const each = pot / (j - k + 1);
+    for (let m = k; m <= j; m++) out[order[m]] = each;
+    k = j + 1;
+  }
+  return out;
+}
+function skinTotals(g){
+  const ix = sides(g);
+  const totals = ix.map(() => 0);
+  let holes = 0;
+  for (let h = 0; h < 18; h++){
+    const s = holeSkins(g, h);
+    if (!s) continue;
+    holes++;
+    ix.forEach(i => totals[i] += s[i]);
+  }
+  return { totals, holes };
+}
+function skinsState(g){
+  const { totals, holes } = skinTotals(g);
+  if (holes < 18) return { done:false, result:null, totals, holes };
+  const best = Math.max(...totals);
+  const winners = totals.filter(v => v === best).length;
+  return { done:true, totals, holes,
+    result: { winner: winners === 1 ? SIDE_CODES[totals.indexOf(best)] : "TIE",
+              label: totals.slice().sort((a, b) => b - a).map(fmtSkins).join("–") } };
+}
+
 /* What each side got out of the game, as the leaderboard counts it. Two-sided
    games are the obvious thing. With four teams the top two win and the bottom
    two lose — and a tie straddling that line is a tie for everyone in it,
@@ -1058,7 +1143,9 @@ function teamOutcomes(g){
     return sides(g).map(i =>
       r.winner === "TIE" ? "T" : (r.winner === SIDE_CODES[i] ? "W" : "L"));
   }
-  const { totals } = strokeTotals(g);
+  /* Lowest is best below, so a skins game comes in negated rather than having
+     the whole cut worked out twice with the comparisons flipped. */
+  const totals = isSkins(g) ? skinTotals(g).totals.map(v => -v) : strokeTotals(g).totals;
   const slots = Math.floor(sideCount(g) / 2);          // two of four go through
   const cut = totals.slice().sort((a,b) => a - b)[slots - 1];
   const below = totals.filter(v => v < cut).length;
@@ -1078,6 +1165,9 @@ function strokeParSoFar(g, t){
 /* ---------- unified result ---------- */
 function gameResult(g){
   if (isMatch(g))  return matchState(g).result;
+  /* Before isStroke: a skins game is still a SCRAMBLE2X4 and would otherwise
+     be totted up on strokes. */
+  if (isSkins(g))  return skinsState(g).result;
   if (isStroke(g)) return strokeState(g).result;
   return fbState(g).result;
 }
@@ -1285,6 +1375,18 @@ function gameStatusLabel(g){
     if (st.played === 0) return { text:"Not started", cls:"" };
     return { text:`${statusText(g,st)} · thru ${st.played}`, cls:"live" };
   }
+  if (isSkins(g)){
+    const st = skinTotals(g);
+    if (!st.holes) return { text:"Not started", cls:"" };
+    const best = Math.max(...st.totals);
+    const lead = sides(g).filter(i => st.totals[i] === best);
+    const text = lead.length === sideCount(g)
+      ? `All level on ${fmtSkins(best)}`
+      /* "lead" either way: a side is two men, so "Daniel & Jake leads" reads
+         wrong even when there's only one of them in front. */
+      : `${lead.map(i => teamLabel(g, i)).join(" and ")} lead on ${fmtSkins(best)}`;
+    return { text:`${text} · thru ${st.holes}`, cls:"live" };
+  }
   /* Stroke play has to be handled before the 40ball text below, or every
      scramble in progress reports a 40-ball budget it doesn't have. It only
      showed once a score went in, which is why an unstarted scramble looked
@@ -1373,7 +1475,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-09.2340";
+const BUILD = "2026-10-10.0020";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2939,6 +3041,30 @@ function parseCSV(text){
       picked.forEach((x, k) => g.teams[k] = x);
       if (fmt === "FORTYBALL") g.hidden = true;
       if (ONE_GROUP_FORMATS[detail.toUpperCase().trim()]) g.oneGroup = true;
+      /* A four-team game's notes column carries how it's scored and which box
+         each team plays, in words rather than more format suffixes — the
+         spreadsheet stays readable and scheduleToCSV writes the same sentence
+         back. Skins is opt-in here on purpose: without it a 2v2v2v2 is the
+         stroke-play game it has always been, so importing an old schedule
+         doesn't quietly rescore it. */
+      if (isMulti(g)){
+        if (/\bskins\b/i.test(notes)) g.skins = true;
+        const m = /tees?\s*:\s*([^.;]+)/i.exec(notes);
+        if (m){
+          const co = C(currentRound.courseId);
+          m[1].split("/").map(x => x.trim()).filter(Boolean).forEach((nm, k) => {
+            if (k >= sideCount(g) || /^(own|default|each)$/i.test(nm)) return;
+            const hit = co && co.tees.find(x => x.name.toLowerCase() === nm.toLowerCase());
+            if (!hit){
+              errors.push(`Line ${n}: ${co ? co.name : "that course"} has no tee `
+                + `called "${nm}".`);
+              return;
+            }
+            g.tees = g.tees || {};
+            g.tees[k] = hit.name;
+          });
+        }
+      }
       games.push(g);
       return;
     }
@@ -2985,7 +3111,13 @@ function scheduleToCSV(){
         const all = [];
         for (let k = 0; k < 4; k++) all.push(...(k < sideCount(g) ? cells(k)
                                    : Array(CSV_SIDE_COLS).fill("")));
-        rows.push(csvRow([e.day, "", "GAME", "", fmt, "", "", ...all]));
+        /* Both halves of the round trip, or it's lost on export — the way
+           ROUND notes were for months. */
+        const bits = [];
+        if (g.skins) bits.push("Skins");
+        if (isMulti(g) && g.tees && sides(g).some(i => g.tees[i]))
+          bits.push("Tees: " + sides(g).map(i => g.tees[i] || "own").join(" / "));
+        rows.push(csvRow([e.day, "", "GAME", "", fmt, "", esc2(bits.join(". ")), ...all]));
       });
     } else if (e.type === "TRAVEL"){
       rows.push(csvRow([e.day, e.time?fmtTime(e.time):"",
@@ -3310,10 +3442,8 @@ function gameEditor(g){
   const counts = ix.map(i => (g.teams[i] || []).length);
   const played = holeList(g).some(hl => Object.keys(hl.scores||{}).length
     || ix.some(i => hl.teamScore[i] != null));
-  const sideOf = pid => {
-    const i = ix.find(k => (g.teams[k] || []).includes(pid));
-    return i === undefined ? -1 : i;
-  };
+  const sideOf = pid => sideOfPlayer(g, pid);
+  const course = courseOf(g) || { tees: [] };
 
   return `<div class="gedit">
     <div class="ev-top">
@@ -3325,7 +3455,7 @@ function gameEditor(g){
     <table class="rost"><tbody>
       ${PLAYERS.map(p => {
         const t = sideOf(p.id);
-        return `<tr><td class="rn">${esc(p.name)}${teeTag(p.id, courseOf(g))}</td>
+        return `<tr><td class="rn">${esc(p.name)}${teeTag(g, p.id, courseOf(g))}</td>
           ${ix.map(i => `<td><button class="side ${t===i?"on "+SIDE_CODES[i].toLowerCase():""}"
             data-side="${g.id}:${p.id}:${i}">${SIDE_CODES[i]}</button></td>`).join("")}
           <td><button class="side ${t===-1?"on out":""}" data-side="${g.id}:${p.id}:-1">Out</button></td>
@@ -3337,9 +3467,21 @@ function gameEditor(g){
         counts[i]}/${need[i]}</span>`).join("")}
       ${isMulti(g) ? `<button class="chip ${g.oneGroup?"on":""}" data-onegroup="${g.id}">${
         g.oneGroup ? "All eight \u2014 not counted in pairings" : "Two foursomes"}</button>` : ""}
+      ${isMulti(g) ? `<button class="chip ${g.skins?"on":""}" data-skins="${g.id}">${
+        g.skins ? "Skins \u2014 two a hole" : "Stroke play"}</button>` : ""}
       ${g.type==="FORTYBALL" ? `<button class="chip ${g.hidden?"on":""}"
         data-hidden="${g.id}">Hidden selections: ${g.hidden?"on":"off"}</button>` : ""}
     </div>
+    ${isMulti(g) && course.tees.length > 1 ? `<div class="teeset">
+      <span class="teeset-t">Tees</span>
+      ${ix.map(i => `<label class="teepick">
+        <span class="tp-side ${SIDE_CODES[i].toLowerCase()}">${SIDE_CODES[i]}</span>
+        <select class="tee" data-gametee="${g.id}:${i}">
+          <option value=""${gameTee(g,i) ? "" : " selected"}>Each man's own</option>
+          ${course.tees.map(x => `<option${x.name===gameTee(g,i)?" selected":""}>${
+            esc(x.name)}</option>`).join("")}
+        </select></label>`).join("")}
+    </div>` : ""}
   </div>`;
 }
 
@@ -3729,6 +3871,28 @@ function renderGame(){
         !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
       ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
     </div>`;
+  } else if (isSkins(g)){
+    /* Skins lead, gross total trails. The gross is worth keeping on screen —
+       it's what everyone is shouting out on the green — but it decides nothing
+       here, so it can't be the big number. */
+    const sk = skinsState(g);
+    const str = strokeTotals(g);
+    const out2 = teamOutcomes(g);
+    const rows = sides(g).map(i => ({ i, sk: sk.totals[i], tot: str.totals[i],
+                                      holes: str.holes[i] }))
+      .sort((a,b) => (b.holes > 0) - (a.holes > 0) || b.sk - a.sk || a.i - b.i);
+    out += `<div class="banner ${sk.done?"closed":""}">
+      ${sk.done ? `<div class="st">${sk.result.winner==="TIE" ? "TIED"
+        : `${winnerLabel(g,sk.result.winner)} WIN`}</div>` : ""}
+      ${rows.map(r => `<div class="strokerow${
+        out2 && out2[r.i] === "W" ? " through" : ""}">
+        <span class="sname">${esc(teamLabel(g, r.i))}</span>
+        <span class="spar">${sk.holes ? fmtSkins(r.sk) : ""}</span>
+        <span class="stot wide">${r.tot}</span>
+      </div>`).join("")}
+      <div class="thru">${sk.holes ? `Skins · two a hole · thru ${sk.holes}`
+        : "Skins · two a hole · not started"} · top two win</div>
+    </div>`;
   } else if (isStroke(g)){
     const st = strokeState(g);
     const ix = sides(g);
@@ -3956,7 +4120,7 @@ function renderTeam(g, t, h, hardLocked){
   const name = teamLabel(g, t);
   const course = courseOf(g);
   const roster = (g.teams[t] || [])
-    .map(id => esc((P(id) || {}).name || "?") + teeTag(id, course))
+    .map(id => esc((P(id) || {}).name || "?") + teeTag(g, id, course))
     .join(`<span class="rsep">·</span>`);
   let inner = "", winCls = "";
 
@@ -4015,6 +4179,18 @@ function renderTeam(g, t, h, hardLocked){
   if (isMatch(g)){
     const ts = teamHoleScore(g,t,h);
     head += hole.conceded===t ? "CONCEDED" : (ts!=null ? ts : "\u2014");
+    if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
+  } else if (isSkins(g)){
+    /* The hole's score is what's being entered, so it stays the big number;
+       what the hole was worth, and the running skins, trail it. The hole's
+       skins only appear once every team has holed out — before that nobody
+       knows who the best two are. */
+    const hs = holeSkins(g, h);
+    const { totals } = skinTotals(g);
+    const ts = hole.teamScore[t];
+    head += `${ts != null ? ts : "—"} <span class="tsub">` +
+            `${hs ? `<span class="skin">+${fmtSkins(hs[t])}</span> ` : ""}` +
+            `${fmtSkins(totals[t])} skins</span>`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   } else if (isStroke(g)){
     /* stroke play: this hole's score and the round total so far. The 40-score
@@ -4641,6 +4817,10 @@ function handleClick(el){
     const g = GAMES.find(x => x.id === el.dataset.onegroup);
     g.oneGroup = !g.oneGroup; pushGame(g); render(); return;
   }
+  if (el.dataset.skins){
+    const g = GAMES.find(x => x.id === el.dataset.skins);
+    g.skins = !g.skins; pushGame(g); render(); return;
+  }
 
   if (el.id === "aunlock"){
     const v = (document.getElementById("acode")||{}).value || "";
@@ -5059,6 +5239,19 @@ document.addEventListener("change", e => {
        it mid-spin. The card picks the new time up when the editor closes. */
     EV(editEvent).time = t.value || null;
     queueConfig();
+    return;
+  }
+  if (t.dataset && t.dataset.gametee){
+    const [gid, side] = t.dataset.gametee.split(":");
+    const g = GAMES.find(x => x.id === gid);
+    if (!g) return;
+    g.tees = g.tees || {};
+    /* An empty pick means "whatever the Field tab says for this man", which is
+       the absence of a team tee — not an empty string, which would read as a
+       tee called "" everywhere it's printed. */
+    if (t.value) g.tees[side] = t.value; else delete g.tees[side];
+    if (!Object.keys(g.tees).length) delete g.tees;
+    pushGame(g); render();
     return;
   }
   if (t.dataset && t.dataset.tee != null){
