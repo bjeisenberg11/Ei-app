@@ -1638,8 +1638,14 @@ t("R100 stroke play is read on to par, not on the gross", () => isolate(() => {
   const tots = [...document.querySelectorAll(".hg-tot")].slice(1);   // skip the heading
   eq(tots.length, 4, "a total cell per side:");
   ok(tots[0].querySelector(".hg-v").textContent.trim(), "the gross total should be there");
-  ok(/^[+\-E]/.test(tots[0].querySelector(".hg-sk").textContent.trim()),
+  ok(/^[+\-E]/.test(tots[0].querySelector(".hg-rel").textContent.trim()),
      "and to par under it: " + tots[0].textContent.trim());
+  /* In a scramble the gross leads and to par trails; a skins game flips that,
+     because there the skins are what's being played for. */
+  ok(tots[0].querySelector(".hg-v").className.includes("lead"),
+     "a scramble leads with the gross:");
+  ok(tots[0].querySelector(".hg-rel").className.includes("sub"),
+     "and trails with to par:");
 
   /* No box repeating it while the game is live. */
   ok(!document.querySelector(".strokerow"),
@@ -2639,9 +2645,15 @@ t("R125 the card shows every team's score, in colour, with no name printed twice
     const h1 = [0,1,2,3].map(t => cellOf(t, 0));
     eq(h1.map(c => c.querySelector(".hg-v").textContent.trim()).join(","), "3,4,5,4",
        "hole 1 across the four teams:");
-    ok(h1[0].className.includes("under"), "a birdie should be coloured under par: " + h1[0].className);
-    ok(h1[1].className.includes("even"),  "a par should be neither: " + h1[1].className);
-    ok(h1[2].className.includes("over"),  "a bogey should be coloured over par: " + h1[2].className);
+    const tone = c => c.querySelector(".hg-v").className;
+    ok(tone(h1[0]).includes("under"), "a birdie should be coloured under par: " + tone(h1[0]));
+    ok(tone(h1[1]).includes("even"),  "a par should be neither: " + tone(h1[1]));
+    ok(tone(h1[2]).includes("over"),  "a bogey should be coloured over par: " + tone(h1[2]));
+    /* This game is skins, so the skins lead the cell and the stroke trails. */
+    ok(h1[0].querySelector(".hg-sk").className.includes("lead"),
+       "skins should be the big number in a skins game:");
+    ok(h1[0].querySelector(".hg-v").className.includes("sub"),
+       "with the stroke under it:");
     /* Hole 10 is the tenth cell of a team's row, in the same strip. */
     eq(cellOf(0, 9).querySelector(".hg-v").textContent.trim(), "5",
        "hole 10 sits in the same row as hole 1:");

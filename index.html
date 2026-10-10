@@ -166,7 +166,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);padding:4px 7px;
   display:flex;align-items:center;white-space:nowrap;
   border-right:1px solid var(--rule)}
-.hg-c{width:31px;flex:none;border:none;border-left:1px solid var(--rule-soft);
+.hg-c{width:34px;flex:none;border:none;border-left:1px solid var(--rule-soft);
   background:transparent;padding:4px 0 3px;text-align:center;font:inherit;font-weight:600;
   color:var(--ink);cursor:pointer;line-height:1.15}
 .hg-n{font-size:10px;font-weight:600;color:var(--ink-faint)}
@@ -180,14 +180,23 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hg-lab.hg-corner{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
 /* What the hole was worth, under what was scored on it. Small on purpose: the
    score is what's being read hole to hole, the skins are the running argument. */
-.hg-v{display:block}
-.hg-sk{display:block;font-size:8.5px;font-weight:700;color:var(--brass);
-  letter-spacing:-.02em;margin-top:3px;line-height:1}
+/* Two slots in a cell: the number the game is decided on leads, whatever is
+   being counted alongside it trails. Which is which depends on the format, so
+   the sizes are their own classes rather than baked into hg-v or hg-sk. */
+.hg-c .lead{display:block;line-height:1.1}
+.hg-c .sub{display:block;font-size:8.5px;font-weight:700;letter-spacing:-.02em;
+  margin-top:3px;line-height:1}
+.hg-sk{color:var(--brass)}
+/* A hole that paid you nothing still shows its nought, so every scored cell
+   has both numbers and the column reads as a ledger. Muted, so the holes that
+   did pay carry the row. */
+.hg-sk.none{color:var(--rule)}
+.hg.skins .hg-c .lead{font-size:11.5px;letter-spacing:-.04em}
 .hg:not(.skins) .hg-s{padding:5px 0 4px}
-/* To par under the gross reads in the par colours, not the skins brass. */
-.hg-sk.under{color:var(--pencil)}
-.hg-sk.over{color:var(--over)}
-.hg-sk.even{color:var(--ink-soft)}
+/* To par trails the gross in a scramble, and reads in the par colours. */
+.hg-rel.under,.hg-v.under{color:var(--pencil)}
+.hg-rel.over,.hg-v.over{color:var(--over)}
+.hg-rel.even{color:var(--ink-soft)}
 /* Where a side stands, beside its name — the rows themselves never move, so
    the stepper under them stays where your thumb left it. */
 .hg-rk{display:inline-block;min-width:13px;margin-right:4px;flex:none;text-align:center;
@@ -1560,7 +1569,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0215";
+const BUILD = "2026-10-10.0230";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3970,21 +3979,28 @@ function holeGrid(g){
       const v = g.holes[i].teamScore[t];
       if (v != null){ tot += v; any = true; }
       const won = skinRow && skinRow[i] ? skinRow[i][t] : 0;
-      /* The badge slot is always drawn in a skins game, empty or not. Drawing
-         it only where a skin was won made those cells two lines and the rest
-         one, so the scores sat at different heights across a row. */
-      o += `<button class="hg-c hg-s ${v == null ? "" : parClass(v - course.holes[i].par)}${
-        i === view.hole ? " cur" : ""}" data-hole="${i}"><span class="hg-v">${
-        v == null ? "" : v}</span>${
-        sk ? `<span class="hg-sk">${won ? fmtSkins(won) : ""}</span>` : ""}</button>`;
+      const tone = v == null ? "" : parClass(v - course.holes[i].par);
+      /* In a skins game the skins are what the hole was for, so they lead and
+         the stroke trails. The slot below is drawn in every cell, empty or
+         not: filling it only where a skin was won made those cells two lines
+         and the rest one, so scores sat at different heights along a row. */
+      o += `<button class="hg-c hg-s${i === view.hole ? " cur" : ""}" data-hole="${i}">` +
+        (sk ? `<span class="hg-sk lead${won ? "" : " none"}">${
+                v == null ? "" : fmtSkins(won)}</span>` +
+              `<span class="hg-v sub ${tone}">${v == null ? "" : v}</span>`
+            : `<span class="hg-v lead ${tone}">${v == null ? "" : v}</span>`) +
+        `</button>`;
     }
-    /* Under the gross, the number that actually decides the game: skins in a
-       skins game, to par in a scramble. Everything about a side is then in one
-       row, which is what lets the box underneath go away. */
+    /* Same order in the total: whatever decides the game leads — skins in a
+       skins game, to par in a scramble — and the gross trails it. Everything
+       about a side is then in one row, which is what lets the box below go. */
     const rel = tot - strokeParSoFar(g, t);
-    o += `<span class="hg-c hg-tot"><span class="hg-v">${any ? tot : ""}</span>` +
-      `<span class="hg-sk ${sk ? "" : parClass(rel)}">${
-        !any ? "" : sk ? fmtSkins(skTot(t)) : toPar(rel)}</span></span>`;
+    o += `<span class="hg-c hg-tot">` +
+      (sk ? `<span class="hg-sk lead">${any ? fmtSkins(skTot(t)) : ""}</span>` +
+            `<span class="hg-v sub">${any ? tot : ""}</span>`
+          : `<span class="hg-v lead">${any ? tot : ""}</span>` +
+            `<span class="hg-rel sub ${parClass(rel)}">${any ? toPar(rel) : ""}</span>`) +
+      `</span>`;
     o += `</div>`;
   });
   return o + `</div></div>`;

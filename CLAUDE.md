@@ -311,9 +311,16 @@ about, because they fail for reasons that aren't about the code you just wrote:
     taps loses your place. A row is therefore one flex element with fixed
     column widths rather than twenty grid children, so there is something to
     move.
-- In a skins game the badge slot under a score is drawn in **every** cell,
-  empty or not. Drawing it only where a skin was won made those cells two
-  lines and the rest one, so scores sat at different heights along a row.
+- A cell has two slots, `.lead` and `.sub`, and **what the game is decided on
+  leads**: in a skins game the skins lead and the stroke trails; in a scramble
+  the stroke leads and to par trails. Same order in the total column. The
+  classes say what a number *is* (`.hg-v` strokes, `.hg-sk` skins, `.hg-rel`
+  to par) and `.lead`/`.sub` say how big it's drawn, so the two don't get
+  tangled when a format flips the emphasis.
+- Both slots are drawn in **every** scored cell — a hole that paid nothing
+  still shows a muted `0`. Filling a slot only where there was something to
+  say made those cells two lines and the rest one, so numbers sat at different
+  heights along a row.
 - **Nothing on a grid is labelled with a truncated name** (R126). A row is
   `sideName(g, t)`, which gives both names for a pair and "Blake's team" for a
   side too big to name. The pairings matrix headings are whole names turned
