@@ -155,25 +155,28 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
    lets a column be wide enough to hold a score and the skins it won. */
 .hgwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0 0;
   border:1px solid var(--rule);background:var(--paper-2)}
-.hg{display:grid;grid-template-columns:122px repeat(18,31px) 42px;width:max-content;
-  font-family:'IBM Plex Mono',monospace;font-size:12px}
-.hg-lab{position:sticky;left:0;z-index:2;background:var(--paper-2);
+.hg{width:max-content;font-family:'IBM Plex Mono',monospace;font-size:12px}
+/* A row is one element rather than twenty grid children, so the leaderboard
+   shuffle has something to move. Column widths are fixed, which keeps the
+   columns lined up without a grid holding them together. */
+.hg-row{display:flex;align-items:stretch;position:relative}
+.hg-row + .hg-row{border-top:1px solid var(--rule-soft)}
+.hg-lab{width:122px;flex:none;position:sticky;left:0;z-index:2;background:var(--paper-2);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);padding:4px 7px;
   display:flex;align-items:center;white-space:nowrap;
-  border-right:1px solid var(--rule);border-top:1px solid var(--rule-soft)}
-.hg-c{border:none;border-left:1px solid var(--rule-soft);border-top:1px solid var(--rule-soft);
+  border-right:1px solid var(--rule)}
+.hg-c{width:31px;flex:none;border:none;border-left:1px solid var(--rule-soft);
   background:transparent;padding:4px 0 3px;text-align:center;font:inherit;font-weight:600;
   color:var(--ink);cursor:pointer;line-height:1.15}
-.hg > :nth-child(-n+20){border-top:none}
 .hg-n{font-size:10px;font-weight:600;color:var(--ink-faint)}
 /* The hole you're on is a tinted column, with the marker only under its
    number. A bar on every cell drew four separate red dashes that read as four
    separate things rather than one column. */
 .hg-c.cur{background:var(--paper-3)}
 .hg-n.cur{color:var(--ink);font-weight:700;box-shadow:inset 0 -3px 0 var(--pencil)}
-.hg-tot{position:sticky;right:0;z-index:2;background:var(--paper-3);font-weight:700;
-  cursor:default;border-left:1px solid var(--rule)}
+.hg-tot{width:42px;flex:none;position:sticky;right:0;z-index:2;background:var(--paper-3);
+  font-weight:700;cursor:default;border-left:1px solid var(--rule)}
 .hg-lab.hg-corner{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
 /* What the hole was worth, under what was scored on it. Small on purpose: the
    score is what's being read hole to hole, the skins are the running argument. */
@@ -1557,7 +1560,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0205";
+const BUILD = "2026-10-10.0215";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2538,6 +2541,7 @@ async function applyUpdate(){
 
 /* ---------- render router ---------- */
 function render(){
+  captureRows();            // before the DOM goes
   const inGame = !!view.gameId;
   /* Back is for anywhere that isn't a top-level tab — a game, or an editor.
      Without it the only way out of an editor was the button at the bottom of
@@ -2564,7 +2568,7 @@ function render(){
   document.querySelectorAll(".tabs button").forEach(b =>
     b.classList.toggle("on", !inGame && b.dataset.tab === view.tab));
 
-  if (inGame){ renderGame(); syncHoleStrip(); return; }
+  if (inGame){ renderGame(); syncHoleStrip(); animateRows(); return; }
   if (view.tab === "board") return renderBoard();
   if (view.tab === "sched") return renderSchedule();
   if (view.tab === "players") return renderPlayers();
@@ -3932,28 +3936,35 @@ function holeGrid(g){
   const skTot = t => skinRow.reduce((n, r) => n + (r ? r[t] : 0), 0);
   const str = strokeTotals(g);
 
-  /* Where each side stands, printed beside its name rather than by sorting the
-     rows. The rows must not move: the stepper you're about to press is
-     directly below them, and a card that rearranges itself when someone holes
-     a putt loses your place every time. Skins rank high-to-low; stroke play
-     ranks on to par so far, which is the only honest comparison while sides
-     are different numbers of holes in. */
+  /* The rows are ordered by where each side stands and re-order as that
+     changes, like a leaderboard — the animation is in animateRows(). Safe
+     here in a way it wouldn't be lower down the screen: this strip is read,
+     not tapped, while the steppers you actually press stay in side order and
+     never move under your thumb.
+
+     Ranked on to par rather than gross, which is the only honest comparison
+     while sides are different numbers of holes in; skins rank high to low. */
   const anyPlay = ix.some(t => str.holes[t] > 0);
   const rankVal = t => sk ? -skTot(t) : str.totals[t] - strokeParSoFar(g, t);
   const vals = ix.map(rankVal);
   const ordered = vals.slice().sort((a, b) => a - b);
   const rankOf = t => ordered.indexOf(vals[t]) + 1;
+  const order = anyPlay
+    ? ix.slice().sort((a, b) => vals[a] - vals[b] || a - b)
+    : ix.slice();
+  const through = Math.floor(sideCount(g) / 2);
 
   let o = `<div class="hgwrap"><div class="hg${sk ? " skins" : ""}">`;
-  o += `<span class="hg-lab hg-corner">Hole</span>`;
+  o += `<div class="hg-row hg-head"><span class="hg-lab hg-corner">Hole</span>`;
   for (let i = 0; i < 18; i++)
     o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}" data-hole="${i}">${
       i + 1}</button>`;
-  o += `<span class="hg-c hg-n hg-tot">Tot</span>`;
-  ix.forEach(t => {
+  o += `<span class="hg-c hg-n hg-tot">Tot</span></div>`;
+  order.forEach(t => {
+    o += `<div class="hg-row" data-side="${t}" data-key="${esc(g.id)}:${t}">`;
     o += `<span class="hg-lab">${anyPlay
-      ? `<span class="hg-rk${rankOf(t) <= Math.floor(sideCount(g) / 2) && isMulti(g)
-          ? " in" : ""}">${rankOf(t)}</span>` : ""}${esc(sideName(g, t))}</span>`;
+      ? `<span class="hg-rk${rankOf(t) <= through && isMulti(g) ? " in" : ""}">${
+          rankOf(t)}</span>` : ""}${esc(sideName(g, t))}</span>`;
     let tot = 0, any = false;
     for (let i = 0; i < 18; i++){
       const v = g.holes[i].teamScore[t];
@@ -3974,8 +3985,45 @@ function holeGrid(g){
     o += `<span class="hg-c hg-tot"><span class="hg-v">${any ? tot : ""}</span>` +
       `<span class="hg-sk ${sk ? "" : parClass(rel)}">${
         !any ? "" : sk ? fmtSkins(skTot(t)) : toPar(rel)}</span></span>`;
+    o += `</div>`;
   });
   return o + `</div></div>`;
+}
+
+/* Leaderboard shuffle. The rows are rebuilt from scratch on every render, so
+   the old positions are measured first and each row is put back where it was
+   and then released — the browser animates the gap closed. Offsetting with
+   `top` rather than a transform on purpose: a transformed ancestor becomes the
+   containing block for position:sticky, which would break the pinned name and
+   total columns for the length of the animation. */
+let rowPos = {};
+function captureRows(){
+  rowPos = {};
+  document.querySelectorAll(".hg-row[data-key]").forEach(r => {
+    rowPos[r.dataset.key] = r.getBoundingClientRect().top;
+  });
+}
+function animateRows(){
+  const rows = document.querySelectorAll(".hg-row[data-key]");
+  if (!rows.length) return;
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    rowPos = {}; return;
+  }
+  rows.forEach(r => {
+    const was = rowPos[r.dataset.key];
+    if (was == null) return;                       // new row, nothing to move from
+    const dy = was - r.getBoundingClientRect().top;
+    if (!dy) return;
+    r.style.transition = "none";
+    r.style.top = dy + "px";
+    /* Two frames: one to let the start position paint, one to release it.
+       Releasing in the same frame collapses to no animation at all. */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      r.style.transition = "top 420ms cubic-bezier(.2,.75,.25,1)";
+      r.style.top = "";
+    }));
+  });
+  rowPos = {};
 }
 
 /* Keep the hole being scored on screen. The strip is wider than the phone, so

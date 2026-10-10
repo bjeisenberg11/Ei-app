@@ -260,7 +260,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **165 passed, 0 failed**. The suite is
+Current status against `index.html`: **166 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -295,10 +295,22 @@ about, because they fail for reasons that aren't about the code you just wrote:
   card already carries every side's totals, so the box was the same numbers
   twice on one screen; `.cardcap` is one line in its place. Where each side
   stands is a `.hg-rk` badge beside its name, filled dark for the ones going
-  through. The rows are never sorted: the stepper is directly under them, and
-  a card that rearranges when someone holes a putt loses your place. The rank
-  is worked out on **to par**, not gross, so sides different numbers of holes
-  in still compare honestly (R100).
+  through. The rank is worked out on **to par**, not gross, so sides different
+  numbers of holes in still compare honestly (R100).
+- **The card's rows sit in standings order and re-order as it changes**, with
+  a leaderboard shuffle: `render()` calls `captureRows()` before the DOM is
+  replaced and `animateRows()` after, which puts each row back where it was and
+  releases it (R127). Rows are matched on `data-key` = game id + side, so
+  nothing animates across a game change, and the two `requestAnimationFrame`s
+  are needed — releasing in the same frame collapses to no animation.
+  **Offset with `top`, never `transform`**: a transformed ancestor becomes the
+  containing block for `position:sticky`, which would unpin the name and total
+  columns for the length of the animation. `prefers-reduced-motion` skips it.
+  - The sort is safe **here and only here**. The entry blocks below stay in
+    side order: that's where the steppers are, and a block that moves between
+    taps loses your place. A row is therefore one flex element with fixed
+    column widths rather than twenty grid children, so there is something to
+    move.
 - In a skins game the badge slot under a score is drawn in **every** cell,
   empty or not. Drawing it only where a skin was won made those cells two
   lines and the rest one, so scores sat at different heights along a row.

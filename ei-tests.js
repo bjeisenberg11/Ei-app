@@ -1475,7 +1475,9 @@ t("R86 a four-team hole isn't finished until all four have locked", () => isolat
   // and the card must not show a score for a team that hasn't put one in
   w.eval("render();");
   const cells = [...document.querySelectorAll(".hg-s")];
-  const firsts = [0,1,2,3].map(t => cells[t * 18].querySelector(".hg-v").textContent.trim());
+  const firsts = [0,1,2,3].map(t => document
+    .querySelector(`.hg-row[data-side="${t}"]`)
+    .querySelectorAll(".hg-s")[0].querySelector(".hg-v").textContent.trim());
   eq(firsts.slice(2).join(","), ",",
      "sides C and D have no score on hole 1, so their cells should be empty:");
   ok(firsts[0] !== "", "while side A's score should be on the card: " + firsts.join("|"));
@@ -2630,24 +2632,27 @@ t("R125 the card shows every team's score, in colour, with no name printed twice
     ok(document.querySelector(".hgwrap"), "and it should sit in a scrollable wrapper");
     const cells = [...document.querySelectorAll(".hg-s")];
     eq(cells.length, 72, "four teams across eighteen holes:");
-    /* Row-major: each row is eighteen holes, so the first cell of each row is
-       hole 1 for that team. */
-    const h1 = [0,1,2,3].map(t => cells[t*18]);
+    /* Rows sit in standings order, so a side is found by its data-side rather
+       than by counting down the card. */
+    const rowOf = t => document.querySelector(`.hg-row[data-side="${t}"]`);
+    const cellOf = (t, i) => rowOf(t).querySelectorAll(".hg-s")[i];
+    const h1 = [0,1,2,3].map(t => cellOf(t, 0));
     eq(h1.map(c => c.querySelector(".hg-v").textContent.trim()).join(","), "3,4,5,4",
        "hole 1 across the four teams:");
     ok(h1[0].className.includes("under"), "a birdie should be coloured under par: " + h1[0].className);
     ok(h1[1].className.includes("even"),  "a par should be neither: " + h1[1].className);
     ok(h1[2].className.includes("over"),  "a bogey should be coloured over par: " + h1[2].className);
     /* Hole 10 is the tenth cell of a team's row, in the same strip. */
-    eq(cells[9].querySelector(".hg-v").textContent.trim(), "5",
+    eq(cellOf(0, 9).querySelector(".hg-v").textContent.trim(), "5",
        "hole 10 sits in the same row as hole 1:");
     /* Full names, because four columns of initials made Dan and Daniel the
        same label — the thing that was wrong with the pairings grid. */
     /* The rank badge shares the label, so read the name past it. */
-    const labs = [...blocks[0].querySelectorAll(".hg-lab")].slice(1).map(x => {
+    const nameIn = x => {
       const rk = x.querySelector(".hg-rk");
       return x.textContent.trim().slice(rk ? rk.textContent.trim().length : 0);
-    });
+    };
+    const labs = [0,1,2,3].map(t => nameIn(rowOf(t).querySelector(".hg-lab")));
     eq(labs.length, 4, "a row per team:");
     /* Uppercased by CSS, so compare the text the markup actually carries. A
        pair gets both names; a bigger side gets sideName's "X's team", which is
@@ -2705,6 +2710,60 @@ t("R126 nothing on a grid is labelled with a truncated name", () => isolate(() =
     ok(!/\.\.\.|…/.test(l), "and never an ellipsis: " + l);
   });
   ok(document.querySelector(".hgwrap"), "the 4v4 card is the same scrolling strip");
+}));
+
+t("R127 the card's rows re-order with the standings, and the entry blocks don't",
+  () => isolate(() => {
+  const w = dom.window;
+  const order = () => [...document.querySelectorAll(".hg-row[data-side]")]
+    .map(r => r.dataset.side).join(",");
+  const blockOrder = () => [...document.querySelectorAll(".team .team-name")]
+    .map(x => x.textContent.trim()).join("|");
+
+  w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gsort", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4", skins:true,
+                teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]},
+                holes: blankHoles() };
+    GAMES.push(g);
+    view.tab="home"; view.gameId="gsort"; view.hole=0; editEvent=null; render();
+  })()`);
+  eq(order(), "0,1,2,3", "nothing played yet, so the rows sit in side order:");
+  const blocksBefore = blockOrder();
+
+  /* Side D runs away with the first hole. */
+  w.eval(`(function(){
+    const g = GAMES[0];
+    [6,6,6,3].forEach((v,i) => g.holes[0].teamScore[i] = v);
+    render();
+  })()`);
+  eq(order().split(",")[0], "3", "the side that won the hole should lead the card: " + order());
+  const rk = document.querySelector('.hg-row[data-side="3"] .hg-rk');
+  eq(rk.textContent.trim(), "1", "and be ranked first:");
+  ok(rk.className.includes("in"), "and marked as going through:");
+
+  /* Then it falls apart. */
+  w.eval(`(function(){
+    const g = GAMES[0];
+    [3,3,3,9].forEach((v,i) => g.holes[1].teamScore[i] = v);
+    [3,3,3,9].forEach((v,i) => g.holes[2].teamScore[i] = v);
+    render();
+  })()`);
+  eq(order().split(",").pop(), "3", "and drop to the bottom when it stops winning holes: " + order());
+
+  /* The blocks you actually tap must not have moved — that was the whole
+     objection to sorting, and it only ever applied down there. */
+  eq(blockOrder(), blocksBefore, "the entry blocks must stay in side order:");
+
+  /* The shuffle is measured before the DOM is replaced and released after. */
+  ok(/captureRows\(\)/.test(html) && /animateRows\(\)/.test(html),
+     "render() should bracket the redraw with the two halves of the shuffle");
+  ok(/prefers-reduced-motion/.test(html), "and sit still for anyone who asked for that");
+  /* position:sticky breaks under a transformed ancestor, which is why the rows
+     are offset with top instead. */
+  const fn = /function animateRows\(\)[\s\S]*?\n}/.exec(html)[0];
+  ok(!/transform/.test(fn), "rows must not animate with transform: it would unstick the "
+     + "pinned name and total columns");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {
