@@ -162,7 +162,7 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hg-row{display:flex;align-items:stretch;position:relative}
 .hg-row + .hg-row{border-top:1px solid var(--rule-soft)}
 @keyframes rowmoved{from{background:var(--paper-3)}to{background:transparent}}
-.hg-row.moved{animation:rowmoved 950ms ease-out}
+.hg-row.moved{animation:rowmoved 1200ms ease-out}
 @media (prefers-reduced-motion: reduce){ .hg-row.moved{animation:none} }
 .hg-lab{width:122px;flex:none;position:sticky;left:0;z-index:2;background:var(--paper-2);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
@@ -1572,7 +1572,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0245";
+const BUILD = "2026-10-10.0255";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4041,7 +4041,7 @@ function animateRows(){
        before layout, so the browser can coalesce both values into one style
        and the row arrives without ever having travelled. */
     void r.offsetHeight;
-    r.style.transition = "top 520ms cubic-bezier(.2,.75,.25,1)";
+    r.style.transition = "top 760ms cubic-bezier(.22,.7,.2,1)";
     /* 0px, not "": an empty value computes to `auto`, and a length does not
        interpolate to auto — the row would arrive without having moved. */
     r.style.top = "0px";
@@ -4051,7 +4051,7 @@ function animateRows(){
     setTimeout(() => {
       r.classList.remove("moved");
       r.style.transition = r.style.top = "";
-    }, 1000);
+    }, 1500);
   });
   rowPos = {};
 }
