@@ -304,9 +304,15 @@ input.idx,input.tf{background:var(--paper-2);border:1px solid var(--rule);color:
   padding:7px 5px;width:66px;max-width:100%}
 input.tf.wide{width:78px;text-align:left;font-family:'Barlow',sans-serif}
 input.idx:focus,input.tf:focus{outline:none;border-color:var(--brass);background:var(--paper)}
+/* No max-width. It was capped at 104px, which clipped "Black/White" to
+   "Black/Whit" — and a tee you can't read is a tee you can't check. The cell
+   takes a fixed share of the row and the select fills it; the player's name
+   gives way instead, since you already know whose row you're on. */
 select.tee{background:var(--paper-2);border:1px solid var(--rule);color:var(--ink);
-  font-family:'Barlow',sans-serif;font-size:16px;padding:7px 4px;max-width:104px}
+  font-family:'Barlow',sans-serif;font-size:16px;padding:7px 6px;width:100%}
 select.tee:focus{outline:none;border-color:var(--brass)}
+.ftbl td.teecell{width:52%}
+.ftbl td.pcell{max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* full-width picker — a row of buttons stops scaling once there are more than
    three or four courses */
 /* Drawn in the app rather than a <select>. Two goes at styling the native
@@ -1367,7 +1373,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-09.2110";
+const BUILD = "2026-10-09.2135";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4169,8 +4175,8 @@ function renderPlayers(){
     <th>Player</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
   PLAYERS.forEach(p => {
     whoTbl += `<tr>
-      <td>${esc(p.name)}</td>
-      <td><select class="tee" data-tee="${p.id}"${dis}>
+      <td class="pcell">${esc(p.name)}</td>
+      <td class="teecell"><select class="tee" data-tee="${p.id}"${dis}>
         ${co.tees.map(x => `<option${x.name===teeNameFor(p.id,co)?" selected":""}>${esc(x.name)}</option>`).join("")}
       </select></td>
       <td class="mono ch" data-ch="${p.id}">${courseHcp(p.id, co)}</td>

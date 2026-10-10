@@ -2329,6 +2329,45 @@ t("R114 the all-eight flag survives the CSV, both directions", () => isolate(() 
   eq(round2.games.filter(g => g.oneGroup).length, 1, "one all-eight game survives the round trip:");
 }));
 
+t("R115 the tee picker isn't capped narrower than a tee name", () => isolate(() => {
+  const w = dom.window;
+  /* jsdom has no layout, so this guards the cause rather than the symptom:
+     a max-width on select.tee is what clipped "Black/White" to "Black/Whit". */
+  const rule = /select\.tee\{[^}]*\}/.exec(html);
+  ok(rule, "select.tee should still be styled");
+  ok(!/max-width/.test(rule[0]), "select.tee must not cap its width: " + rule[0]);
+  ok(/width:\s*100%/.test(rule[0]), "it should fill its cell instead");
+  /* And the cell has to exist to fill. isolate() restores the schedule and the
+     games, not COURSES or PLAYERS, so this puts the tees back itself. */
+  const saved = w.eval(`JSON.stringify({ tees: COURSES[0].tees,
+    assign: PLAYERS.map(p => p.tees && p.tees[COURSES[0].id]) })`);
+  try {
+    w.eval(`(function(){
+      const c = COURSES[0];
+      c.tees = [{name:"Black/White", rating:74.1, slope:142, par:72},
+                {name:"Blue", rating:71.8, slope:131, par:72}];
+      PLAYERS.forEach(p => { p.tees = p.tees || {}; p.tees[c.id] = "Black/White"; });
+      isAdmin = true; editCourseId = c.id; view.tab = "players"; view.gameId = null;
+      editEvent = null; render();
+    })()`);
+    openSection("f:who");          // a test helper, so it runs out here, not in the page
+    const sel = document.querySelector("select.tee");
+    ok(sel, "no tee picker on the Field tab");
+    eq(sel.closest("td").className, "teecell", "the tee cell needs its class to be sized:");
+    ok([...sel.options].some(o => o.textContent === "Black/White"),
+       "the full tee name must be in the option, not a truncation");
+  } finally {
+    w.eval(`(function(){
+      const s = ${JSON.stringify(saved)}, o = JSON.parse(s), c = COURSES[0];
+      c.tees = o.tees;
+      PLAYERS.forEach((p, i) => {
+        if (o.assign[i] == null) { if (p.tees) delete p.tees[c.id]; }
+        else { p.tees = p.tees || {}; p.tees[c.id] = o.assign[i]; }
+      });
+    })()`);
+  }
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
