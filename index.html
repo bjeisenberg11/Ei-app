@@ -1373,7 +1373,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-09.2135";
+const BUILD = "2026-10-09.2340";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3378,11 +3378,16 @@ function pairMatrix(){
       if (a !== b && withC[a]) withC[a][b]++;
     })));
     /* Everyone not on your team is against you — with four teams that's the
-       other six, not just the other two. */
-    teams.forEach((team, i) => team.forEach(a => teams.forEach((other, j) => {
-      if (i === j) return;
-      other.forEach(b => { if (agC[a]) agC[a][b]++; });
-    })));
+       other six, not just the other two. Which is exactly why a four-team game
+       contributes NOTHING here: it adds one to 24 of the 28 pairs at once, so
+       the column says the same thing about everybody and nothing about how the
+       field is mixed. Only who partnered whom carries information in a
+       2v2v2v2; the same argument as oneGroup makes for foursomes. */
+    if (!isMulti(g))
+      teams.forEach((team, i) => team.forEach(a => teams.forEach((other, j) => {
+        if (i === j) return;
+        other.forEach(b => { if (agC[a]) agC[a][b]++; });
+      })));
     /* A foursome is the group that walks the course together. In a 2v2 that's
        all four players. In a scramble or 40ball the two teams go out as
        separate groups, so a team is its own foursome.
@@ -3462,9 +3467,10 @@ function renderPairs(){
   h += `</tbody></table>
     <div class="footnote">Red is a pair that never meets in that column's sense;
     dark is more often than average. Worth settling before the weekend starts.<br>
-    A round where all eight go out together is left out of <b>same foursome</b> \u2014 it would
-    add one to every pair at once, which says nothing about how the field is mixed. Team-mates
-    and opponents from that round still count.${
+    A four-team game counts only under <b>playing with</b>. Everyone is against the other six,
+    so <b>playing against</b> would gain one on 24 of the 28 pairs at once, and if all eight go
+    round together <b>same foursome</b> gains one on all 28. Neither says anything about how the
+    field is mixed; who partnered whom does.${
       ROUNDS().some(r => !roundCounts(r))
         ? `<br>Casual rounds don't appear anywhere here \u2014 they aren't a record of the
            tournament, so they shouldn't make the field look better mixed than it is.` : ""}</div>`;

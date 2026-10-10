@@ -1381,22 +1381,27 @@ t("R82 four teams need four full sides, and a player sits on only one", () => is
   eq((g[2]||[]).includes("p1"), true, "and land on C:");
 }));
 
-t("R83 pairings count the other six as opponents", () => isolate(() => {
+t("R83 a four-team game is read as four teams, not two", () => isolate(() => {
   const w = dom.window;
   w.eval("GAMES.length = 0;");
   fourTeamGame([70,72,74,76]);
   const m = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
   eq(m.withC["p1"]["p2"], 1, "team-mates play together:");
   eq(m.withC["p1"]["p3"], 0, "a different team is not a team-mate:");
-  eq(m.agC["p1"]["p7"], 1, "someone two teams away is still an opponent:");
+  /* The against column is deliberately empty for a four-team game (R116):
+     everyone is against the other six, so it would gain one on 24 of the 28
+     pairs at once. What this test still guards is that sides C and D are seen
+     at all rather than the game being read as two-sided. */
+  eq(m.withC["p5"]["p6"], 1, "side C are team-mates:");
+  eq(m.withC["p7"]["p8"], 1, "and so are side D:");
   eq(m.played["p1"], 1, "everyone played:");
   // two foursomes by default: A+B out together, C+D together
   eq(m.grpC["p1"]["p3"], 1, "teams A and B share a foursome:");
   eq(m.grpC["p1"]["p5"], 0, "team C is in the other group:");
-  /* All eight out together contributes nothing to the foursome column: it
-     would add one to all 28 pairs at once, which says nothing about how well
-     the field is mixed and just burns everyone's cap. Team-mates and
-     opponents from that round still count — those stay meaningful. */
+  /* All eight out together contributes nothing to the foursome column either:
+     it would add one to all 28 pairs at once, which says nothing about how
+     well the field is mixed and just burns everyone's cap. Who partnered whom
+     is the only thing a four-team round leaves behind. */
   w.eval('GAMES.find(g=>g.id==="g2x4").oneGroup = true;');
   const m2 = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
   const ids = JSON.parse(w.eval("JSON.stringify(PLAYERS.map(p=>p.id))"));
@@ -1404,7 +1409,6 @@ t("R83 pairings count the other six as opponents", () => isolate(() => {
   ids.forEach((a,i) => ids.slice(i+1).forEach(b => { if (m2.grpC[a][b]) shared++; }));
   eq(shared, 0, "an eightsome should add nothing to the foursome counts:");
   eq(m2.withC["p1"]["p2"], 1, "but team-mates still count:");
-  eq(m2.agC["p1"]["p7"], 1, "and opponents still count:");
   eq(m2.played["p1"], 1, "and it's still a game played:");
 }));
 
@@ -2366,6 +2370,25 @@ t("R115 the tee picker isn't capped narrower than a tee name", () => isolate(() 
       });
     })()`);
   }
+}));
+
+t("R116 a four-team game counts only under playing with", () => isolate(() => {
+  const w = dom.window;
+  w.eval("GAMES.length = 0;");
+  fourTeamGame([70, 72, 74, 76]);          // p1&p2 v p3&p4 v p5&p6 v p7&p8
+  const m = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
+  eq(m.withC.p1.p2, 1, "team-mates still count:");
+  /* The whole point: against would gain one on 24 of the 28 pairs at once. */
+  eq(m.agC.p1.p3, 0, "an opponent in a four-team game must not count as against:");
+  eq(m.agC.p1.p7, 0, "nor one from the far side of the draw:");
+  eq(m.played.p1, 1, "the game still counts as played");
+
+  /* And a two-sided game is untouched by the same change. */
+  w.eval(`GAMES.length = 0;
+    GAMES.push({ id:"bb", roundId: ROUNDS()[0].id, type:"BESTBALL",
+      teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles() });`);
+  const m2 = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
+  eq(m2.agC.p1.p3, 1, "a best ball still records opponents:");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {
