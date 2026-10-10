@@ -306,6 +306,18 @@ about, because they fail for reasons that aren't about the code you just wrote:
   **Offset with `top`, never `transform`**: a transformed ancestor becomes the
   containing block for `position:sticky`, which would unpin the name and total
   columns for the length of the animation. `prefers-reduced-motion` skips it.
+  - Three ways this breaks **silently** — the rows still land in the right
+    order, they just arrive without having moved, so it reads as "animations
+    aren't working". All three are guarded at the source in R127, because jsdom
+    has no layout to measure. (1) The start position must be forced into layout
+    (`void r.offsetHeight`) before it's released; `requestAnimationFrame` runs
+    *before* layout, so two frames are not enough and the browser coalesces
+    both values into one style. (2) Release to an explicit `top:"0px"`, not
+    `""` — empty computes to `auto`, and a length will not interpolate to
+    `auto`. (3) No `transform`, as above.
+  - It only fires on the tap that **completes** a hole, since skins aren't
+    awarded until every side is in. Three taps in four move nothing, which is
+    correct and looks like nothing happening.
   - The sort is safe **here and only here**. The entry blocks below stay in
     side order: that's where the steppers are, and a block that moves between
     taps loses your place. A row is therefore one flex element with fixed

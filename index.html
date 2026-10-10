@@ -161,6 +161,9 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
    columns lined up without a grid holding them together. */
 .hg-row{display:flex;align-items:stretch;position:relative}
 .hg-row + .hg-row{border-top:1px solid var(--rule-soft)}
+@keyframes rowmoved{from{background:var(--paper-3)}to{background:transparent}}
+.hg-row.moved{animation:rowmoved 950ms ease-out}
+@media (prefers-reduced-motion: reduce){ .hg-row.moved{animation:none} }
 .hg-lab{width:122px;flex:none;position:sticky;left:0;z-index:2;background:var(--paper-2);
   font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);padding:4px 7px;
@@ -1569,7 +1572,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0230";
+const BUILD = "2026-10-10.0245";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4032,12 +4035,23 @@ function animateRows(){
     if (!dy) return;
     r.style.transition = "none";
     r.style.top = dy + "px";
-    /* Two frames: one to let the start position paint, one to release it.
-       Releasing in the same frame collapses to no animation at all. */
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      r.style.transition = "top 420ms cubic-bezier(.2,.75,.25,1)";
-      r.style.top = "";
-    }));
+    r.classList.remove("moved");
+    /* Read a layout property to force the start position to be computed before
+       it is released. requestAnimationFrame is not enough: its callback runs
+       before layout, so the browser can coalesce both values into one style
+       and the row arrives without ever having travelled. */
+    void r.offsetHeight;
+    r.style.transition = "top 520ms cubic-bezier(.2,.75,.25,1)";
+    /* 0px, not "": an empty value computes to `auto`, and a length does not
+       interpolate to auto — the row would arrive without having moved. */
+    r.style.top = "0px";
+    /* A row sliding thirty pixels is easy to miss when you were looking at the
+       stepper, so the cells flash as it goes. */
+    r.classList.add("moved");
+    setTimeout(() => {
+      r.classList.remove("moved");
+      r.style.transition = r.style.top = "";
+    }, 1000);
   });
   rowPos = {};
 }

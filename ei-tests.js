@@ -2771,11 +2771,22 @@ t("R127 the card's rows re-order with the standings, and the entry blocks don't"
   ok(/captureRows\(\)/.test(html) && /animateRows\(\)/.test(html),
      "render() should bracket the redraw with the two halves of the shuffle");
   ok(/prefers-reduced-motion/.test(html), "and sit still for anyone who asked for that");
-  /* position:sticky breaks under a transformed ancestor, which is why the rows
-     are offset with top instead. */
+  /* Three things that are invisible when wrong — the rows still end up in the
+     right order, they just arrive without having travelled — so they're
+     guarded at the source. jsdom has no layout, so there's nothing to measure.
+
+     position:sticky breaks under a transformed ancestor, which is why the
+     offset is `top`. The forced reflow is what makes the start position real:
+     requestAnimationFrame runs before layout, so without it the browser
+     coalesces both values into one style. And releasing to "" computes to
+     `auto`, which a length will not interpolate to. */
   const fn = /function animateRows\(\)[\s\S]*?\n}/.exec(html)[0];
   ok(!/transform/.test(fn), "rows must not animate with transform: it would unstick the "
      + "pinned name and total columns");
+  ok(/offsetHeight|offsetTop|getBoundingClientRect\(\)[\s\S]{0,40}transition/.test(fn),
+     "the start position has to be forced into layout before it's released");
+  ok(/style\.top\s*=\s*"0px"/.test(fn),
+     'the row must be released to an explicit 0px — "" computes to auto and will not animate');
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {
