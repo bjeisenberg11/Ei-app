@@ -323,8 +323,14 @@ about, because they fail for reasons that aren't about the code you just wrote:
     taps loses your place. A row is therefore one flex element with fixed
     column widths rather than twenty grid children, so there is something to
     move.
-- A cell has two slots, `.lead` and `.sub`, and **what the game is decided on
-  leads**: in a skins game the skins lead and the stroke trails; in a scramble
+- In a **skins** game a cell is two banded halves, skins above and strokes
+  below on a tint, with the legend in the corner where "Hole" would be. Two
+  numbers stacked at different sizes read as one value and a footnote; two
+  bands read as two columns of a scorecard, which is what they are. The
+  current-hole column has to tint **both** bands — the strokes band paints its
+  own background over the column's.
+- Otherwise a cell has two slots, `.lead` and `.sub`, and **what the game is
+  decided on leads**: in a skins game the skins lead and the stroke trails; in a scramble
   the stroke leads and to par trails. Same order in the total column. The
   classes say what a number *is* (`.hg-v` strokes, `.hg-sk` skins, `.hg-rel`
   to par) and `.lead`/`.sub` say how big it's drawn, so the two don't get

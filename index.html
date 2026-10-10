@@ -185,10 +185,31 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
    score is what's being read hole to hole, the skins are the running argument. */
 /* Two slots in a cell: the number the game is decided on leads, whatever is
    being counted alongside it trails. Which is which depends on the format, so
-   the sizes are their own classes rather than baked into hg-v or hg-sk. */
+   emphasis is its own class rather than baked into hg-v or hg-sk. */
 .hg-c .lead{display:block;line-height:1.1}
 .hg-c .sub{display:block;font-size:8.5px;font-weight:700;letter-spacing:-.02em;
   margin-top:3px;line-height:1}
+/* A skins cell is two bands rather than a number with a footnote: skins above,
+   strokes below on a tint. Two numbers stacked at different sizes read as one
+   value and an annotation; two banded halves read as two columns of a card,
+   which is what they are. */
+.hg.skins .hg-c{display:flex;flex-direction:column;padding:0}
+.hg.skins .hg-c .lead,.hg.skins .hg-c .sub{display:flex;align-items:center;
+  justify-content:center;flex:1 0 auto;min-height:19px;margin:0;line-height:1}
+.hg.skins .hg-c .sub{background:rgba(18,50,31,.06);border-top:1px solid var(--rule-soft);
+  font-size:11px;font-weight:600;letter-spacing:0}
+.hg.skins .hg-tot .sub{background:rgba(18,50,31,.1)}
+/* The current column has to tint both bands or only its top half lights up —
+   the strokes band paints its own background over the column's. */
+.hg.skins .hg-c.cur .sub{background:rgba(18,50,31,.14)}
+/* The header row has no bands, so it keeps its own padding rather than
+   inheriting the banded cell's. */
+.hg.skins .hg-head .hg-c{justify-content:center;padding:6px 0}
+/* The legend, in the corner where the word "Hole" was. */
+.hg-key{display:flex;flex-direction:column;gap:2px;font-family:'Barlow Condensed',sans-serif;
+  font-size:8px;font-weight:700;letter-spacing:.11em;line-height:1}
+.hg-key .k-sk{color:var(--brass)}
+.hg-key .k-st{color:var(--ink-faint)}
 .hg-sk{color:var(--brass)}
 /* A hole that paid you nothing still shows its nought, so every scored cell
    has both numbers and the column reads as a ledger. Muted, so the holes that
@@ -1572,7 +1593,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0305";
+const BUILD = "2026-10-10.0320";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3967,7 +3988,13 @@ function holeGrid(g){
   const through = Math.floor(sideCount(g) / 2);
 
   let o = `<div class="hgwrap"><div class="hg${sk ? " skins" : ""}">`;
-  o += `<div class="hg-row hg-head"><span class="hg-lab hg-corner">Hole</span>`;
+  /* In a skins game the corner carries the legend instead of the word "Hole",
+     which the row of numbers under it says for itself. Two lines in the same
+     order as the two halves of every cell below, so it reads as a key without
+     having to be one. */
+  o += `<div class="hg-row hg-head"><span class="hg-lab hg-corner">${sk
+    ? `<span class="hg-key"><span class="k-sk">Skins</span><span class="k-st">Strokes</span></span>`
+    : "Hole"}</span>`;
   for (let i = 0; i < 18; i++)
     o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}" data-hole="${i}">${
       i + 1}</button>`;
