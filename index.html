@@ -145,31 +145,42 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hcell.halved{background:var(--rule);color:var(--ink)}
 .hcell.cur{box-shadow:inset 0 -3px 0 var(--pencil);font-weight:700}
 .hcell.cur:not(.done):not(.won-a):not(.won-b):not(.halved){color:var(--ink)}
-/* The card itself: every team's score on every hole, nine at a time the way a
-   paper scorecard is laid out. This replaces the bare 1-18 strip for the
-   formats that have one team score per hole — match play and 40ball keep the
-   strip, because neither has a single number per team to put in a cell. Nine
-   at a time is what makes room for real team names instead of initials. */
-.hg{display:grid;grid-template-columns:minmax(0,1fr) repeat(9,minmax(0,22px)) 27px;
-  border:1px solid var(--rule);background:var(--paper-2);
-  font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin:10px 0 0}
-.hg + .hg{margin-top:5px}
-.hg-lab{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);padding:5px 6px 5px 7px;
-  display:flex;align-items:center;min-width:0;overflow:hidden;white-space:nowrap;
-  text-overflow:ellipsis;border-top:1px solid var(--rule-soft)}
+/* The card itself: one row of holes and a row per team, scrolling sideways.
+   It replaces the bare 1-18 strip for the formats that have one team score per
+   hole; match play and 40ball keep the strip, because neither has a single
+   number per team to put in a cell.
+
+   Sideways rather than folded into two nines: folding halves the width but
+   doubles the height, and the back nine sits empty all morning. Scrolling also
+   lets a column be wide enough to hold a score and the skins it won. */
+.hgwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:10px 0 0;
+  border:1px solid var(--rule);background:var(--paper-2)}
+.hg{display:grid;grid-template-columns:106px repeat(18,31px) 40px;width:max-content;
+  font-family:'IBM Plex Mono',monospace;font-size:12px}
+.hg-lab{position:sticky;left:0;z-index:2;background:var(--paper-2);
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);padding:4px 7px;
+  display:flex;align-items:center;white-space:nowrap;
+  border-right:1px solid var(--rule);border-top:1px solid var(--rule-soft)}
 .hg-c{border:none;border-left:1px solid var(--rule-soft);border-top:1px solid var(--rule-soft);
-  background:transparent;padding:5px 0;text-align:center;font:inherit;font-weight:600;
-  color:var(--ink);cursor:pointer;min-width:0}
-.hg > :nth-child(-n+11){border-top:none}
+  background:transparent;padding:4px 0 3px;text-align:center;font:inherit;font-weight:600;
+  color:var(--ink);cursor:pointer;line-height:1.15}
+.hg > :nth-child(-n+20){border-top:none}
 .hg-n{font-size:10px;font-weight:600;color:var(--ink-faint)}
 /* The hole you're on is a tinted column, with the marker only under its
    number. A bar on every cell drew four separate red dashes that read as four
    separate things rather than one column. */
 .hg-c.cur{background:var(--paper-3)}
 .hg-n.cur{color:var(--ink);font-weight:700;box-shadow:inset 0 -3px 0 var(--pencil)}
-.hg-tot{background:var(--paper-3);font-weight:700;cursor:default}
+.hg-tot{position:sticky;right:0;z-index:2;background:var(--paper-3);font-weight:700;
+  cursor:default;border-left:1px solid var(--rule)}
 .hg-lab.hg-corner{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
+/* What the hole was worth, under what was scored on it. Small on purpose: the
+   score is what's being read hole to hole, the skins are the running argument. */
+.hg-v{display:block}
+.hg-sk{display:block;font-size:8.5px;font-weight:700;color:var(--brass);
+  letter-spacing:-.02em;margin-top:1px}
+.hg:not(.skins) .hg-s{padding:5px 0 4px}
 /* Under par red, over par blue, par plain — the same three everywhere a score
    is shown, including the number you are changing with the stepper. */
 .under{color:var(--pencil)}
@@ -519,6 +530,11 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
 table.pm{border-collapse:collapse;width:100%;font-family:'IBM Plex Mono',monospace;font-size:12px}
 table.pm th,table.pm td{border:1px solid var(--rule-soft);text-align:center;padding:6px 3px;min-width:30px}
 table.pm thead th{background:var(--ink);color:var(--paper);font-size:10px;font-weight:500}
+/* Vertical so a full name fits a 30px column. writing-mode alone reads top-to
+   bottom with the letters rotated the wrong way, so it's rotated back. */
+table.pm thead th.pmn{padding:5px 2px;vertical-align:bottom}
+table.pm thead th.pmn span{writing-mode:vertical-rl;transform:rotate(180deg);
+  display:inline-block;font-size:11px;letter-spacing:.02em}
 table.pm tbody th{background:var(--paper-3);text-align:left;padding:6px 8px;white-space:nowrap;
   font-family:'Barlow',sans-serif;font-size:13px;font-weight:500;position:sticky;left:0;min-width:74px}
 table.pm td.self{background:var(--paper-3)}
@@ -1518,7 +1534,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0115";
+const BUILD = "2026-10-10.0135";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2525,7 +2541,7 @@ function render(){
   document.querySelectorAll(".tabs button").forEach(b =>
     b.classList.toggle("on", !inGame && b.dataset.tab === view.tab));
 
-  if (inGame) return renderGame();
+  if (inGame){ renderGame(); syncHoleStrip(); return; }
   if (view.tab === "board") return renderBoard();
   if (view.tab === "sched") return renderSchedule();
   if (view.tab === "players") return renderPlayers();
@@ -3609,7 +3625,11 @@ function renderPairs(){
     const avg = vals.length ? vals.reduce((x,y)=>x+y,0) / vals.length : 0;
     let h = `<h2 class="sec">${title}</h2><p class="note">${note}</p>
       <div class="pmwrap"><table class="pm"><thead><tr><th></th>`;
-    ids.forEach(b => h += `<th>${esc(P(b).name.slice(0,4))}</th>`);
+    /* Whole names, turned on their side. Four letters made Dan and Daniel the
+       same column heading, which is a guess you have to resolve by counting
+       across — and the row labels on the left are the full names anyway, so
+       the two halves of the grid disagreed about who was who. */
+    ids.forEach(b => h += `<th class="pmn"><span>${esc(P(b).name)}</span></th>`);
     h += `<th class="tot">Sum</th></tr></thead><tbody>`;
     ids.forEach(a => {
       h += `<tr><th>${esc(P(a).name)}</th>`;
@@ -3872,32 +3892,51 @@ function renderHistory(){
 }
 
 /* ---------- game ---------- */
-/* Nine holes of the card, as a grid: the hole numbers, then a row per team.
-   Nine rather than eighteen is what buys the width to print team names in
-   full — four columns of initials would put "Dan & Adam" and "Daniel & Jake"
-   both at "D&J"-shaped guesses, which is no use on the course. */
+/* The card: one row of holes and a row per team, scrolling sideways rather
+   than folded into two nines. Folding it halved the width but doubled the
+   height, and the back nine sat empty all morning taking up the screen. One
+   strip keeps the whole round in one shape and leaves the names room to be
+   printed in full, which four columns of initials never would — "Dan & Adam"
+   and "Daniel & Jake" come out the same.
+
+   A side of more than two uses sideName, so a 4v4's row is "Blake's team"
+   rather than four names that would set the label column by the longest one. */
 function holeGrid(g){
-  const ix = sides(g), course = courseOf(g);
-  const nine = from => {
-    let o = `<div class="hg"><span class="hg-lab hg-corner">${from ? "In" : "Out"}</span>`;
-    for (let i = from; i < from + 9; i++)
-      o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}"
-        data-hole="${i}">${i + 1}</button>`;
-    o += `<span class="hg-c hg-n hg-tot">${from ? "In" : "Out"}</span>`;
-    ix.forEach(t => {
-      o += `<span class="hg-lab">${esc(teamLabel(g, t))}</span>`;
-      let tot = 0, any = false;
-      for (let i = from; i < from + 9; i++){
-        const v = g.holes[i].teamScore[t];
-        if (v != null){ tot += v; any = true; }
-        o += `<button class="hg-c hg-s ${v == null ? "" : parClass(v - course.holes[i].par)}${
-          i === view.hole ? " cur" : ""}" data-hole="${i}">${v == null ? "" : v}</button>`;
-      }
-      o += `<span class="hg-c hg-tot">${any ? tot : ""}</span>`;
-    });
-    return o + `</div>`;
-  };
-  return nine(0) + nine(9);
+  const ix = sides(g), course = courseOf(g), sk = isSkins(g);
+  let o = `<div class="hgwrap"><div class="hg${sk ? " skins" : ""}">`;
+  o += `<span class="hg-lab hg-corner">Hole</span>`;
+  for (let i = 0; i < 18; i++)
+    o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}" data-hole="${i}">${
+      i + 1}</button>`;
+  o += `<span class="hg-c hg-n hg-tot">Tot</span>`;
+  /* Precomputed once: holeSkins walks every side, so calling it per cell would
+     be eighteen times the work for the same eighteen answers. */
+  const skinRow = sk ? Array.from({ length:18 }, (_, i) => holeSkins(g, i)) : null;
+  ix.forEach(t => {
+    o += `<span class="hg-lab">${esc(sideName(g, t))}</span>`;
+    let tot = 0, any = false;
+    for (let i = 0; i < 18; i++){
+      const v = g.holes[i].teamScore[t];
+      if (v != null){ tot += v; any = true; }
+      const won = skinRow && skinRow[i] ? skinRow[i][t] : 0;
+      o += `<button class="hg-c hg-s ${v == null ? "" : parClass(v - course.holes[i].par)}${
+        i === view.hole ? " cur" : ""}" data-hole="${i}"><span class="hg-v">${
+        v == null ? "" : v}</span>${
+        won ? `<span class="hg-sk">${fmtSkins(won)}</span>` : ""}</button>`;
+    }
+    o += `<span class="hg-c hg-tot">${any ? tot : ""}</span>`;
+  });
+  return o + `</div></div>`;
+}
+
+/* Keep the hole being scored on screen. The strip is wider than the phone, so
+   without this it sits at hole 1 all afternoon and every score goes in blind. */
+function syncHoleStrip(){
+  const wrap = document.querySelector(".hgwrap");
+  const cur = wrap && wrap.querySelector(".hg-n.cur");
+  if (!wrap || !cur) return;
+  const want = cur.offsetLeft - (wrap.clientWidth - cur.offsetWidth) / 2;
+  wrap.scrollLeft = Math.max(0, want);
 }
 
 function renderGame(){

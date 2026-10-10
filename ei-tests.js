@@ -1475,7 +1475,7 @@ t("R86 a four-team hole isn't finished until all four have locked", () => isolat
   // and the card must not show a score for a team that hasn't put one in
   w.eval("render();");
   const cells = [...document.querySelectorAll(".hg-s")];
-  const firsts = [0,1,2,3].map(t => cells[t * 9].textContent.trim());
+  const firsts = [0,1,2,3].map(t => cells[t * 18].querySelector(".hg-v").textContent.trim());
   eq(firsts.slice(2).join(","), ",",
      "sides C and D have no score on hole 1, so their cells should be empty:");
   ok(firsts[0] !== "", "while side A's score should be on the card: " + firsts.join("|"));
@@ -2615,28 +2615,32 @@ t("R125 the card shows every team's score, in colour, with no name printed twice
       GAMES.push(g);
       view.tab="home"; view.gameId="gcard"; view.hole=0; editEvent=null; render();
     })()`);
-    /* Two blocks of nine, four teams in each. */
+    /* One strip, all eighteen, scrolling sideways. */
     const blocks = [...document.querySelectorAll(".hg")];
-    eq(blocks.length, 2, "the card should be laid out as two nines:");
+    eq(blocks.length, 1, "the card should be one strip, not folded into nines:");
+    ok(document.querySelector(".hgwrap"), "and it should sit in a scrollable wrapper");
     const cells = [...document.querySelectorAll(".hg-s")];
     eq(cells.length, 72, "four teams across eighteen holes:");
-    /* Column-major: each row is nine holes, so the first cell of each row is
+    /* Row-major: each row is eighteen holes, so the first cell of each row is
        hole 1 for that team. */
-    const h1 = [0,1,2,3].map(t => cells[t*9]);
-    eq(h1.map(c => c.textContent.trim()).join(","), "3,4,5,4", "hole 1 across the four teams:");
+    const h1 = [0,1,2,3].map(t => cells[t*18]);
+    eq(h1.map(c => c.querySelector(".hg-v").textContent.trim()).join(","), "3,4,5,4",
+       "hole 1 across the four teams:");
     ok(h1[0].className.includes("under"), "a birdie should be coloured under par: " + h1[0].className);
     ok(h1[1].className.includes("even"),  "a par should be neither: " + h1[1].className);
     ok(h1[2].className.includes("over"),  "a bogey should be coloured over par: " + h1[2].className);
-    /* The back nine is its own block, and hole 10 lands in it. */
-    const back = [...blocks[1].querySelectorAll(".hg-s")];
-    eq(back[0].textContent.trim(), "5", "hole 10 belongs to the second block:");
+    /* Hole 10 is the tenth cell of a team's row, in the same strip. */
+    eq(cells[9].querySelector(".hg-v").textContent.trim(), "5",
+       "hole 10 sits in the same row as hole 1:");
     /* Full names, because four columns of initials made Dan and Daniel the
        same label — the thing that was wrong with the pairings grid. */
     const labs = [...blocks[0].querySelectorAll(".hg-lab")].slice(1).map(x => x.textContent.trim());
     eq(labs.length, 4, "a row per team:");
-    /* Uppercased by CSS, so compare the text the markup actually carries. */
-    labs.forEach((l,i) => eq(l, w.eval(`teamLabel(GAMES[0], ${i})`),
-      "team rows are labelled with the whole team:"));
+    /* Uppercased by CSS, so compare the text the markup actually carries. A
+       pair gets both names; a bigger side gets sideName's "X's team", which is
+       the app's existing answer to a label that won't fit. */
+    labs.forEach((l,i) => eq(l, w.eval(`sideName(GAMES[0], ${i})`),
+      "team rows are labelled with the whole side:"));
 
     /* And the team block below no longer prints those same names again. */
     const blocksOut = [...document.querySelectorAll(".team")];
@@ -2653,6 +2657,39 @@ t("R125 the card shows every team's score, in colour, with no name printed twice
        by hand or every later test runs against this card's layout. */
     w.eval(`(function(){ const p = ${saved}; p.forEach((v,k)=>COURSES[0].holes[k].par=v); })()`);
   }
+}));
+
+t("R126 nothing on a grid is labelled with a truncated name", () => isolate(() => {
+  const w = dom.window;
+  /* Four letters made Dan and Daniel the same column, and the row labels down
+     the left were full names, so the two halves disagreed about who was who. */
+  w.eval(`view.gameId=null; view.tab="board"; boardMode="pairs"; editEvent=null; render();`);
+  /* Three grids on the screen, all headed the same way — take the first. */
+  const heads = [...document.querySelectorAll("table.pm")[0]
+    .querySelectorAll("thead th.pmn")].map(x => x.textContent.trim());
+  const names = JSON.parse(w.eval("JSON.stringify(PLAYERS.map(p=>p.name))"));
+  eq(heads.join(","), names.join(","), "matrix headings should be the whole name:");
+  eq(new Set(heads).size, heads.length, "and so no two columns can share a heading:");
+  /* Vertical is what makes a whole name fit a narrow column — without it the
+     table is wider than any phone. */
+  ok(/th\.pmn span\{[^}]*writing-mode:\s*vertical/.test(html),
+     "the headings need to be turned on their side to fit");
+
+  /* Same rule on the scorecard: a side of two is named in full, and a side too
+     big to name gets sideName's "X's team" rather than a chopped list. */
+  w.eval(`(function(){
+    GAMES.length = 0;
+    GAMES.push({ id:"g4v4", roundId: ROUNDS()[0].id, type:"SCRAMBLE4",
+      teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes: blankHoles() });
+    view.tab="home"; view.gameId="g4v4"; view.hole=0; render();
+  })()`);
+  const labs = [...document.querySelectorAll(".hg-lab")].slice(1).map(x => x.textContent.trim());
+  eq(labs.length, 2, "a 4v4 gets a row per side:");
+  labs.forEach((l,i) => {
+    eq(l, w.eval(`sideName(GAMES[0], ${i})`), "the side's name, whole:");
+    ok(!/\.\.\.|…/.test(l), "and never an ellipsis: " + l);
+  });
+  ok(document.querySelector(".hgwrap"), "the 4v4 card is the same scrolling strip");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

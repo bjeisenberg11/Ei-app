@@ -260,7 +260,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **164 passed, 0 failed**. The suite is
+Current status against `index.html`: **165 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -279,13 +279,23 @@ about, because they fail for reasons that aren't about the code you just wrote:
 
 ## The scorecard screen
 
-- For a format with one team score per hole (`isStroke`), the top of the card is
-  **`holeGrid(g)`** — the real scorecard: two blocks of nine, a row per team,
-  a running nine-total, the current hole as a tinted column. Nine at a time is
-  what buys the width for full team names; four columns of initials put
-  "Dan & Adam" and "Daniel & Jake" at the same label, which was the exact fault
-  fixed on the pairings page. Match play and 40ball keep the plain 1–18
-  `.hstrip`, because neither has a single number per team per hole.
+- For a format with one team score per hole (`isStroke` — both scrambles and
+  the 2v2v2v2 alike), the top of the card is **`holeGrid(g)`**: one strip of
+  all eighteen holes with a row per side, scrolling sideways inside `.hgwrap`,
+  the label column and the total column both `position:sticky`. It was folded
+  into two nines once — that halves the width but doubles the height, and the
+  back nine sits empty all morning. `syncHoleStrip()` runs after `renderGame()`
+  and scrolls the hole being scored into the middle; without it the strip sits
+  on hole 1 all afternoon. In a skins game each cell carries what the hole was
+  worth under what was scored on it (`.hg-sk`). Match play and 40ball keep the
+  plain 1–18 `.hstrip`, because neither has a single number per team per hole.
+- **Nothing on a grid is labelled with a truncated name** (R126). A row is
+  `sideName(g, t)`, which gives both names for a pair and "Blake's team" for a
+  side too big to name. The pairings matrix headings are whole names turned
+  vertical (`th.pmn span`, `writing-mode:vertical-rl` plus a 180° rotate) —
+  four letters made Dan and Daniel the same column while the row labels beside
+  them were full names, so the two halves of the grid disagreed about who was
+  who.
 - **Scores are coloured against par everywhere they appear** — `.under` red,
   `.over` blue (`--over`), par plain — including the number inside the stepper,
   via `stepper(key, val, disabled, tone)`. `.banner.closed` needs its own
