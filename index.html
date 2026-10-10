@@ -1367,7 +1367,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-08.2345";
+const BUILD = "2026-10-09.1935";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4086,9 +4086,23 @@ function renderPlayers(){
   const ro = SYNC.on && !isAdmin;          // read-only for non-admins
   const dis = ro ? " disabled" : "";
   /* Rounds are deliberately untitled — they're named after their course — so
-     reading .title here printed "Played , ." or "Played undefined." */
-  const rounds = ROUNDS().filter(r => r.courseId === co.id)
-    .map(r => r.day || eventName(r)).filter(Boolean);
+     reading .title here printed "Played , ." or "Played undefined."
+     And a day has to be counted, not listed: Friday's 36 holes are two rounds
+     on the same course, which printed "Played Friday, Friday." */
+  const playedOn = (() => {
+    const n = new Map();
+    ROUNDS().filter(r => r.courseId === co.id).forEach(r => {
+      const d = r.day || eventName(r);
+      if (d) n.set(d, (n.get(d) || 0) + 1);
+    });
+    const parts = [...n.keys()]
+      .sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b))
+      .map(d => n.get(d) > 1 ? `${d} (${n.get(d)} rounds)` : d);
+    if (parts.length < 2) return parts;
+    /* "Thursday, Friday and Saturday" rather than a bare comma list. */
+    return [parts.slice(0, -1).join(", "), parts[parts.length - 1]].join(" and ");
+  })();
+  const rounds = Array.isArray(playedOn) ? playedOn : [playedOn];
 
   /* --- 1. indexes: one number per player, true everywhere --- */
   let h = ro

@@ -2279,6 +2279,28 @@ t("R112 a 40ball team head leads with to par as well", () => isolate(() => {
      "to par has to come before the budget in the head too");
 }));
 
+t("R113 a course played twice in a day says so once", () => isolate(() => {
+  const w = dom.window;
+  const played = rounds => {
+    w.eval(`(function(){
+      SCHEDULE = ${JSON.stringify(rounds)}.map((d,i) => ({ id:"r"+i, type:"ROUND", day:d,
+        courseId: COURSES[0].id, mode:"RELATIVE" }));
+      GAMES = []; isAdmin = true; editCourseId = COURSES[0].id;
+      view.tab = "players"; view.gameId = null; editEvent = null; render();
+    })()`);
+    return [...document.querySelectorAll("#app .note")].map(n => n.textContent.trim())
+      .find(t => /^Played|^No rounds/.test(t)) || "";
+  };
+  /* Friday's 36 holes are two rounds on one course, which read "Played Friday,
+     Friday." — one entry per round rather than per day. */
+  eq(played(["Friday","Friday"]), "Played Friday (2 rounds).", "two rounds, one day:");
+  eq(played(["Saturday"]), "Played Saturday.", "a single round stays plain:");
+  eq(played(["Thursday","Friday","Friday","Saturday"]),
+     "Played Thursday, Friday (2 rounds) and Saturday.",
+     "several days read as a sentence, in day order:");
+  eq(played([]), "No rounds assigned to this course.", "and none is still none:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
