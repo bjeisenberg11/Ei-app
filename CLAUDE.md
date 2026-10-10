@@ -347,8 +347,12 @@ about, because they fail for reasons that aren't about the code you just wrote:
 - A scramble team block is **head, stepper row, lock row**. There is no roster
   line: `teamLabel` already prints every name in the head, and repeating them
   underneath was two-thirds of the block's height saying nothing (R125). The
-  tee chips moved up to the head with them — one chip when the whole side is
-  on one box, one each otherwise.
+  tee chip moved up to the head with them, and shows **only where the game set
+  a tee for that side** (`gameTee`). A 4v4 or 3v3 shows none: everyone is on
+  whatever tee they always play, it decides nothing there, and four names each
+  with a chip after them pushed the page wider than the phone (R99). The
+  roster editor still shows every player's tee, which is where sides are
+  picked and where it matters.
 
 ## UI decisions that look odd and aren't
 

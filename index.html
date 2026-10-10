@@ -1572,7 +1572,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0255";
+const BUILD = "2026-10-10.0305";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4413,17 +4413,13 @@ function renderTeam(g, t, h, hardLocked){
     });
   }
 
-  /* The tee moved here from the roster row. In a scramble it's the only thing
-     separating two sides on paper, so it can't just vanish with the names —
-     one chip when the whole side is on one box, otherwise one each. */
-  const tees = (g.teams[t] || []).map(id => teeNameIn(g, id, course || { id:"", tees:[] }));
-  const oneTee = tees.length && tees.every(x => x === tees[0]);
-  const teeBit = !course || !tees.length ? ""
-    : oneTee ? `<span class="teetag">${esc(tees[0])}</span>`
-    : (g.teams[t] || []).map((id, k) =>
-        `<span class="teetag">${esc((P(id)||{}).name||"?")} ${esc(tees[k])}</span>`).join("");
-  let head = `<div class="team-head"><span class="team-name">${esc(name)}${
-    isScramble(g) || isStroke(g) ? teeBit : ""}</span>
+  /* The tee is shown only where the game put the side on one deliberately —
+     a 2v2v2v2 levelled by the boxes. In a 4v4 or 3v3 everyone is on whatever
+     tee they always play and it decides nothing, so four chips of it were
+     noise, and four names and four chips on one line pushed the whole page
+     wider than the phone. */
+  const teeBit = gameTee(g, t) ? `<span class="teetag">${esc(gameTee(g, t))}</span>` : "";
+  let head = `<div class="team-head"><span class="team-name">${esc(name)}${teeBit}</span>
     <span class="team-score">`;
   if (isMatch(g)){
     const ts = teamHoleScore(g,t,h);

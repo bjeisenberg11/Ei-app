@@ -1591,25 +1591,37 @@ t("R98 a stroke-play card says who's ahead, not four bare numbers", () => isolat
   ok(/Not started/.test(mk("SCRAMBLE2X4", [0,0,0,0], 0)), "before anyone tees off");
 }));
 
-t("R99 scrambles show which tee each player is on", () => isolate(() => {
+t("R99 a tee is shown where the game set it, and nowhere else", () => isolate(() => {
   const w = dom.window;
-  /* No handicaps in a scramble, so the tee is the only thing separating two
-     players on paper — it belongs next to the name, not buried on Field. */
+  /* A tee earns its place on the card only when the game put the side on it —
+     the 2v2v2v2, where the boxes are what level the teams. In a 4v4 everyone
+     plays whatever tee they always play and it decides nothing, so four names
+     with four chips after them was noise that also pushed the page sideways. */
   w.eval(`isAdmin = true; GAMES.length = 0;
     GAMES.push({ id:"gt", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4",
       teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes: blankHoles() });
+    const co = courseOf(GAMES[0]);
+    GAMES[0].tees = { 0: co.tees[co.tees.length - 1].name };
     PLAYERS[0].tees = PLAYERS[0].tees || {};
-    PLAYERS[0].tees[courseOf(GAMES[0]).id] = courseOf(GAMES[0]).tees[1].name;
-    view.gameId = "gt"; view.hole = 0; render();`);
-  const want = w.eval('teeNameFor("p1", courseOf(GAMES.find(g=>g.id==="gt")))');
-  /* The tee sits on the team head now — the roster line under it was the team
-     name printed twice, so it went, and the tee came up with it. */
-  const row = document.querySelector(".team .team-name").textContent;
-  ok(row.includes(want), "the team head should show the tee: " + row);
-  ok(document.querySelector(".team-name .teetag"),
-     "and show it as its own tag, not run into the name");
+    PLAYERS[0].tees[co.id] = co.tees[0].name;
+    view.tab = "home"; editEvent = null; view.gameId = "gt"; view.hole = 0; render();`);
+  const want = w.eval('GAMES[0].tees[0]');
+  const heads = [...document.querySelectorAll(".team .team-name")];
+  ok(heads[0].textContent.includes(want), "the side the game put on a tee should show it: "
+     + heads[0].textContent.trim());
+  ok(heads[0].querySelector(".teetag"), "as its own tag, not run into the name");
+  ok(!heads[1].querySelector(".teetag"),
+     "a side the game left alone shows nothing: " + heads[1].textContent.trim());
 
-  // and in the setup, where the teams get picked
+  /* A 4v4 never carries team tees, so no chip anywhere. */
+  w.eval(`GAMES.length = 0;
+    GAMES.push({ id:"g44", roundId: ROUNDS()[0].id, type:"SCRAMBLE4",
+      teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes: blankHoles() });
+    view.gameId = "g44"; view.hole = 0; render();`);
+  ok(!document.querySelector(".team .teetag"),
+     "a 4v4 should not label anyone's tee on the card");
+
+  // the roster editor still shows them, which is where sides get picked
   w.eval(`view.gameId = null; editEvent = ROUNDS()[0].id; view.tab = "sched";
           openPanel.e = "games"; render();`);
   const cell = document.querySelector(".rost .rn");
