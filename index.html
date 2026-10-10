@@ -42,6 +42,11 @@
      anything lighter and these carry real information. */
   --rule:#A9A088; --rule-soft:#C6BEA9;
   --pencil:#A82B1E; --brass:#8A6A22;
+  /* Scores are read in sunlight at a glance, so under and over par get their
+     own colours rather than a +/- you have to stop and parse. Red under, the
+     usual card convention; a cold blue over, which is the only hue on this
+     paper that can't be mistaken for the red. */
+  --over:#2B5873;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 /* touch-action:manipulation removes the double-tap-to-zoom gesture, which also
@@ -140,6 +145,36 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hcell.halved{background:var(--rule);color:var(--ink)}
 .hcell.cur{box-shadow:inset 0 -3px 0 var(--pencil);font-weight:700}
 .hcell.cur:not(.done):not(.won-a):not(.won-b):not(.halved){color:var(--ink)}
+/* The card itself: every team's score on every hole, nine at a time the way a
+   paper scorecard is laid out. This replaces the bare 1-18 strip for the
+   formats that have one team score per hole — match play and 40ball keep the
+   strip, because neither has a single number per team to put in a cell. Nine
+   at a time is what makes room for real team names instead of initials. */
+.hg{display:grid;grid-template-columns:minmax(0,1fr) repeat(9,minmax(0,22px)) 27px;
+  border:1px solid var(--rule);background:var(--paper-2);
+  font-family:'IBM Plex Mono',monospace;font-size:11.5px;margin:10px 0 0}
+.hg + .hg{margin-top:5px}
+.hg-lab{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  font-size:10.5px;letter-spacing:.03em;color:var(--ink-soft);padding:5px 6px 5px 7px;
+  display:flex;align-items:center;min-width:0;overflow:hidden;white-space:nowrap;
+  text-overflow:ellipsis;border-top:1px solid var(--rule-soft)}
+.hg-c{border:none;border-left:1px solid var(--rule-soft);border-top:1px solid var(--rule-soft);
+  background:transparent;padding:5px 0;text-align:center;font:inherit;font-weight:600;
+  color:var(--ink);cursor:pointer;min-width:0}
+.hg > :nth-child(-n+11){border-top:none}
+.hg-n{font-size:10px;font-weight:600;color:var(--ink-faint)}
+/* The hole you're on is a tinted column, with the marker only under its
+   number. A bar on every cell drew four separate red dashes that read as four
+   separate things rather than one column. */
+.hg-c.cur{background:var(--paper-3)}
+.hg-n.cur{color:var(--ink);font-weight:700;box-shadow:inset 0 -3px 0 var(--pencil)}
+.hg-tot{background:var(--paper-3);font-weight:700;cursor:default}
+.hg-lab.hg-corner{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
+/* Under par red, over par blue, par plain — the same three everywhere a score
+   is shown, including the number you are changing with the stepper. */
+.under{color:var(--pencil)}
+.over{color:var(--over)}
+.hg-s.under,.hg-s.over{font-weight:700}
 .hkey{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;
   font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.1em;font-size:9.5px;font-weight:600;color:var(--ink-soft)}
@@ -173,6 +208,9 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .banner.closed .stot{color:#B9CDBF}
 .spar.under{color:var(--pencil)}
 .banner.closed .spar.under{color:#E8A79A}
+/* The closed banner is light-on-dark, so over par needs a lighter blue
+   there or it disappears into the background. */
+.banner.closed .spar.over{color:#9FC6DC}
 .banner.closed .thru{color:#A9BFAE}
 .tag{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-weight:700;
   text-transform:uppercase;letter-spacing:.12em;font-size:10px;border:1px solid var(--pencil);
@@ -201,6 +239,11 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .prow{display:flex;align-items:center;gap:9px;padding:8px 11px;border-top:1px solid var(--rule-soft)}
 .prow:first-child{border-top:none}
 .pname{flex:1;font-size:14.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* With the names gone the row still needs a left-hand label, and the par
+   for this hole is the thing the score is being judged against. */
+.pname-par{font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.07em;font-size:12px;color:var(--ink-faint)}
+.team-name .teetag{margin-left:6px}
 .pname .dots{color:var(--pencil);font-size:11px;letter-spacing:1px;margin-left:4px}
 .pnet{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
   width:58px;text-align:right;flex:none;line-height:1.25}
@@ -1475,7 +1518,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0055";
+const BUILD = "2026-10-10.0115";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3829,6 +3872,34 @@ function renderHistory(){
 }
 
 /* ---------- game ---------- */
+/* Nine holes of the card, as a grid: the hole numbers, then a row per team.
+   Nine rather than eighteen is what buys the width to print team names in
+   full — four columns of initials would put "Dan & Adam" and "Daniel & Jake"
+   both at "D&J"-shaped guesses, which is no use on the course. */
+function holeGrid(g){
+  const ix = sides(g), course = courseOf(g);
+  const nine = from => {
+    let o = `<div class="hg"><span class="hg-lab hg-corner">${from ? "In" : "Out"}</span>`;
+    for (let i = from; i < from + 9; i++)
+      o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}"
+        data-hole="${i}">${i + 1}</button>`;
+    o += `<span class="hg-c hg-n hg-tot">${from ? "In" : "Out"}</span>`;
+    ix.forEach(t => {
+      o += `<span class="hg-lab">${esc(teamLabel(g, t))}</span>`;
+      let tot = 0, any = false;
+      for (let i = from; i < from + 9; i++){
+        const v = g.holes[i].teamScore[t];
+        if (v != null){ tot += v; any = true; }
+        o += `<button class="hg-c hg-s ${v == null ? "" : parClass(v - course.holes[i].par)}${
+          i === view.hole ? " cur" : ""}" data-hole="${i}">${v == null ? "" : v}</button>`;
+      }
+      o += `<span class="hg-c hg-tot">${any ? tot : ""}</span>`;
+    });
+    return o + `</div>`;
+  };
+  return nine(0) + nine(9);
+}
+
 function renderGame(){
   const g = GAMES.find(x => x.id === view.gameId);
   const course = courseOf(g);
@@ -3838,7 +3909,13 @@ function renderGame(){
   /* score bug — other matches running in this same round */
   out += renderOtherBug(g);
 
-  /* hole strip */
+  /* The card. For a format with one team score per hole that's the real
+     scorecard — every team, every hole — which is what people kept asking the
+     card for and had to walk back through the holes to get. Match play and
+     40ball have no single number per team per hole, so they keep the strip. */
+  if (isStroke(g)){
+    out += holeGrid(g);
+  } else {
   /* Hole strip. For match play a completed hole is coloured by who won it, so
      the shape of the match is readable at a glance rather than just "played". */
   out += `<div class="hstrip">`;
@@ -3857,6 +3934,7 @@ function renderGame(){
     out += `<button class="${cls}" data-hole="${i}">${i+1}</button>`;
   }
   out += `</div>`;
+  }
   if (isMatch(g)){
     out += `<div class="hkey">
       <span><i class="sw a"></i>${esc(teamLabel(g,0))}</span>
@@ -4137,12 +4215,17 @@ function renderTeam(g, t, h, hardLocked){
   const locked = hole.locked[t];
 
   if (isScramble(g) || isStroke(g)){
-    inner += `<div class="prow">
-      <span class="pname">${roster}</span>
-      ${stepper(`ts-${t}`, hole.teamScore[t], locked || hardLocked || hole.conceded!==null)}
-      ${isStroke(g) && hole.teamScore[t] != null ? `<span class="pnet"><span class="par ${
-        parClass(hole.teamScore[t] - courseOf(g).holes[h].par)}">${
-        toPar(hole.teamScore[t] - courseOf(g).holes[h].par)}</span></span>` : ""}
+    /* No roster line here: the team head above already prints every name, and
+       repeating them under it was two-thirds of the height of a team block
+       saying nothing. The tee came up to the head with them. */
+    const par = courseOf(g).holes[h].par;
+    const rel = hole.teamScore[t] == null ? null : hole.teamScore[t] - par;
+    inner += `<div class="prow prow-team">
+      <span class="pname pname-par">Par ${par}</span>
+      ${stepper(`ts-${t}`, hole.teamScore[t], locked || hardLocked || hole.conceded!==null,
+                rel == null ? "" : parClass(rel))}
+      ${rel != null ? `<span class="pnet"><span class="par ${parClass(rel)}">${
+        toPar(rel)}</span></span>` : ""}
     </div>`;
   }
 
@@ -4152,7 +4235,8 @@ function renderTeam(g, t, h, hardLocked){
       const v = hole.scores[id];
       inner += `<div class="prow">
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${stepper(`sc-${id}`, v==="PU"?null:v, locked || hardLocked || hole.conceded!==null)}
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked || hardLocked || hole.conceded!==null,
+                  typeof v === "number" ? parClass(v - courseOf(g).holes[h].par) : "")}
         ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}"
           ${locked||hardLocked||hole.conceded!==null?"disabled":""}>PU</button>
@@ -4172,14 +4256,25 @@ function renderTeam(g, t, h, hardLocked){
       inner += `<div class="prow">
         <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
         <span class="pname">${esc(P(id).name)}${s?`<span class="dots">${"•".repeat(s)}</span>`:""}</span>
-        ${stepper(`sc-${id}`, v==="PU"?null:v, locked)}
+        ${stepper(`sc-${id}`, v==="PU"?null:v, locked,
+                  typeof v === "number" ? parClass(v - courseOf(g).holes[h].par) : "")}
         ${netCell(id, g, h)}
         <button class="pu ${v==="PU"?"on":""}" data-pu="${id}" ${locked?"disabled":""}>PU</button>
       </div>`;
     });
   }
 
-  let head = `<div class="team-head"><span class="team-name">${esc(name)}</span>
+  /* The tee moved here from the roster row. In a scramble it's the only thing
+     separating two sides on paper, so it can't just vanish with the names —
+     one chip when the whole side is on one box, otherwise one each. */
+  const tees = (g.teams[t] || []).map(id => teeNameIn(g, id, course || { id:"", tees:[] }));
+  const oneTee = tees.length && tees.every(x => x === tees[0]);
+  const teeBit = !course || !tees.length ? ""
+    : oneTee ? `<span class="teetag">${esc(tees[0])}</span>`
+    : (g.teams[t] || []).map((id, k) =>
+        `<span class="teetag">${esc((P(id)||{}).name||"?")} ${esc(tees[k])}</span>`).join("");
+  let head = `<div class="team-head"><span class="team-name">${esc(name)}${
+    isScramble(g) || isStroke(g) ? teeBit : ""}</span>
     <span class="team-score">`;
   if (isMatch(g)){
     const ts = teamHoleScore(g,t,h);
@@ -4233,10 +4328,13 @@ function renderTeam(g, t, h, hardLocked){
   return `<div class="team ${winCls} ${locked?"islocked":""}">${head}${inner}</div>${extra}`;
 }
 
-function stepper(key, val, disabled){
+/* `tone` is the under/even/over class for this score against the hole's par.
+   The number in the stepper is the one being read while it's being changed,
+   so it carries the same colour as the same score does everywhere else. */
+function stepper(key, val, disabled, tone){
   return `<span class="step">
     <button data-step="${key}:-1" ${disabled?"disabled":""}>−</button>
-    <span class="val ${val==null?"empty":""}">${val==null?"–":val}</span>
+    <span class="val ${val==null?"empty":tone||""}">${val==null?"–":val}</span>
     <button data-step="${key}:1" ${disabled?"disabled":""}>+</button>
   </span>`;
 }

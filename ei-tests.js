@@ -89,7 +89,10 @@ section("SMOKE — every game opens");
 dom.window.eval('homeShowAll = true;');
 tab("home");
 [...new Set([...document.querySelectorAll("[data-game]")].map(b => b.dataset.game))].forEach(id =>
-  t("game: " + id, () => { openGame(id); ok(appHTML().includes("hstrip"), "game view missing"); }));
+  t("game: " + id, () => { openGame(id);
+    /* Stroke play draws the full card (.hg); match play and 40ball keep the
+       1-18 strip. Either one means the game view rendered. */
+    ok(/class="(hstrip|hg)"/.test(appHTML()), "game view missing"); }));
 
 section("SMOKE — in-game controls");
 openGame("g1");
@@ -195,7 +198,8 @@ t("R2 schedule rounds are clickable buttons, not divs", () => {
   ok(link, "no round link on the schedule");
   eq(link.tagName, "BUTTON", "schedule round must be a <button> or clicks are ignored:");
   click(link);
-  ok(appHTML().includes("hstrip"), "clicking a scheduled round did not open the game");
+  ok(/class="(hstrip|hg)"/.test(appHTML()),
+     "clicking a scheduled round did not open the game");
 });
 
 t("R3 toast is fully hidden when idle", () => {
@@ -1468,11 +1472,13 @@ t("R86 a four-team hole isn't finished until all four have locked", () => isolat
   eq(w.eval('currentHoleFor(GAMES.find(x=>x.id==="gadv"))'), 0,
      "and the round is still on hole 1:");
 
-  // the hole strip must not call it done either
-  const strip = [...document.querySelectorAll(".hcell")];
+  // and the card must not show a score for a team that hasn't put one in
   w.eval("render();");
-  ok(!document.querySelectorAll(".hcell")[0].className.includes("done"),
-     "hole 1 should not be marked finished with two teams still to score");
+  const cells = [...document.querySelectorAll(".hg-s")];
+  const firsts = [0,1,2,3].map(t => cells[t * 9].textContent.trim());
+  eq(firsts.slice(2).join(","), ",",
+     "sides C and D have no score on hole 1, so their cells should be empty:");
+  ok(firsts[0] !== "", "while side A's score should be on the card: " + firsts.join("|"));
 
   // all four: now it moves
   w.eval(`(function(){ const x = GAMES.find(y=>y.id==="gadv");
@@ -1594,9 +1600,12 @@ t("R99 scrambles show which tee each player is on", () => isolate(() => {
     PLAYERS[0].tees[courseOf(GAMES[0]).id] = courseOf(GAMES[0]).tees[1].name;
     view.gameId = "gt"; view.hole = 0; render();`);
   const want = w.eval('teeNameFor("p1", courseOf(GAMES.find(g=>g.id==="gt")))');
-  const row = document.querySelector(".team .pname").textContent;
-  ok(row.includes(want), "the score row should show the tee: " + row);
-  ok(document.querySelector(".teetag"), "and show it as its own tag, not run into the name");
+  /* The tee sits on the team head now — the roster line under it was the team
+     name printed twice, so it went, and the tee came up with it. */
+  const row = document.querySelector(".team .team-name").textContent;
+  ok(row.includes(want), "the team head should show the tee: " + row);
+  ok(document.querySelector(".team-name .teetag"),
+     "and show it as its own tag, not run into the name");
 
   // and in the setup, where the teams get picked
   w.eval(`view.gameId = null; editEvent = ROUNDS()[0].id; view.tab = "sched";
@@ -2589,6 +2598,62 @@ t("R124 the Games tab opens on the whole weekend, and Schedule sits before Board
   ok(!/homeShowAll\s*=\s*false/.test(html.replace(/id === "showtoday"[^\n]*\n/, "")),
      "nothing but the \"Just today\" chip should turn the narrowing on");
 });
+
+t("R125 the card shows every team's score, in colour, with no name printed twice", () => isolate(() => {
+  const w = dom.window;
+  const saved = w.eval("JSON.stringify(COURSES[0].holes.map(x=>x.par))");
+  try {
+    w.eval(`(function(){
+      [4,5,3,4,4,3,5,4,4,4,3,5,4,4,3,4,5,4].forEach((p,k)=>COURSES[0].holes[k].par=p);
+      GAMES.length = 0;
+      const g = { id:"gcard", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4", skins:true,
+                  teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]},
+                  holes: blankHoles() };
+      /* hole 1 is a par 4: a birdie, a par, a bogey and a par. */
+      [3,4,5,4].forEach((v,i)=>g.holes[0].teamScore[i]=v);
+      [5,5,5,5].forEach((v,i)=>g.holes[9].teamScore[i]=v);   // and one on the back nine
+      GAMES.push(g);
+      view.tab="home"; view.gameId="gcard"; view.hole=0; editEvent=null; render();
+    })()`);
+    /* Two blocks of nine, four teams in each. */
+    const blocks = [...document.querySelectorAll(".hg")];
+    eq(blocks.length, 2, "the card should be laid out as two nines:");
+    const cells = [...document.querySelectorAll(".hg-s")];
+    eq(cells.length, 72, "four teams across eighteen holes:");
+    /* Column-major: each row is nine holes, so the first cell of each row is
+       hole 1 for that team. */
+    const h1 = [0,1,2,3].map(t => cells[t*9]);
+    eq(h1.map(c => c.textContent.trim()).join(","), "3,4,5,4", "hole 1 across the four teams:");
+    ok(h1[0].className.includes("under"), "a birdie should be coloured under par: " + h1[0].className);
+    ok(h1[1].className.includes("even"),  "a par should be neither: " + h1[1].className);
+    ok(h1[2].className.includes("over"),  "a bogey should be coloured over par: " + h1[2].className);
+    /* The back nine is its own block, and hole 10 lands in it. */
+    const back = [...blocks[1].querySelectorAll(".hg-s")];
+    eq(back[0].textContent.trim(), "5", "hole 10 belongs to the second block:");
+    /* Full names, because four columns of initials made Dan and Daniel the
+       same label — the thing that was wrong with the pairings grid. */
+    const labs = [...blocks[0].querySelectorAll(".hg-lab")].slice(1).map(x => x.textContent.trim());
+    eq(labs.length, 4, "a row per team:");
+    /* Uppercased by CSS, so compare the text the markup actually carries. */
+    labs.forEach((l,i) => eq(l, w.eval(`teamLabel(GAMES[0], ${i})`),
+      "team rows are labelled with the whole team:"));
+
+    /* And the team block below no longer prints those same names again. */
+    const blocksOut = [...document.querySelectorAll(".team")];
+    ok(blocksOut.length, "the entry blocks should still be there");
+    ok(!blocksOut[0].querySelector(".pname:not(.pname-par)"),
+       "the roster line under the team head was the team name a second time");
+    ok(blocksOut[0].querySelector(".team-name"), "the team head still names the side");
+    /* The number in the stepper carries the same colour as the card cell. */
+    const val = blocksOut[0].querySelector(".step .val");
+    eq(val.textContent.trim(), "3", "the stepper shows this hole's score:");
+    ok(val.className.includes("under"), "and colours it like a birdie: " + val.className);
+  } finally {
+    /* isolate() restores SCHEDULE and GAMES, not COURSES, so the pars go back
+       by hand or every later test runs against this card's layout. */
+    w.eval(`(function(){ const p = ${saved}; p.forEach((v,k)=>COURSES[0].holes[k].par=v); })()`);
+  }
+}));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");

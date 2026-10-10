@@ -260,7 +260,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **163 passed, 0 failed**. The suite is
+Current status against `index.html`: **164 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -276,6 +276,25 @@ about, because they fail for reasons that aren't about the code you just wrote:
 - **R31** fails if a click handler has no markup that can trigger it.
 - `t()` is synchronous. Anything that awaits goes through `ta()`, or its
   assertions run after the test has already been counted as passed.
+
+## The scorecard screen
+
+- For a format with one team score per hole (`isStroke`), the top of the card is
+  **`holeGrid(g)`** — the real scorecard: two blocks of nine, a row per team,
+  a running nine-total, the current hole as a tinted column. Nine at a time is
+  what buys the width for full team names; four columns of initials put
+  "Dan & Adam" and "Daniel & Jake" at the same label, which was the exact fault
+  fixed on the pairings page. Match play and 40ball keep the plain 1–18
+  `.hstrip`, because neither has a single number per team per hole.
+- **Scores are coloured against par everywhere they appear** — `.under` red,
+  `.over` blue (`--over`), par plain — including the number inside the stepper,
+  via `stepper(key, val, disabled, tone)`. `.banner.closed` needs its own
+  lighter pair, since it's light-on-dark.
+- A scramble team block is **head, stepper row, lock row**. There is no roster
+  line: `teamLabel` already prints every name in the head, and repeating them
+  underneath was two-thirds of the block's height saying nothing (R125). The
+  tee chips moved up to the head with them — one chip when the whole side is
+  on one box, one each otherwise.
 
 ## UI decisions that look odd and aren't
 
