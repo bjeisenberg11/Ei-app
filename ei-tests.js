@@ -2301,6 +2301,34 @@ t("R113 a course played twice in a day says so once", () => isolate(() => {
   eq(played([]), "No rounds assigned to this course.", "and none is still none:");
 }));
 
+t("R114 the all-eight flag survives the CSV, both directions", () => isolate(() => {
+  const w = dom.window;
+  const csv = "day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4,d1,d2,d3,d4\n"
+    + "Thursday,1:03pm,ROUND,Pine Hollow\n"
+    + "Thursday,,GAME,,2V2V2V2-8,,,Blake,Daniel,,,Dan,Howard,,,Jason,Luke,,,Jake,Adam\n"
+    + "Friday,8:00am,ROUND,Pine Hollow\n"
+    + "Friday,,GAME,,2V2V2V2,,,Blake,Dan,,,Jason,Daniel,,,Howard,Luke,,,Jake,Adam";
+  const plan = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv)}))`));
+  eq(plan.errors.length, 0, "it should import cleanly: " + plan.errors.join(" | "));
+  eq(plan.games[0].oneGroup, true, "the -8 suffix means all eight walk together:");
+  ok(!plan.games[1].oneGroup, "and a plain 2V2V2V2 is two foursomes");
+  /* The flag only earns its place if it reaches the matrix: an all-eight round
+     must add nothing to the foursome column while still counting team-mates. */
+  /* SCHEDULE too: scheduleToCSV walks the rounds and writes each round's games
+     under it, so games with no round in SCHEDULE export as nothing at all. */
+  w.eval(`SCHEDULE = ${JSON.stringify(plan.events)};
+          GAMES = ${JSON.stringify(plan.games)}.map(g => { g.holes = blankHoles(); return g; });`);
+  const one = JSON.parse(w.eval("JSON.stringify(pairMatrix())"));
+  eq(one.grpC.p1.p4, 1, "only the two-foursome round should give Blake & Daniel a foursome:");
+  eq(one.withC.p1.p4, 1, "while the all-eight round still counts them as team-mates:");
+
+  const back = w.eval("scheduleToCSV()");
+  ok(/,2V2V2V2-8,/.test(back), "the export must write the suffix back");
+  ok(/,2V2V2V2,/.test(back), "and leave a two-foursome game plain");
+  const round2 = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(back)}))`));
+  eq(round2.games.filter(g => g.oneGroup).length, 1, "one all-eight game survives the round trip:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

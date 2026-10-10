@@ -1367,7 +1367,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-09.1935";
+const BUILD = "2026-10-09.2110";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2848,7 +2848,13 @@ function splitCSVLine(line){
 const FORMATS = { BESTBALL:"BESTBALL", "2V2":"BESTBALL", "BEST BALL":"BESTBALL",
   SCRAMBLE4:"SCRAMBLE4", "4V4":"SCRAMBLE4", SCRAMBLE3:"SCRAMBLE3", "3V3":"SCRAMBLE3",
   SCRAMBLE2X4:"SCRAMBLE2X4", "2V2V2V2":"SCRAMBLE2X4", "2X4":"SCRAMBLE2X4",
+  "2V2V2V2-8":"SCRAMBLE2X4", "2X4-8":"SCRAMBLE2X4",
   "40BALL":"FORTYBALL", FORTYBALL:"FORTYBALL" };
+/* The -8 suffix means all eight play as one group, which keeps the round out of
+   the "same foursome" column. Without it in the CSV the flag was a toggle you
+   had to remember after importing, and forgetting it silently changes what the
+   pairings matrix says. */
+const ONE_GROUP_FORMATS = { "2V2V2V2-8":1, "2X4-8":1 };
 
 /* Parse without touching live data — returns a plan plus any problems, so the
    import can be previewed before anything is replaced. */
@@ -2926,6 +2932,7 @@ function parseCSV(text){
                   teams:{}, holes: blankHoles() };
       picked.forEach((x, k) => g.teams[k] = x);
       if (fmt === "FORTYBALL") g.hidden = true;
+      if (ONE_GROUP_FORMATS[detail.toUpperCase().trim()]) g.oneGroup = true;
       games.push(g);
       return;
     }
@@ -2967,7 +2974,8 @@ function scheduleToCSV(){
         const cells = t => { const a = (g.teams[t]||[]).map(id => esc2((P(id)||{}).name));
           while (a.length < CSV_SIDE_COLS) a.push(""); return a.slice(0, CSV_SIDE_COLS); };
         const fmt = g.type === "FORTYBALL" ? "40BALL"
-                  : g.type === "SCRAMBLE2X4" ? "2V2V2V2" : g.type;
+                  : g.type === "SCRAMBLE2X4" ? (g.oneGroup ? "2V2V2V2-8" : "2V2V2V2")
+                  : g.type;
         const all = [];
         for (let k = 0; k < 4; k++) all.push(...(k < sideCount(g) ? cells(k)
                                    : Array(CSV_SIDE_COLS).fill("")));
