@@ -2575,6 +2575,21 @@ t("R123 the skins card says skins, not strokes", () => isolate(() => {
   ok(/thru 1/.test(label.text), "and how far they are: " + label.text);
 }));
 
+t("R124 the Games tab opens on the whole weekend, and Schedule sits before Board", () => {
+  const w = dom.window;
+  /* Narrowing to today made a four-day tournament look like a one-day one,
+     and hid every other round from anyone opening it beforehand. */
+  ok(w.eval("homeShowAll"), "the Games tab should start showing all days");
+  const tabs = [...document.querySelectorAll("nav [data-tab]")].map(b => b.dataset.tab);
+  eq(tabs.join(","), "home,sched,board,players", "tab order:");
+  /* Switching year must not quietly put the narrowing back. */
+  const src = /async function switchYear[\s\S]*?\n}/.exec(html)[0];
+  ok(!/homeShowAll\s*=\s*false/.test(src),
+     "switchYear must not reset the Games tab to a single day");
+  ok(!/homeShowAll\s*=\s*false/.test(html.replace(/id === "showtoday"[^\n]*\n/, "")),
+     "nothing but the \"Just today\" chip should turn the narrowing on");
+});
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

@@ -596,8 +596,8 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 
 <nav class="tabs">
   <button data-tab="home" class="on">Games</button>
-  <button data-tab="board">Board</button>
   <button data-tab="sched">Schedule</button>
+  <button data-tab="board">Board</button>
   <button data-tab="players">Field</button>
 </nav>
 
@@ -1475,7 +1475,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0020";
+const BUILD = "2026-10-10.0055";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -1947,7 +1947,7 @@ async function switchYear(y){
   activeYear = y;
   try { localStorage.setItem("ei-year", y); } catch(e){}
   GAMES = []; SCHEDULE = [];
-  editEvent = null; view.gameId = null; homeShowAll = false;
+  editEvent = null; view.gameId = null; homeShowAll = true;
   setSync("connecting");
   render();
   if (SYNC.on) await connectWith(attempt);
@@ -2341,7 +2341,12 @@ function closeEvent(keep){
 let csvPlan = null;
 let crsPlan = null;
 let boardMode = "table";
-let homeShowAll = false;
+/* The whole weekend by default. Narrowing to today reads as a shorter
+   tournament than it is: on Friday morning the Thursday results are what
+   everyone wants to argue about, and someone opening it a week beforehand
+   saw a single day and assumed the rest hadn't been set up. The "Just today"
+   chip is still there for the people who want it. */
+let homeShowAll = true;
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
 /* True from the moment config changes locally until the write is acknowledged.
