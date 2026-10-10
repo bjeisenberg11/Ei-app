@@ -572,6 +572,18 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
 .rost-sum{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:9px;
   font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft)}
 .rost-sum .bad{color:var(--pencil);font-weight:600}
+/* One thin line where a bar with a password field used to be. */
+.lockmini{display:flex;align-items:center;justify-content:flex-end;gap:8px;
+  font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.1em;
+  font-size:10px;font-weight:600;color:var(--ink-faint);margin:-2px 0 4px}
+.lockmini .chip{font-size:10px;padding:3px 8px}
+.lockmini.open{color:var(--brass)}
+/* Paste a flight rather than fill in six fields. */
+.flightadd{margin-top:10px;padding:11px;border:1px dashed var(--rule);background:var(--paper-2)}
+.flightadd .fin{width:100%;font-size:16px;padding:10px 9px;border:1px solid var(--rule);
+  background:var(--paper);color:var(--ink);font-family:'Barlow',sans-serif;margin-bottom:8px}
+.flightadd .fin:focus{outline:none;border-color:var(--brass)}
+.flightadd .hint{margin:7px 0 0;font-size:11.5px;color:var(--ink-faint)}
 /* Tees per team, for a 2v2v2v2 levelled by the boxes rather than by handicaps.
    Two columns on a phone, so four teams are two short rows and not a scroll. */
 .teeset{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;margin-top:10px;
@@ -1593,7 +1605,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0320";
+const BUILD = "2026-10-10.0345";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2465,6 +2477,7 @@ let boardMode = "table";
    saw a single day and assumed the rest hadn't been set up. The "Just today"
    chip is still there for the people who want it. */
 let homeShowAll = true;
+let showUnlock = false;        // the admin code field, asked for rather than offered
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
 /* True from the moment config changes locally until the write is acknowledged.
@@ -2827,16 +2840,22 @@ function fmtTime(t){
 function renderSchedule(){
   const ro = SYNC.on && !isAdmin;
 
+  /* A thin line, not a bar with a password field in it. Almost nobody who
+     opens this screen is about to unlock anything — they're looking up a tee
+     time or adding their flight, both of which a non-admin can already do —
+     so the field only appears once someone asks for it. */
   let h = ro
-    ? `<div class="lockbar">
-         <span class="lockbar-t">View only</span>
-         <input id="acode" type="password" autocomplete="off" placeholder="admin code">
-         <button class="btn" id="aunlock">Unlock</button>
-       </div><p class="impmsg" id="amsg"></p>`
-    : `<div class="lockbar open">
-         <span class="lockbar-t">Editing unlocked</span>
-         <button class="btn ghost" id="alock">Lock</button>
-       </div>`;
+    ? (showUnlock
+      ? `<div class="lockbar">
+           <span class="lockbar-t">View only</span>
+           <input id="acode" type="password" autocomplete="off" placeholder="admin code">
+           <button class="btn" id="aunlock">Unlock</button>
+           <button class="btn ghost" id="ahide">Cancel</button>
+         </div><p class="impmsg" id="amsg"></p>`
+      : `<div class="lockmini"><span>View only</span>
+           <button class="chip" id="ashow">Admin</button></div>`)
+    : `<div class="lockmini open"><span>Editing unlocked</span>
+         <button class="chip" id="alock">Lock</button></div>`;
 
   if (editEvent) return renderEventEditor(h, editEvent);
 
@@ -2943,8 +2962,23 @@ function renderSchedule(){
       const missing = PLAYERS.filter(p => !listed.includes(p.id));
       if (missing.length)
         h += `<p class="note">No ${dir.toLowerCase()} entered: ${missing.map(p=>esc(p.name)).join(", ")}</p>`;
-      h += `<button class="btn ghost addev" data-addtravel="${dir}">+ Add ${
-        dir === "ARRIVAL" ? "an arrival" : "a departure"}</button>`;
+      /* Paste first, because that's the whole point: a line out of the
+         confirmation email beats six fields nobody fills in. The blank-form
+         button stays for anyone who has no email to hand. */
+      const me = myId();
+      h += `<div class="flightadd">
+        <input class="fin" id="fin-${dir}" placeholder="${
+          dir === "ARRIVAL" ? "Paste your flight \u2014 e.g. United 2137 ORD 10:51am RSW 2:57pm"
+                            : "Paste your flight \u2014 e.g. United 2472 RSW 2:12pm ORD 4:22pm"}">
+        <div class="acts cwrap">
+          <button class="btn" data-flightadd="${dir}">Add ${
+            me ? "my " + (dir === "ARRIVAL" ? "arrival" : "departure") : "flight"}</button>
+          <button class="btn ghost addev" data-addtravel="${dir}">Enter it by hand</button>
+        </div>
+        ${me ? `<p class="hint">Adding as ${esc((P(me)||{}).name || "")} \u00b7 change it on the
+          flight itself and this phone will remember.</p>`
+             : `<p class="hint">It'll ask who this is the first time.</p>`}
+      </div>`;
     });
   }
 
@@ -2952,6 +2986,95 @@ function renderSchedule(){
     who's playing whom. Players, courses and tees are on the Field tab.</div>`;
   app.innerHTML = h;
 }
+
+/* ---------- flights, from whatever you have in your hand ----------
+   Everybody adds their flight once and then never touches the app's schedule
+   again, so the cost of adding one is almost the whole cost of the feature.
+   Typing it into six fields is the thing nobody does; pasting the line out of
+   a confirmation email is the thing everybody can do.
+
+   Deliberately forgiving: it fills what it recognises and leaves the rest, and
+   the event opens afterwards so anything it got wrong is one tap from fixed.
+   Nothing here rejects input — a paste it can't read still makes an event with
+   the text in the title, which is no worse than the empty one you'd have got. */
+const AIRLINES = { UA:"United", AA:"American", DL:"Delta", WN:"Southwest",
+  AS:"Alaska", B6:"JetBlue", NK:"Spirit", F9:"Frontier", G4:"Allegiant",
+  HA:"Hawaiian", SY:"Sun Country", MX:"Breeze", AC:"Air Canada" };
+const AIRLINE_NAMES = "united|american|delta|southwest|alaska|jetblue|spirit|frontier|"
+  + "allegiant|hawaiian|sun country|breeze|air canada";
+
+function parseFlight(text){
+  const raw = String(text || "").replace(/[\u2192\u2013\u2014]/g, " - ").trim();
+  const out = { title:"", from:"", to:"", dep:null, arr:null, day:null };
+  if (!raw) return out;
+
+  /* Flight number first, and its letters are then off the table as airport
+     codes — "AA 1234 ORD" would otherwise read AA as a carrier and ORD as the
+     origin, which is right, but "ORD 10:51" would read ORD as a carrier and
+     10 as the number, which is not. */
+  let carrier = "", num = "", used = "";
+  let m = new RegExp("\\b(" + AIRLINE_NAMES + ")\\s*#?\\s*(\\d{1,4})\\b", "i").exec(raw);
+  if (m){
+    carrier = m[1].replace(/\b\w/g, c => c.toUpperCase());
+    num = m[2]; used = m[0];
+  } else if ((m = /\b([A-Z][A-Z0-9])\s*#?\s*(\d{1,4})\b/.exec(raw))){
+    carrier = AIRLINES[m[1]] || m[1];
+    num = m[2]; used = m[0];
+  }
+  if (carrier) out.title = carrier + " " + num;
+
+  /* Airport codes: three capitals that aren't the carrier and aren't a word
+     the rest of the line needs. Two of them is from and to, in order. */
+  const rest = used ? raw.replace(used, " ") : raw;
+  const codes = (rest.match(/\b[A-Z]{3}\b/g) || [])
+    .filter(c => !/^(AND|THE|FOR|SUN|AIR|PM|AM)$/.test(c));
+  if (codes[0]) out.from = codes[0];
+  if (codes[1]) out.to = codes[1];
+
+  /* Times. 12-hour with a meridiem first, because "10:51am - 2:57pm" would
+     otherwise give 10:51 and 2:57 with the afternoon silently lost. */
+  const times = [];
+  let t, re12 = /\b(\d{1,2}):(\d{2})\s*([ap])\.?m?\.?\b/gi;
+  while ((t = re12.exec(raw)) && times.length < 2){
+    let hh = +t[1] % 12;
+    if (/p/i.test(t[3])) hh += 12;
+    times.push(String(hh).padStart(2,"0") + ":" + t[2]);
+  }
+  if (!times.length){
+    let re24 = /\b([01]?\d|2[0-3]):([0-5]\d)\b/g;
+    while ((t = re24.exec(raw)) && times.length < 2)
+      times.push(String(+t[1]).padStart(2,"0") + ":" + t[2]);
+  }
+  out.dep = times[0] || null;
+  out.arr = times[1] || null;
+
+  /* The day as this tournament names it, so "Wed" finds "Wednesday" and a
+     day label of "Thu Oct 15" is matched too. */
+  const dm = /\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/i.exec(raw);
+  if (dm) out.day = DAYS.find(d => d.toLowerCase().startsWith(dm[1].toLowerCase())) || null;
+
+  if (!out.title) out.title = raw.split(/\s{2,}|\n/)[0].slice(0, 40);
+  return out;
+}
+
+/* The line that ends up under the flight number: where from, where to, and
+   when each. Built from whatever was recognised rather than a fixed shape. */
+function flightNotes(f, dir){
+  const dep = f.dep ? fmtTime(f.dep) : "";
+  const arr = f.arr ? fmtTime(f.arr) : "";
+  const a = [f.from, dep].filter(Boolean).join(" ");
+  const b = [f.to, arr].filter(Boolean).join(" ");
+  return [a, b].filter(Boolean).join(" \u2192 ");
+}
+
+/* Whose flight this phone is adding. There is no sign-in, so the app just
+   remembers the last person you picked — one tap the first time, none after. */
+function myId(){
+  let v = null;
+  try { v = localStorage.getItem("ei-me"); } catch(e){}
+  return PLAYERS.some(p => p.id === v) ? v : null;
+}
+function setMe(pid){ try { localStorage.setItem("ei-me", pid); } catch(e){} }
 
 const EVMETA = {
   ROUND:  { cls:"ev-round",  tag:"Golf" },
@@ -5002,10 +5125,32 @@ function handleClick(el){
     editEvent = null; editSnap = null; editIsNew = false;
     render(); toast(day + " cleared"); return;
   }
+  if (el.dataset.flightadd){
+    const dir = el.dataset.flightadd;
+    const box = document.getElementById("fin-" + dir);
+    const text = box ? box.value.trim() : "";
+    if (!text){ toast("Paste the flight first"); if (box) box.focus(); return; }
+    const f = parseFlight(text);
+    const id = "e" + Date.now().toString(36);
+    SCHEDULE.push({ id, type:"TRAVEL", dir,
+      /* The time that matters is the one that happens here: when they land on
+         the way in, when they take off on the way out. */
+      day: f.day || DAYS[0],
+      time: (dir === "ARRIVAL" ? f.arr : f.dep) || f.dep || null,
+      pid: myId() || PLAYERS[0].id,
+      title: f.title,
+      notes: flightNotes(f, dir) });
+    queueConfig();
+    /* Straight into the event: whatever the paste missed is one tap away, and
+       the first time round this is where you say who you are. */
+    openEvent(id, true); render();
+    toast(f.title ? f.title + " added" : "Flight added");
+    return;
+  }
   if (el.dataset.addtravel){
     const id = "e" + Date.now().toString(36);
     SCHEDULE.push({ id, day: DAYS[0], time:null, type:"TRAVEL",
-                    dir: el.dataset.addtravel, pid: PLAYERS[0].id, title:"" });
+                    dir: el.dataset.addtravel, pid: myId() || PLAYERS[0].id, title:"" });
     queueConfig(); openEvent(id, true); render(); return;
   }
   if (el.dataset.addev){
@@ -5048,7 +5193,14 @@ function handleClick(el){
     queueConfig(); render(); return;
   }
   if (el.dataset.evday){ EV(editEvent).day = el.dataset.evday; queueConfig(); render(); return; }
-  if (el.dataset.evpid){ EV(editEvent).pid = el.dataset.evpid; queueConfig(); render(); return; }
+  if (el.dataset.evpid){
+    const e = EV(editEvent);
+    e.pid = el.dataset.evpid;
+    /* Picking who a flight belongs to is as close to signing in as this app
+       gets, so the phone keeps it and the next flight needs no tap at all. */
+    if (e.type === "TRAVEL") setMe(e.pid);
+    queueConfig(); render(); return;
+  }
   if (el.dataset.evdir){ EV(editEvent).dir = el.dataset.evdir; queueConfig(); render(); return; }
   if (el.dataset.evmode){ EV(editEvent).mode = el.dataset.evmode; queueConfig(); render(); return; }
   /* Stored as an explicit false rather than deleted, so the choice survives a
@@ -5097,10 +5249,12 @@ function handleClick(el){
     g.skins = !g.skins; pushGame(g); render(); return;
   }
 
+  if (el.id === "ashow"){ showUnlock = true; render(); return; }
+  if (el.id === "ahide"){ showUnlock = false; render(); return; }
   if (el.id === "aunlock"){
     const v = (document.getElementById("acode")||{}).value || "";
     const m = document.getElementById("amsg");
-    if (v.trim().toLowerCase() === ADMIN_CODE){ isAdmin = true; toast("Setup unlocked"); render(); }
+    if (v.trim().toLowerCase() === ADMIN_CODE){ isAdmin = true; showUnlock = false; toast("Setup unlocked"); render(); }
     else if (m){ m.className = "impmsg bad"; m.textContent = "Wrong code."; }
     return;
   }

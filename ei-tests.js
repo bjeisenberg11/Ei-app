@@ -391,8 +391,15 @@ section("ADMIN — schedule editing");
 t("schedule is admin-only except for travel", () => {
   /* Players enter their own flights; everything else needs the code. */
   const w = dom.window;
-  w.eval("SYNC.on=true; isAdmin=false; view.gameId=null; view.tab='sched'; schedMode='timeline'; editEvent=null; render();");
-  ok(document.querySelector("#acode"), "no unlock bar");
+  w.eval("SYNC.on=true; isAdmin=false; showUnlock=false; view.gameId=null; view.tab='sched'; schedMode='timeline'; editEvent=null; render();");
+  /* The code field is asked for, not offered — almost nobody opening this
+     screen is about to unlock anything, and the bar was a whole row of it. */
+  ok(!document.querySelector("#acode"), "the code field shouldn't be sitting there by default");
+  ok(document.querySelector("#ashow"), "but there has to be a way to ask for it");
+  w.eval("showUnlock = true; render();");
+  ok(document.querySelector("#acode"), "no unlock bar once asked for");
+  ok(document.querySelector("#aunlock"), "and nothing to submit it with");
+  w.eval("showUnlock = false; render();");
   const editable = [...document.querySelectorAll("[data-editev]")]
     .map(b => w.eval(`EV("${b.dataset.editev}").type`));
   ok(editable.length > 0, "travel should still be editable without the code");
@@ -2799,6 +2806,60 @@ t("R127 the card's rows re-order with the standings, and the entry blocks don't"
      "the start position has to be forced into layout before it's released");
   ok(/style\.top\s*=\s*"0px"/.test(fn),
      'the row must be released to an explicit 0px — "" computes to auto and will not animate');
+}));
+
+t("R128 a flight goes in by pasting it", () => isolate(() => {
+  const w = dom.window;
+  const pf = txt => JSON.parse(w.eval(`JSON.stringify(parseFlight(${JSON.stringify(txt)}))`));
+
+  let f = pf("United 2137 ORD 10:51am - RSW 2:57pm");
+  eq(f.title, "United 2137", "airline and number out of a plain line:");
+  eq(f.from + "/" + f.to, "ORD/RSW", "both airports, in order:");
+  eq(f.dep + "/" + f.arr, "10:51/14:57", "and both times, with the afternoon kept:");
+
+  f = pf("UA2137 ORD 10:51 RSW 14:57");
+  eq(f.title, "United 2137", "a two-letter code becomes the airline's name:");
+  eq(f.dep + "/" + f.arr, "10:51/14:57", "24-hour times work too:");
+
+  /* The trap: ORD followed by a number looks exactly like a carrier and a
+     flight number, so the airport has to be excluded once the flight is found
+     — and when there's no carrier at all it must not invent one. */
+  f = pf("ORD 10:51am RSW 2:57pm");
+  /* Had ORD been taken for a carrier, it would have been struck out of the
+     line and RSW would have come back as the origin. */
+  eq(f.from + "/" + f.to, "ORD/RSW", "an airport before a time is still an airport:");
+  eq(f.dep + "/" + f.arr, "10:51/14:57", "with the times read either way:");
+
+  f = pf("Delta 1190 departs Sunday RSW 6:50 AM arrives ORD 9:15 AM");
+  eq(f.title, "Delta 1190", "an airline name in words:");
+  /* Matched against this tournament's own day labels, so "Sun" finds whatever
+     the weekend calls Sunday and a day it doesn't have comes back null. */
+  eq(f.day, "Sunday", "the day, as this tournament names it:");
+  eq(pf("UA 1 Tuesday ORD 9:00am MCO 1:00pm").day, null,
+     "a day this weekend doesn't have is left for the editor:");
+
+  /* Nothing is rejected: an unreadable paste still makes an event. */
+  f = pf("my buddy is driving me");
+  ok(f.title.length, "even a line with no flight in it gives something: " + f.title);
+
+  /* And the button does the whole job: event created, filled, and opened so
+     anything the paste missed is one tap away. */
+  const before = w.eval("SCHEDULE.length");
+  w.eval(`SYNC.on = true; isAdmin = false; view.gameId = null; view.tab = "sched";
+          schedMode = "travel"; editEvent = null; render();`);
+  ok(document.querySelector('[data-flightadd="ARRIVAL"]'), "no paste box on arrivals");
+  document.getElementById("fin-ARRIVAL").value = "United 2137 ORD 10:51am RSW 2:57pm";
+  document.querySelector('[data-flightadd="ARRIVAL"]').click();
+  eq(w.eval("SCHEDULE.length"), before + 1, "one flight added:");
+  const made = JSON.parse(w.eval(`JSON.stringify(SCHEDULE[SCHEDULE.length - 1])`));
+  eq(made.type + "/" + made.dir, "TRAVEL/ARRIVAL", "as an arrival:");
+  eq(made.title, "United 2137", "titled by the flight:");
+  /* An arrival is filed at the time it lands, not the time it took off — the
+     schedule is of things happening here. */
+  eq(made.time, "14:57", "at the landing time:");
+  ok(/ORD/.test(made.notes) && /RSW/.test(made.notes), "with the route in the notes: " + made.notes);
+  ok(w.eval("editEvent") === made.id, "and opened, so who-it-is is one tap away");
+  w.eval("editEvent = null; SYNC.on = false; isAdmin = true; view.tab = 'home'; render();");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

@@ -81,6 +81,25 @@ The app covers:
   way for months (R109).
 - **Field tab**: players, handicap indexes, tees, courses, pairings matrix and
   admin setup.
+- **Flights**: the Travel view's paste box is the main way a flight gets added
+  (R128). `parseFlight(text)` reads a confirmation line — airline and number,
+  both airports, both times, the day — and `flightNotes` builds the route line
+  from whatever it recognised. It never rejects anything: an unreadable paste
+  still makes an event with the text as its title, which is no worse than the
+  blank one you'd have got, and the event opens straight after so anything it
+  missed is one tap away.
+  - The trap it exists to avoid: `ORD 10:51` looks exactly like a carrier code
+    and a flight number. The flight number is matched **first** and its text
+    struck out of the line before airports are read.
+  - An arrival is filed at the time it **lands**, a departure at the time it
+    **takes off** — the schedule is of things happening there.
+  - `myId()` / `setMe()` keep the last player picked on a travel event in
+    `localStorage["ei-me"]`. There is no sign-in; picking who a flight belongs
+    to is the closest thing, so the next flight from that phone needs no tap.
+  - The schedule's admin unlock is a thin `.lockmini` line, not a bar with a
+    password field in it (`showUnlock` opens the real one). Almost nobody
+    opening that screen is about to unlock anything — they want a tee time or
+    their own flight, and a non-admin can already do both.
 - **Admin mode**: unlocked with `ADMIN_CODE` (`"eagle"`, in the page source).
   It guards against mis-taps and is **not** a security boundary. With no
   Firebase config, admin is always unlocked.
@@ -260,7 +279,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **166 passed, 0 failed**. The suite is
+Current status against `index.html`: **167 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
