@@ -318,6 +318,16 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .pnet{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
   width:58px;text-align:right;flex:none;line-height:1.25}
 .pnet .adj{color:var(--pencil);font-weight:600}
+/* Names the two numbers once per block instead of on every row. The hidden PU
+   holds the column open so the label lands exactly over .pnet rather than
+   being nudged there with a magic number — the right-hand items are fixed
+   width, so they line up whatever is to their left. */
+.prow-cap{padding-top:6px;padding-bottom:0}
+.prow-cap .pnet{font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint)}
+/* Hidden, but still the width of a PU button. Its height and border have to go
+   as well or it props the caption open to the height of a real score row. */
+.prow-cap .pu{visibility:hidden;height:0;border:none;overflow:hidden}
 .pnet .net{color:var(--ink);font-weight:600;font-size:13px}
 .pnet .par{font-size:11px;font-weight:600}
 .pnet .par.under{color:var(--pencil)}
@@ -1783,7 +1793,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2135";
+const BUILD = "2026-10-12.2145";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4745,6 +4755,11 @@ function renderStrokeGrid(g, h){
 function toPar(n){ return n === 0 ? "E" : (n > 0 ? "+" + n : String(n)); }
 function parClass(n){ return n < 0 ? "under" : n > 0 ? "over" : "even"; }
 
+/* Sits above the player rows in any block whose scores are net, so the pair of
+   numbers is named once rather than on every row or not at all. */
+const netCapRow = () => `<div class="prow prow-cap"><span class="pname"></span>
+  <span class="pnet">net · par</span><span class="pu">PU</span></div>`;
+
 function netCell(id, g, h){
   const v = g.holes[h].scores[id];
   const st = strokesOn(id, g, h);
@@ -4800,6 +4815,7 @@ function renderTeam(g, t, h, hardLocked){
   }
 
   if (g.type === "BESTBALL"){
+    inner += netCapRow();
     g.teams[t].forEach(id => {
       const s = strokesOn(id, g, h);
       const v = hole.scores[id];
@@ -4817,6 +4833,7 @@ function renderTeam(g, t, h, hardLocked){
   if (g.type === "FORTYBALL"){
     const b = fbBudget(g, t, h);
     const locked = hole.locked[t];
+    inner += netCapRow();
     g.teams[t].forEach(id => {
       const s = strokesOn(id, g, h);
       const n = netOf(id, g, h);
@@ -4948,7 +4965,7 @@ function renderWolf(g, h){
   const withWolf = pack ? (pack.length ? [w, ...pack] : [w]) : [];
   const par = courseOf(g).holes[h].par;
   out += `<div class="team"><div class="thead"><span class="tname">Hole ${h + 1}</span>
-    <span class="tsub">Par ${par} · best net ball</span></div>`;
+    <span class="tsub">Par ${par} · best net ball</span></div>${netCapRow()}`;
   roster.forEach(id => {
     const s = strokesOn(id, g, h);
     const v = hole.scores[id];
