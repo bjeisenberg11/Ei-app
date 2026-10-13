@@ -1187,25 +1187,55 @@ const matchLocked = (g, h) => { const s = matchState(g); return s.closed && h >=
 /* ============================================================
    §8  40BALL
    ============================================================ */
-/* Selections are NOT hidden from the other team, whatever you may have read.
-   A `hidden` flag was set on every 40ball game, toggled in the roster editor
-   and printed on the games list as "· hidden selections" — and nothing
-   anywhere read it. Both sides' blocks render on the same card, ticks and all,
-   so each team could watch the other decide, which is the one thing the flag
-   existed to stop.
+/* History worth keeping: a `hidden` flag was once set on every 40ball game,
+   toggled in the roster editor and printed on the games list as "· hidden
+   selections" — and nothing read it. Both sides' ticks rendered on the shared
+   card while they were deciding and after. That flag and its labels are gone;
+   older games may still carry the field and it means nothing.
 
-   All of that has been taken out rather than left saying something untrue. The
-   flag may still sit on games written by older builds; it means nothing and
-   nothing should start reading it.
+   What replaced it is the simultaneous reveal below, which protects the thing
+   that actually matters without needing to know whose phone is whose.
 
-   Building it for real needs the card to know which side the phone belongs to,
-   since a team has to see its own picks while making them. `myId()` is the
-   nearest thing to an identity here — honour-system, which is the right level
-   for eight friends — and the other side's ticks would then draw blank, count
-   and all, until that side locks the hole. */
+   One residual, accepted on purpose. Late in the round the corridor has to
+   tell a side "must take at least 3" or "you must take all 2", and that comes
+   off the true budget — a rule shown wrong is worse than a leak. If a side is
+   a hole ahead with that hole still sealed, an opponent who does the
+   arithmetic on those lines could work out what was taken on it. It needs one
+   team a hole ahead, the last few holes, and someone actively reading the
+   other side's corridor. Closing it properly needs the card to know whose phone
+   it is. */
 const QUOTA = 40;
+/* ---------- simultaneous reveal ----------
+   A hole opens when BOTH sides have locked it, and from then on it stays open
+   for good — every score, every selection, both running totals.
+
+   The thing being protected is not the picks. It's knowing the other side's
+   answer while you still have a choice to make, which is purely a matter of
+   who locks first. So nothing is hidden from a side that is still deciding:
+   while both are picking, both see everything and it's symmetric. The moment a
+   side locks, its answer goes dark until the other side has committed too.
+
+   That's why this needs no sign-in. The only thing ever held back is an answer
+   its owner has already given and can no longer change, so there is nothing a
+   team needs to see that it can't.
+
+   The count has to go dark with the ticks. "Remaining 38 of 40" gives away a
+   two-score hole exactly as plainly as two ticks do, so every readout below
+   comes in a truth flavour and a shown flavour: the truth drives the budget,
+   because a side must never be allowed past 40, and the shown numbers stop at
+   the last hole both sides have opened. */
+const fbRevealed = (g, h) => !!(g.holes[h].locked[0] && g.holes[h].locked[1]);
+/* holes this side has locked that the other side hasn't reached yet */
+const fbWaiting = (g, t) =>
+  holeList(g).filter((hole, h) => hole.locked[t] && !fbRevealed(g, h)).length;
+
 function fbSpent(g, t){
   return holeList(g).reduce((n,hole) => n + (hole.locked[t] ? hole.selected[t].length : 0), 0);
+}
+/* What a card may print. Same sum, but only over holes that have opened. */
+function fbShownSpent(g, t){
+  return holeList(g).reduce((n,hole,h) =>
+    n + (fbRevealed(g,h) ? hole.selected[t].length : 0), 0);
 }
 function fbHolesLocked(g, t){ return holeList(g).filter(hole => hole.locked[t]).length; }
 function fbAvailable(g, t, h){
@@ -1230,19 +1260,22 @@ function fbBudget(g, t, h){
 }
 /* Sum of par for the holes where a team spent a score — the fair baseline to
    read a 40ball total against, since you only count 40 of 72 scores. */
-function fbParBasis(g, t){
+/* `shown` keeps these to holes both sides have opened, so a card never prints
+   a number that gives away an unrevealed hole. The result at the end uses the
+   truth, but by then every hole is locked both ways and the two agree. */
+function fbParBasis(g, t, shown){
   const course = courseOf(g);
   let p = 0;
   holeList(g).forEach((hole, h) => {
-    if (!hole.locked[t]) return;
+    if (!hole.locked[t] || (shown && !fbRevealed(g, h))) return;
     hole.selected[t].forEach(() => { p += course.holes[h].par; });
   });
   return p;
 }
-function fbTotal(g, t){
+function fbTotal(g, t, shown){
   let sum = 0;
   holeList(g).forEach((hole, h) => {
-    if (!hole.locked[t]) return;
+    if (!hole.locked[t] || (shown && !fbRevealed(g, h))) return;
     hole.selected[t].forEach(id => { const n = netOf(id, g, h); if (n != null) sum += n; });
   });
   return sum;
@@ -1758,8 +1791,8 @@ function gameStatusLabel(g){
   /* Reads the way the stroke-play label does: name whoever's ahead and say by
      how much, in net to par. Two bare totals said nothing without knowing how
      many scores each side had spent to get there. */
-  const rel = [0,1].map(t => fbTotal(g,t) - fbParBasis(g,t));
-  const started = [0,1].filter(t => fbSpent(g,t) > 0);
+  const rel = [0,1].map(t => fbTotal(g,t,true) - fbParBasis(g,t,true));
+  const started = [0,1].filter(t => fbShownSpent(g,t) > 0);
   let text;
   if (started.length === 1){
     text = `${sideName(g, started[0])} ${toPar(rel[started[0]])}`;
@@ -1769,7 +1802,7 @@ function gameStatusLabel(g){
     const lead = rel[0] < rel[1] ? 0 : 1;
     text = `${sideName(g, lead)} ${toPar(rel[lead])}, leads by ${Math.abs(rel[0] - rel[1])}`;
   }
-  return { text:`${text} \u00b7 ${fbSpent(g,0)}/40 & ${fbSpent(g,1)}/40`, cls:"live" };
+  return { text:`${text} \u00b7 ${fbShownSpent(g,0)}/40 & ${fbShownSpent(g,1)}/40`, cls:"live" };
 }
 /* which hole to land on when jumping into a game — the next one needing action */
 function currentHoleFor(g){
@@ -1814,7 +1847,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2200";
+const BUILD = "2026-10-12.2215";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3804,10 +3837,12 @@ function scoresToText(){
           L.push("  " + String(h+1).padEnd(6) + String(course.holes[h].par).padEnd(5) + cells + note);
         });
         if (g.type === "FORTYBALL"){
-          L.push(`  spent ${fbSpent(g,0)}/40 and ${fbSpent(g,1)}/40 \u00b7 ` +
-                 `totals ${fbTotal(g,0)} \u2013 ${fbTotal(g,1)}`);
+          /* The export is just another screen someone can read mid-round, so it
+             stops at the last hole both sides have opened like everything else. */
+          L.push(`  spent ${fbShownSpent(g,0)}/40 and ${fbShownSpent(g,1)}/40 \u00b7 ` +
+                 `totals ${fbTotal(g,0,true)} \u2013 ${fbTotal(g,1,true)}`);
           holeList(g).forEach((hole, h) => {
-            if (!hole.locked[0] && !hole.locked[1]) return;
+            if (!fbRevealed(g, h)) return;
             const pick = t => (hole.selected[t]||[]).map(id => P(id).name).join(", ") || "none";
             L.push(`    hole ${h+1}: ${teamShort(g,0)} took ${pick(0)} \u00b7 ` +
                    `${teamShort(g,1)} took ${pick(1)}`);
@@ -4583,16 +4618,17 @@ function renderGame(){
        holes each score actually came from, so it's the one honest read until
        both sides have spent all 40. */
     const fs = fbState(g);
-    const rel = [0,1].map(t => fbTotal(g,t) - fbParBasis(g,t));
+    const rel = [0,1].map(t => fbTotal(g,t,true) - fbParBasis(g,t,true));
     out += `<div class="banner ${fs.done?"closed":""}">
       ${fs.done ? `<div class="st">${fs.result.winner==="TIE" ? `TIED ${fs.result.label}`
         : `${winnerLabel(g,fs.result.winner)} WIN ${fs.result.label}`}</div>` : ""}
       ${[0,1].map(t => `<div class="strokerow">
         <span class="sname">${esc(teamLabel(g,t))}</span>
-        <span class="spar ${parClass(rel[t])}">${fbSpent(g,t) ? toPar(rel[t]) : ""}</span>
-        <span class="stot wide">${fbTotal(g,t)}</span>
+        <span class="spar ${parClass(rel[t])}">${fbShownSpent(g,t) ? toPar(rel[t]) : ""}</span>
+        <span class="stot wide">${fbTotal(g,t,true)}</span>
       </div>`).join("")}
-      <div class="thru">40ball · ${fbSpent(g,0)}/40 and ${fbSpent(g,1)}/40 spent</div>
+      <div class="thru">40ball · ${fbShownSpent(g,0)}/40 and ${fbShownSpent(g,1)}/40 spent${
+        [0,1].some(t => fbWaiting(g,t)) ? " · a hole is sealed" : ""}</div>
     </div>`;
   }
 
@@ -4855,7 +4891,11 @@ function renderTeam(g, t, h, hardLocked){
       const s = strokesOn(id, g, h);
       const n = netOf(id, g, h);
       const v = hole.scores[id];
-      const on = hole.selected[t].includes(id);
+      /* A locked hole's ticks go dark until the other side has locked too.
+         Nothing is hidden from a side that is still deciding — this only ever
+         covers an answer already given, which is why it needs no sign-in. */
+      const sealed = locked && !fbRevealed(g, h);
+      const on = !sealed && hole.selected[t].includes(id);
       const canPick = !locked && n != null && (on || hole.selected[t].length < b.max);
       inner += `<div class="prow">
         <button class="sel ${on?"on":""}" data-sel="${t}:${id}" ${canPick?"":"disabled"}>✓</button>
@@ -4905,10 +4945,10 @@ function renderTeam(g, t, h, hardLocked){
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   } else {
     /* To par first here too, with the gross total and the budget trailing. */
-    const relT = fbTotal(g,t) - fbParBasis(g,t);
-    head += `${fbSpent(g,t)
+    const relT = fbTotal(g,t,true) - fbParBasis(g,t,true);
+    head += `${fbShownSpent(g,t)
       ? `<span class="par parlead ${parClass(relT)}">${toPar(relT)}</span>` : "\u2014"} ` +
-      `<span class="tsub">${fbTotal(g,t)} \u00b7 ${fbSpent(g,t)}/40</span>`;
+      `<span class="tsub">${fbTotal(g,t,true)} \u00b7 ${fbShownSpent(g,t)}/40</span>`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   }
   head += `</span></div>`;
@@ -5026,34 +5066,56 @@ function renderCorridor(g, t, h){
   const hole = g.holes[h];
   const locked = hole.locked[t];
   const picked = hole.selected[t].length;
-  const pct = Math.min(100, (b.R / QUOTA) * 100);
-  const tight = b.slackHoles < 1;
+  /* Slack is general planning, so it comes off what can be shown: the holes
+     this side has locked, against what it is shown to have spent. A sealed
+     hole therefore counts as if nothing was taken on it — conservative, never
+     overstating the room — and the number can't move with what was taken.
+     Off the truth it did: "6 holes of slack" became 7 after a four-score hole,
+     which gave the count away as plainly as "Remaining 36" would have. */
+  const shownR0 = QUOTA - fbShownSpent(g, t);
+  const shownSlackHoles = Math.floor((4 * b.H - shownR0) / 4);
+  const tight = shownSlackHoles < 1;
 
   let msg, warn = false;
+  /* These three are rules about the hole in front of you and have to be the
+     truth, or a side would be told it may take one when it must take three.
+     They only bite in the last few holes; see the residual noted in §8. */
   if (b.broken){ msg = "Budget unreachable — too many pickups"; warn = true; }
   else if (b.min === b.max && b.max > 0){ msg = `You must take all ${b.max}`; warn = true; }
   else if (b.min > 0){ msg = `Must take at least ${b.min} this hole`; warn = true; }
   else if (tight){ msg = "No slack left — take scores every hole"; warn = true; }
-  else msg = `${b.slackHoles} hole${b.slackHoles===1?"":"s"} of slack`;
+  else msg = `${shownSlackHoles} hole${shownSlackHoles===1?"":"s"} of slack`;
 
-  const total = fbTotal(g, t);
-  const basis = fbParBasis(g, t);
+  /* Every number printed here stops at the last hole both sides opened. The
+     budget message above still comes off the truth \u2014 a side has to be told it
+     must take three, whoever else has locked \u2014 but what it has actually spent
+     is the other side's business until they have committed too. */
+  const waiting = fbWaiting(g, t);
+  const shownR = shownR0;
+  const shownPct = Math.min(100, (shownR / QUOTA) * 100);
+  const held = locked && !fbRevealed(g, h);
+  const total = fbTotal(g, t, true);
+  const basis = fbParBasis(g, t, true);
   const rel = total - basis;
 
   const allIn = g.teams[t].every(id => hole.scores[id] != null);
   const ok = !locked && allIn && picked >= b.min && picked <= b.max;
 
   return `<div class="corridor">
-    <div class="cor-row"><span>Remaining <b>${b.R}</b> of 40</span>
+    <div class="cor-row"><span>Remaining <b>${shownR}</b> of 40</span>
       <span>${b.H} hole${b.H===1?"":"s"} left</span></div>
-    <div class="bar"><i class="${tight?"tight":""}" style="width:${pct}%"></i></div>
+    <div class="bar"><i class="${tight?"tight":""}" style="width:${shownPct}%"></i></div>
     <div class="cor-msg ${warn?"warn":""}">${msg}</div>
-    <div class="cor-row" style="margin:9px 0 0"><span>Taken this hole <b>${picked}</b></span>
+    <div class="cor-row" style="margin:9px 0 0"><span>Taken this hole <b>${
+      held ? "\u2014" : picked}</b></span>
       <span>${b.min === b.max
         ? `must take ${b.min}`
         : `can take ${b.min}\u2013${b.max}`}</span></div>
     <div class="cor-row" style="margin:4px 0 0"><span>Running total <b>${total}</b></span>
       <span class="par ${parClass(rel)}">${basis ? toPar(rel) + " vs par" : "—"}</span></div>
+    ${waiting ? `<p class="note">${waiting === 1 ? "This hole stays" : waiting + " holes stay"}
+      sealed until ${esc(teamLabel(g, t === 0 ? 1 : 0))} lock too \u2014 then everything
+      opens, for good.</p>` : ""}
     ${locked ? `<p class="note">Hole locked. Admin can reopen.</p>
       <div class="acts"><button class="btn ghost" data-unlock="${t}">Admin unlock</button></div>`
     : `<div class="acts"><button class="btn" data-lock="${t}" ${ok?"":"disabled"}>Lock ${esc(teamLabel(g,t))}</button></div>

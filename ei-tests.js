@@ -3142,7 +3142,7 @@ t("R136 a split pair carries its two boxes on the game, not on the Field tab",
   }
 }));
 
-t("R137 the app doesn't claim 40ball selections are hidden, because they aren't",
+t("R137 40ball makes no blanket claim to hide selections, and a deciding side's are visible",
   () => isolate(() => {
   const w = dom.window;
   /* A `hidden` flag was set on every 40ball game, toggled in the roster editor
@@ -3177,12 +3177,106 @@ t("R137 the app doesn't claim 40ball selections are hidden, because they aren't"
     g.teams[0].concat(g.teams[1]).forEach(id => delete h.scores[id]);
     return out;
   })()`);
-  /* The honest state of play: an unlocked side's picks are on the shared card.
-     If that ever changes, this is the test to delete — along with the comment
-     in §8 — rather than the one to work around. */
+  /* By design, not by accident: a side still deciding is never hidden, which
+     is what lets the reveal work without a sign-in (R138 covers the sealing).
+     If someone builds per-team hiding with an identity later, this is the
+     assertion to rewrite rather than work around. */
   ok(/class="sel on"/.test(seen),
-     "an unlocked side's picks really are visible to everyone, as the code says");
+     "an unlocked side's picks are visible to everyone while both are deciding");
   w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
+t("R138 40ball reveals a hole only once both sides have locked it", () => isolate(() => {
+  const w = dom.window;
+  /* The advantage in 40ball is locking second, knowing the other side's
+     answer. So: nothing hidden while both are deciding; a locked side goes
+     dark — ticks AND count — until the other locks; then it opens for good. */
+  const snap = () => JSON.parse(w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    isAdmin = true; SYNC.on = false;
+    view.tab = "home"; view.gameId = g.id; view.hole = 0; render();
+    const card = document.getElementById("app").innerHTML;
+    const aBlock = card.split('data-lock="1"')[0].split('data-unlock="1"')[0];
+    view.gameId = null; render();
+    const list = document.getElementById("app").innerHTML;
+    return JSON.stringify({
+      ticks: (card.match(/class="sel on"/g) || []).length,
+      remA: (/Remaining <b>(\\d+)<\\/b>/.exec(card) || [])[1],
+      takenA: (/Taken this hole <b>([^<]+)<\\/b>/.exec(card) || [])[1],
+      sealedNote: /sealed until/.test(card),
+      bannerSpent: (/40ball \\u00b7 (\\d+)\\/40 and (\\d+)\\/40/.exec(card) || []).slice(1).join("/"),
+      listSpent: (/(\\d+)\\/40 &amp; (\\d+)\\/40|(\\d+)\\/40 & (\\d+)\\/40/.exec(list) || [])
+        .slice(1).filter(Boolean).join("/"),
+      budgetR: fbBudget(g, 0, 1).R,
+      revealed: fbRevealed(g, 0)
+    });
+  })()`));
+  w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    const h = g.holes[0];
+    g.teams[0].forEach(id => h.scores[id] = 4);
+    g.teams[1].forEach(id => h.scores[id] = 5);
+    h.selected[0] = g.teams[0].slice(0, 2);   // A has ticked two
+  })()`);
+
+  let s = snap();
+  eq(s.ticks, 2, "while both are deciding, A's two ticks are on the shared card:");
+  eq(s.remA, "40", "and nothing is spent yet:");
+
+  w.eval(`GAMES.find(x => x.type === "FORTYBALL").holes[0].locked[0] = true`);
+  s = snap();
+  eq(s.ticks, 0, "once A locks, its ticks go dark:");
+  eq(s.takenA, "—", "the count this hole goes with them:");
+  eq(s.remA, "40", "and so does the running count — 38 would give it away:");
+  eq(s.bannerSpent, "0/0", "the banner still says nothing has been spent:");
+  eq(s.listSpent, "0/0", "nor does the games list — it's just another screen:");
+  ok(s.sealedNote, "the card says why:");
+  eq(s.budgetR, 38,
+     "but the budget underneath is the truth — a side can never be let past 40:");
+  /* The slack line leaked on the first pass: off the true budget it read 6
+     holes after a quiet hole and 7 after a four-score one. Whatever was taken
+     on a sealed hole, A's corridor must read identically. */
+  const corridorA = () => w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    view.tab = "home"; view.gameId = g.id; view.hole = 0; render();
+    const c = document.getElementById("app").innerHTML;
+    const i = c.indexOf('class="corridor"');
+    const out = c.slice(i, c.indexOf('class="corridor"', i + 1));
+    view.gameId = null; render();
+    return out.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ");
+  })()`);
+  const tookTwo = corridorA();
+  w.eval(`(function(){ const g = GAMES.find(x => x.type === "FORTYBALL");
+    g.holes[0].selected[0] = g.teams[0].slice(); })()`);
+  const tookFour = corridorA();
+  w.eval(`(function(){ const g = GAMES.find(x => x.type === "FORTYBALL");
+    g.holes[0].selected[0] = []; })()`);
+  const tookNone = corridorA();
+  eq(tookFour, tookTwo, "a sealed four reads exactly like a sealed two:");
+  eq(tookNone, tookTwo, "and like a sealed none:");
+  w.eval(`(function(){ const g = GAMES.find(x => x.type === "FORTYBALL");
+    g.holes[0].selected[0] = g.teams[0].slice(0, 2); })()`);
+  ok(!s.revealed, "the hole isn't revealed:");
+
+  w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    g.holes[0].selected[1] = g.teams[1].slice(0, 3);
+    g.holes[0].locked[1] = true;
+  })()`);
+  s = snap();
+  ok(s.revealed, "B locks, and the hole opens:");
+  eq(s.ticks, 5, "both sides' ticks are visible, for good:");
+  eq(s.remA, "38", "the running count catches up:");
+  eq(s.bannerSpent, "2/3", "and the banner shows what each side spent:");
+  eq(s.listSpent, "2/3", "as does the games list:");
+  ok(!s.sealedNote, "nothing is sealed any more:");
+
+  w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL"), h = g.holes[0];
+    h.selected = {0:[],1:[]}; h.locked = {0:false,1:false,2:false,3:false};
+    g.teams[0].concat(g.teams[1]).forEach(id => delete h.scores[id]);
+    view.gameId = null; view.tab = "home"; render();
+  })()`);
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

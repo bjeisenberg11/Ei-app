@@ -62,19 +62,41 @@ The app covers:
       silent no-op, since the tee would simply never be read.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
     18 holes, chosen hole by hole and committed by locking the hole.
-    - **Selections are not hidden from the other team.** This file used to say
-      they were. A `hidden` flag was set on every 40ball game, toggled in the
-      roster editor and printed on the games list as "· hidden selections" —
-      and nothing read it. Both sides' blocks render on the same card, ticks and
-      all, so each team could watch the other decide, which is the one thing it
-      existed to stop. The flag and both UI claims have been removed rather than
-      left saying something untrue; R137 fails if the claim returns without the
-      behaviour. Older games may still carry the field. It means nothing.
-    - Building it for real needs the card to know which side the phone belongs
-      to, since a team must see its own picks while making them. `myId()` is the
-      nearest thing to an identity here — honour-system, which is the right
-      level for a private group — and the other side's ticks would draw blank,
-      count and all, until that side locks.
+    - **Simultaneous reveal, per hole.** The advantage in 40ball is locking
+      second and knowing the other side's answer — not seeing picks as such.
+      So nothing is hidden while both sides are deciding (symmetric, same
+      green); the moment a side locks, its ticks **and its count** go dark;
+      when the other side locks, the hole opens for good. `fbRevealed(g,h)` is
+      `locked[0] && locked[1]`.
+      - **Needs no sign-in**, because the only thing ever held back is an
+        answer its owner has already given and can't change. A team never
+        needs to see anything it can't.
+      - Every readout comes in two flavours. **Truth** (`fbSpent`, `fbBudget`)
+        drives min/max and the Lock button — a side must never be let past 40,
+        whoever has locked. **Shown** (`fbShownSpent`, `fbTotal(g,t,true)`,
+        `fbParBasis(g,t,true)`) is all a screen may print: the corridor, the
+        team head, the banner, the games-list status and the text export.
+        "Remaining 38" gives a two-score hole away exactly as plainly as two
+        ticks, which is why the count has to seal with them. Anything new that
+        prints a 40ball number must use the shown flavour (R138).
+      - The **fact** that a side has locked isn't secret — the card says the
+        hole is sealed and waiting. Only what it spent is.
+      - **Slack** ("6 holes of slack") is planning, so it's shown-flavour too:
+        holes this side has locked against what it's *shown* to have spent, so a
+        sealed hole counts as nothing taken — conservative, and immovable by
+        what was taken. Off the truth it read 7 vs 8 depending on the sealed
+        pick, which leaked the count as plainly as "Remaining" would; R138
+        checks a sealed 0, 2 and 4 read identically.
+      - **Accepted residual:** "must take at least N" / "you must take all N"
+        are rules about the hole in front of you and stay on the truth — a rule
+        shown wrong is worse. If one team is a hole ahead with it still sealed,
+        an opponent doing arithmetic on those lines in the last few holes could
+        back out the sealed count. Closing that needs the card to know whose
+        phone it is.
+      - History: an earlier `hidden` flag was set on every game, toggled in the
+        roster editor and labelled on the games list, and nothing read it. It
+        was removed rather than left saying something untrue; older docs may
+        still carry the field.
   - `WOLF5`: "5-man Wolf", for the Thursday-morning fivesome. **The only format
     whose sides change hole to hole**, so `SIDES.WOLF5 = 1` and `teams[0]` is
     the whole field in tee order. Nothing may read `g.teams` beyond the roster;
@@ -246,7 +268,8 @@ tournaments/_index                 { years: ["2025","2026"], live: "2026" }   ye
 tournaments/_history               { years: { "2021": { rows:[{name,w,l,t,gp}] }, ... } }  pre-app records
 tournaments/ei-{YEAR}              config: { schema, appBuild, players, courses, schedule, days }
 tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
-                                   (older 40ball docs may carry a dead `hidden` field — nothing reads it)
+                                   (older 40ball docs may carry a dead `hidden` field — nothing reads it;
+                                    the reveal is derived from `locked`, nothing extra is stored)
 ```
 
 Each hole is `{ scores:{pid: n|"PU"}, teamScore:{0..3}, conceded, selected:{0:[],1:[]}, locked:{0..3} }`.
@@ -354,7 +377,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **176 passed, 0 failed**. The suite is
+Current status against `index.html`: **177 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
