@@ -3071,6 +3071,77 @@ t("R135 the draw sets tee order, and with it who starts as wolf", () => isolate(
   w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
+t("R136 a split pair carries its two boxes on the game, not on the Field tab",
+  () => isolate(() => {
+  const w = dom.window;
+  const saved = w.eval(`JSON.stringify({ tees: COURSES[0].tees,
+    assign: PLAYERS.map(p => p.tees && p.tees[COURSES[0].id]) })`);
+  try {
+    w.eval(`COURSES[0].tees = [{name:"Blue",rating:72.5,slope:134,par:72},
+                               {name:"Members",rating:70.4,slope:126,par:72},
+                               {name:"Yellow",rating:68.3,slope:122,par:72},
+                               {name:"Red",rating:64.8,slope:110,par:72}];
+            PLAYERS.forEach(p => { p.tees = p.tees || {};
+                                   p.tees[COURSES[0].id] = "Members"; });`);
+    const co = w.eval("COURSES[0].name");
+    const csv = "day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4,d1,d2,d3,d4\n"
+      + `Thursday,1:03pm,ROUND,${co}\n`
+      + "Thursday,,GAME,,2V2V2V2-8,,Skins. Tees: Blue / Dan Blue + Adam Yellow / Members / Red,"
+      + "Daniel,Jake,,,Dan,Adam,,,Blake,Jason,,,Howard,Luke\n";
+    const plan = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv)}))`));
+    eq(plan.errors.length, 0, "it imports cleanly: " + plan.errors.join(" | "));
+    const g = plan.games[0];
+    eq(g.tees[0], "Blue", "a chunk that is a box still sets the whole side:");
+    ok(!(g.tees && g.tees[1]), "the split side gets no side tee");
+
+    w.eval(`SCHEDULE = ${JSON.stringify(plan.events)};
+            GAMES = ${JSON.stringify(plan.games)}.map(x => { x.holes = blankHoles(); return x; });`);
+    const read = JSON.parse(w.eval(`(function(){
+      const g = GAMES[0], c = COURSES[0];
+      const nm = n => PLAYERS.find(p => p.name === n).id;
+      return JSON.stringify({
+        dan:   teeNameIn(g, nm("Dan"), c),   adam: teeNameIn(g, nm("Adam"), c),
+        blake: teeNameIn(g, nm("Blake"), c),
+        danField: teeNameFor(nm("Dan"), c),  danCh: courseHcp(nm("Dan"), c) });
+    })()`));
+    eq(read.dan, "Blue", "Dan reads off his own box on this game:");
+    eq(read.adam, "Yellow", "Adam off his, on the same side:");
+    eq(read.blake, "Members", "and a man with neither falls back to the Field tab:");
+    /* The whole reason this lives on the game. The same course hosts a Wolf
+       game that is scored on net, and a player's Field tee is per course, so
+       moving Dan there for the afternoon would have moved his morning
+       handicap with it. */
+    eq(read.danField, "Members", "his stored tee is untouched:");
+    eq(read.danCh, w.eval(`(function(){ const c = COURSES[0];
+      return Math.round(PLAYERS.find(p => p.name === "Dan").index * (126/113) + (70.4 - 72)); })()`),
+       "so his course handicap is still the one off the tee he actually plays:");
+
+    const back = w.eval("scheduleToCSV()");
+    ok(/Tees: Blue \/ Dan Blue \+ Adam Yellow \/ Members \/ Red/.test(back),
+       "the export writes the men back out: " + (/.*Tees:[^\n"]*/.exec(back)||[""])[0]);
+    const again = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(back)}))`));
+    eq(again.errors.length, 0, "which re-imports clean: " + again.errors.join(" | "));
+    eq(Object.keys(again.games[0].ptees || {}).length, 2,
+       "with both men's boxes still on the game:");
+
+    /* Naming a man who isn't on that side is a typo worth catching, not a
+       silent no-op — the tee would simply never be read. */
+    const bad = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv
+      .replace("Dan Blue + Adam Yellow", "Dan Blue + Luke Yellow"))}))`));
+    ok(bad.errors.some(e => /Luke/.test(e) && /side B/.test(e)),
+       "it says so: " + bad.errors.join(" | "));
+  } finally {
+    w.eval(`(function(){
+      const o = JSON.parse(${JSON.stringify(saved)}), c = COURSES[0];
+      c.tees = o.tees;
+      PLAYERS.forEach((p, i) => {
+        if (o.assign[i] == null) { if (p.tees) delete p.tees[c.id]; }
+        else { p.tees = p.tees || {}; p.tees[c.id] = o.assign[i]; }
+      });
+    })()`);
+  }
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

@@ -43,10 +43,23 @@ The app covers:
       handicaps and the same man plays a different tee depending on his
       partner. It is **display only** — `teeNameIn` uses it, `courseHcp`
       never does, and these formats take no handicaps anyway.
-    - Both ride in the GAME row's **`notes`** column as words — `Skins. Tees:
-      Black / Blue / Members / Purple` — rather than more format suffixes, and
-      `scheduleToCSV` writes the same sentence back. `own` leaves a side on
-      each man's own tee.
+    - `g.ptees` is a tee name **per player** (`{p2:"Blue", p8:"Yellow"}`), for a
+      side levelled by splitting its pair across two boxes — Dan off Blue with
+      Adam off Yellow — which a tee keyed by side cannot say. Precedence in
+      `teeNameIn` is **man → side → Field tab**. Also display only.
+      - It lives on the game rather than on the Field tab for a reason: a
+        player's tee there is stored **per course**, and Hammock Bay also hosts
+        the morning `WOLF5`, which *is* scored on net. Moving Dan to Blue on the
+        Field tab to fix the afternoon card would have handed him a Blue course
+        handicap in the morning game. R136 guards that.
+    - All three ride in the GAME row's **`notes`** column as words — `Skins.
+      Tees: Blue / Dan Blue + Adam Yellow / Members / Red` — rather than more
+      format suffixes, and `scheduleToCSV` writes the same sentence back. Each
+      `/` chunk is a box for the whole side, or `Name Tee + Name Tee` for the
+      men on it, or `own` to leave the side on each man's own tee. The tee in a
+      chunk is matched **from the end**, because both names can be more than one
+      word. Naming a man who isn't on that side is an import error rather than a
+      silent no-op, since the tee would simply never be read.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
     18 holes. Selections are hidden from the other team until they are locked.
   - `WOLF5`: "5-man Wolf", for the Thursday-morning fivesome. **The only format
@@ -327,7 +340,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **174 passed, 0 failed**. The suite is
+Current status against `index.html`: **175 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

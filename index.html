@@ -1011,13 +1011,23 @@ function teeNameFor(pid, course){
    that game only, and only for display: the formats that carry team tees take
    no handicaps, so this never reaches courseHcp. */
 const gameTee = (g, t) => (g.tees && g.tees[t]) || null;
+/* And sometimes it belongs to the man after all. Two teams can be levelled by
+   splitting a pair across two boxes — Dan off Blue with Adam off Yellow — which
+   a tee keyed by side cannot say. The alternative was to set those two on the
+   Field tab, but a player's tee there is stored per course, and the same course
+   also hosts a Wolf game that is scored on net: forcing Dan onto Blue for the
+   afternoon would have handed him a Blue course handicap in the morning.
+   So the override lives on the game, where it reaches the card and nothing
+   else. Display only, exactly like the side tees. */
+const playerTee = (g, pid) => (g.ptees && g.ptees[pid]) || null;
 function sideOfPlayer(g, pid){
   const i = sides(g).find(k => (g.teams[k] || []).includes(pid));
   return i === undefined ? -1 : i;
 }
 function teeNameIn(g, pid, course){
   const t = sideOfPlayer(g, pid);
-  return (t >= 0 && gameTee(g, t)) || teeNameFor(pid, course);
+  /* The man beats his side, the side beats the Field tab. */
+  return playerTee(g, pid) || (t >= 0 && gameTee(g, t)) || teeNameFor(pid, course);
 }
 /* Which box someone is hitting from. In a scramble there are no handicaps, so
    the tee is the only thing separating two players on paper — it belongs next
@@ -1773,7 +1783,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2115";
+const BUILD = "2026-10-12.2125";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3475,16 +3485,44 @@ function parseCSV(text){
         const m = /tees?\s*:\s*([^.;]+)/i.exec(notes);
         if (m){
           const co = C(currentRound.courseId);
-          m[1].split("/").map(x => x.trim()).filter(Boolean).forEach((nm, k) => {
-            if (k >= sideCount(g) || /^(own|default|each)$/i.test(nm)) return;
-            const hit = co && co.tees.find(x => x.name.toLowerCase() === nm.toLowerCase());
-            if (!hit){
-              errors.push(`Line ${n}: ${co ? co.name : "that course"} has no tee `
-                + `called "${nm}".`);
+          const teeByName = nm =>
+            co && co.tees.find(x => x.name.toLowerCase() === nm.toLowerCase());
+          m[1].split("/").map(x => x.trim()).filter(Boolean).forEach((chunk, k) => {
+            if (k >= sideCount(g) || /^(own|default|each)$/i.test(chunk)) return;
+            const hit = teeByName(chunk);
+            if (hit){
+              g.tees = g.tees || {};
+              g.tees[k] = hit.name;
               return;
             }
-            g.tees = g.tees || {};
-            g.tees[k] = hit.name;
+            /* Not a box, so it should be men: "Dan Blue + Adam Yellow". A side
+               levelled by splitting its pair across two boxes can't be said
+               with a tee keyed by side, and the Field tab is the wrong place
+               for it — see playerTee. Each piece is a player name followed by
+               a tee name, and the tee is matched from the end because both
+               can be more than one word. */
+            const pieces = chunk.split("+").map(x => x.trim()).filter(Boolean);
+            const found = pieces.map(piece => {
+              const words = piece.split(/\s+/);
+              for (let i = words.length - 1; i > 0; i--){
+                const tee = teeByName(words.slice(i).join(" "));
+                const who = byName(words.slice(0, i).join(" "));
+                if (tee && who) return { pid: who.id, tee: tee.name };
+              }
+              return null;
+            });
+            if (found.some(x => !x) || !pieces.length){
+              errors.push(`Line ${n}: can't read "${chunk}" as a tee for `
+                + `${co ? co.name : "that course"}, or as "Name Tee + Name Tee".`);
+              return;
+            }
+            found.forEach(x => {
+              if (!(g.teams[k] || []).includes(x.pid))
+                errors.push(`Line ${n}: ${(P(x.pid)||{}).name} isn't on side `
+                  + `${SIDE_CODES[k]}, so a tee there does nothing.`);
+              g.ptees = g.ptees || {};
+              g.ptees[x.pid] = x.tee;
+            });
           });
         }
       }
@@ -3545,8 +3583,17 @@ function scheduleToCSV(){
            ROUND notes were for months. */
         const bits = [];
         if (g.skins) bits.push("Skins");
-        if (isMulti(g) && g.tees && sides(g).some(i => g.tees[i]))
-          bits.push("Tees: " + sides(g).map(i => g.tees[i] || "own").join(" / "));
+        /* A side writes its box, or the men on it who have one of their own,
+           or "own". Both halves of this have to agree or the tees are lost on
+           a round trip, the way ROUND notes were for months. */
+        const sideTee = i => {
+          const mine = (g.teams[i] || []).filter(id => playerTee(g, id));
+          if (mine.length) return mine.map(id =>
+            `${(P(id)||{}).name} ${playerTee(g, id)}`).join(" + ");
+          return g.tees && g.tees[i] ? g.tees[i] : "own";
+        };
+        if (isMulti(g) && sides(g).some(i => sideTee(i) !== "own"))
+          bits.push("Tees: " + sides(g).map(sideTee).join(" / "));
         rows.push(csvRow([e.day, "", "GAME", "", fmt, "", esc2(bits.join(". ")), ...all]));
       });
     } else if (e.type === "TRAVEL"){
