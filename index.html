@@ -1783,7 +1783,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2125";
+const BUILD = "2026-10-12.2135";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4733,8 +4733,15 @@ function renderStrokeGrid(g, h){
   return out;
 }
 
-/* gross → adjustment → net */
-/* gross → handicap adjustment → net, with the net shown against par */
+/* The net score, and what it is against par.
+
+   It used to lead with the stroke adjustment as well, so a man getting one on
+   a hole read "−1 3 −1" — three numbers, two of them the same, none of them
+   labelled. The adjustment was the fourth place on the screen saying the same
+   thing: the dots beside his name, the "Strokes here" line above the block and
+   the stroke grid all carry it already, and unlike this one they say whose
+   stroke it is. So the cell is now the two numbers that differ — net, then net
+   against par — which is how every other score in the app reads. */
 function toPar(n){ return n === 0 ? "E" : (n > 0 ? "+" + n : String(n)); }
 function parClass(n){ return n < 0 ? "under" : n > 0 ? "over" : "even"; }
 
@@ -4742,11 +4749,10 @@ function netCell(id, g, h){
   const v = g.holes[h].scores[id];
   const st = strokesOn(id, g, h);
   if (v === "PU") return `<span class="pnet">picked up</span>`;
-  if (v == null) return `<span class="pnet">${st ? `<span class="adj">−${st}</span>` : ""}</span>`;
+  if (v == null) return `<span class="pnet"></span>`;
   const net = v - st;
   const rel = net - courseOf(g).holes[h].par;
-  return `<span class="pnet">${st ? `<span class="adj">−${st}</span> ` : ""}` +
-         `<span class="net">${net}</span> ` +
+  return `<span class="pnet"><span class="net">${net}</span> ` +
          `<span class="par ${parClass(rel)}">${toPar(rel)}</span></span>`;
 }
 
