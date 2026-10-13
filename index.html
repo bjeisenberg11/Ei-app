@@ -886,7 +886,7 @@ let GAMES = [
     teams:{0:["p1","p4","p3","p6"],1:["p2","p5","p7","p8"]}, holes:blankHoles() },
   { id:"g4", roundId:"r3", type:"SCRAMBLE3",
     teams:{0:["p1","p4","p3"],1:["p2","p5","p7"]}, holes:blankHoles() },
-  { id:"g5", roundId:"r4", type:"FORTYBALL", hidden:true,
+  { id:"g5", roundId:"r4", type:"FORTYBALL",
     teams:{0:["p1","p4","p3","p6"],1:["p2","p5","p7","p8"]}, holes:blankHoles() }
 ];
 
@@ -1187,6 +1187,22 @@ const matchLocked = (g, h) => { const s = matchState(g); return s.closed && h >=
 /* ============================================================
    §8  40BALL
    ============================================================ */
+/* Selections are NOT hidden from the other team, whatever you may have read.
+   A `hidden` flag was set on every 40ball game, toggled in the roster editor
+   and printed on the games list as "· hidden selections" — and nothing
+   anywhere read it. Both sides' blocks render on the same card, ticks and all,
+   so each team could watch the other decide, which is the one thing the flag
+   existed to stop.
+
+   All of that has been taken out rather than left saying something untrue. The
+   flag may still sit on games written by older builds; it means nothing and
+   nothing should start reading it.
+
+   Building it for real needs the card to know which side the phone belongs to,
+   since a team has to see its own picks while making them. `myId()` is the
+   nearest thing to an identity here — honour-system, which is the right level
+   for eight friends — and the other side's ticks would then draw blank, count
+   and all, until that side locks the hole. */
 const QUOTA = 40;
 function fbSpent(g, t){
   return holeList(g).reduce((n,hole) => n + (hole.locked[t] ? hole.selected[t].length : 0), 0);
@@ -1798,7 +1814,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2155";
+const BUILD = "2026-10-12.2200";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2941,8 +2957,7 @@ function renderHome(){
         <div class="gtype">${LABEL[g.type]}</div>
         <div class="gteams">${teamsLine(g)}</div>
         <div class="gstate ${stt.cls}">${esc(stt.text)}</div>
-        <div class="gmeta">${meta}${
-          g.type==="FORTYBALL" && g.hidden ? " · hidden selections" : ""}</div>
+        <div class="gmeta">${meta}</div>
       </button>`;
     });
   });
@@ -3487,7 +3502,6 @@ function parseCSV(text){
       const g = { id: uid("g"), roundId: currentRound.id, type: fmt,
                   teams:{}, holes: blankHoles() };
       picked.forEach((x, k) => g.teams[k] = x);
-      if (fmt === "FORTYBALL") g.hidden = true;
       if (ONE_GROUP_FORMATS[detail.toUpperCase().trim()]) g.oneGroup = true;
       /* A four-team game's notes column carries how it's scored and which box
          each team plays, in words rather than more format suffixes — the
@@ -3963,8 +3977,6 @@ function gameEditor(g){
         g.oneGroup ? "All eight \u2014 not counted in pairings" : "Two foursomes"}</button>` : ""}
       ${isMulti(g) ? `<button class="chip ${g.skins?"on":""}" data-skins="${g.id}">${
         g.skins ? "Skins \u2014 two a hole" : "Stroke play"}</button>` : ""}
-      ${g.type==="FORTYBALL" ? `<button class="chip ${g.hidden?"on":""}"
-        data-hidden="${g.id}">Hidden selections: ${g.hidden?"on":"off"}</button>` : ""}
     </div>
     ${isMulti(g) && course.tees.length > 1 ? `<div class="teeset">
       <span class="teeset-t">Tees</span>
@@ -5591,16 +5603,11 @@ function handleClick(el){
                 teams:{}, holes:blankHoles() };
     /* As many empty sides as the type has — four for 2v2v2v2. */
     sides(g).forEach(i => g.teams[i] = []);
-    if (type === "FORTYBALL") g.hidden = true;
     GAMES.push(g); pushGame(g); render(); return;
   }
   if (el.dataset.delgame){
     if (!confirm("Remove this game and its scores?")) return;
     removeGame(el.dataset.delgame); render(); return;
-  }
-  if (el.dataset.hidden){
-    const g = GAMES.find(x => x.id === el.dataset.hidden);
-    g.hidden = !g.hidden; pushGame(g); render(); return;
   }
   if (el.dataset.side){
     const [gid, pid, tRaw] = el.dataset.side.split(":");

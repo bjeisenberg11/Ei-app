@@ -61,7 +61,20 @@ The app covers:
       word. Naming a man who isn't on that side is an import error rather than a
       silent no-op, since the tee would simply never be read.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
-    18 holes. Selections are hidden from the other team until they are locked.
+    18 holes, chosen hole by hole and committed by locking the hole.
+    - **Selections are not hidden from the other team.** This file used to say
+      they were. A `hidden` flag was set on every 40ball game, toggled in the
+      roster editor and printed on the games list as "· hidden selections" —
+      and nothing read it. Both sides' blocks render on the same card, ticks and
+      all, so each team could watch the other decide, which is the one thing it
+      existed to stop. The flag and both UI claims have been removed rather than
+      left saying something untrue; R137 fails if the claim returns without the
+      behaviour. Older games may still carry the field. It means nothing.
+    - Building it for real needs the card to know which side the phone belongs
+      to, since a team must see its own picks while making them. `myId()` is the
+      nearest thing to an identity here — honour-system, which is the right
+      level for a private group — and the other side's ticks would draw blank,
+      count and all, until that side locks.
   - `WOLF5`: "5-man Wolf", for the Thursday-morning fivesome. **The only format
     whose sides change hole to hole**, so `SIDES.WOLF5 = 1` and `teams[0]` is
     the whole field in tee order. Nothing may read `g.teams` beyond the roster;
@@ -232,7 +245,8 @@ private group with no personal data. Don't present the admin code as security.
 tournaments/_index                 { years: ["2025","2026"], live: "2026" }   year registry
 tournaments/_history               { years: { "2021": { rows:[{name,w,l,t,gp}] }, ... } }  pre-app records
 tournaments/ei-{YEAR}              config: { schema, appBuild, players, courses, schedule, days }
-tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, hidden?, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
+tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
+                                   (older 40ball docs may carry a dead `hidden` field — nothing reads it)
 ```
 
 Each hole is `{ scores:{pid: n|"PU"}, teamScore:{0..3}, conceded, selected:{0:[],1:[]}, locked:{0..3} }`.
@@ -340,7 +354,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **175 passed, 0 failed**. The suite is
+Current status against `index.html`: **176 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

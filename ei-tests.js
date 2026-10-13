@@ -3142,6 +3142,49 @@ t("R136 a split pair carries its two boxes on the game, not on the Field tab",
   }
 }));
 
+t("R137 the app doesn't claim 40ball selections are hidden, because they aren't",
+  () => isolate(() => {
+  const w = dom.window;
+  /* A `hidden` flag was set on every 40ball game, toggled in the roster editor
+     and printed on the games list — and nothing read it. Both blocks render on
+     one card, so each side could watch the other decide. The claim is gone;
+     this fails if it comes back without the behaviour. */
+  ok(!/data-hidden=/.test(html), "no toggle that sets a flag nothing honours");
+  /* Asserted against what's drawn, not the source — §8 quotes the old label in
+     the comment explaining why it went. */
+  const list = w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    g.hidden = true;                       // as older builds left it
+    view.gameId = null; view.tab = "home"; render();
+    const out = document.getElementById("app").innerHTML;
+    delete g.hidden;
+    return out;
+  })()`);
+  ok(/40ball/i.test(list), "the 40ball game is on the games list:");
+  ok(!/hidden selections/i.test(list),
+     "and carries no label saying its selections are hidden");
+  const seen = w.eval(`(function(){
+    const g = GAMES.find(x => x.type === "FORTYBALL");
+    const h = g.holes[0];
+    g.teams[0].forEach(id => h.scores[id] = 4);
+    g.teams[1].forEach(id => h.scores[id] = 5);
+    h.selected[0] = g.teams[0].slice(0, 2);
+    h.locked[0] = false;
+    isAdmin = true; SYNC.on = false;
+    view.tab = "home"; view.gameId = g.id; view.hole = 0; render();
+    const out = document.getElementById("app").innerHTML;
+    h.selected[0] = []; h.locked[0] = false;
+    g.teams[0].concat(g.teams[1]).forEach(id => delete h.scores[id]);
+    return out;
+  })()`);
+  /* The honest state of play: an unlocked side's picks are on the shared card.
+     If that ever changes, this is the test to delete — along with the comment
+     in §8 — rather than the one to work around. */
+  ok(/class="sel on"/.test(seen),
+     "an unlocked side's picks really are visible to everyone, as the code says");
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
