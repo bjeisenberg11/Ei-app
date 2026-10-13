@@ -3279,6 +3279,22 @@ t("R138 40ball reveals a hole only once both sides have locked it", () => isolat
   })()`);
 }));
 
+t("R139 the stroke grid only shows a playing handicap where it differs", () => isolate(() => {
+  /* In a full round playing handicap is course handicap by definition, and
+     "ch 33 → 33" said it twice on every row. The arrow is for relative only. */
+  const o = JSON.parse(dom.window.eval(`(function(){
+    const g = GAMES.find(x => x.type === "BESTBALL");
+    const r = EV(g.roundId), was = r.mode;
+    r.mode = "FULL";     const full = renderStrokeGrid(g, 0);
+    r.mode = "RELATIVE"; const rel  = renderStrokeGrid(g, 0);
+    r.mode = was;
+    return JSON.stringify({ full, rel });
+  })()`));
+  ok(!/→/.test(o.full), "a full round prints the course handicap once:");
+  ok(/in full/.test(o.full), "and the key says that's what each man plays off:");
+  ok(/→ 0/.test(o.rel), "a relative round keeps the arrow, down to scratch for the low man:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

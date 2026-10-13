@@ -1847,7 +1847,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2215";
+const BUILD = "2026-10-12.2220";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4779,10 +4779,15 @@ function renderStrokeGrid(g, h){
   out += `</tr><tr><th>Index</th>`;
   for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${course.holes[i].si}</th>`;
   out += `</tr></thead><tbody>`;
+  /* The arrow only says something in a relative round, where a man plays off
+     his course handicap less the low man's. In a full round the two are the
+     same number by definition, and "ch 33 → 33" printed it twice on every row. */
+  const relative = modeOf(g) === "RELATIVE";
   ids.forEach(id => {
     const ph = playingHcp(id, g);
     out += `<tr><th>${esc(P(id).name)}
-      <i>${esc(teeNameFor(id, course))} · ch ${courseHcp(id, course)} → ${ph}</i></th>`;
+      <i>${esc(teeNameFor(id, course))} · ch ${courseHcp(id, course)}${
+        relative ? ` → ${ph}` : ""}</i></th>`;
     for (let i = 0; i < 18; i++){
       const s = strokesOn(id, g, i);
       out += `<td class="${s?"dot ":""}${i===h?"cur":""}">${s ? "•".repeat(s) : ""}</td>`;
@@ -4790,8 +4795,9 @@ function renderStrokeGrid(g, h){
     out += `</tr>`;
   });
   out += `</tbody></table></div>
-    <p class="sgrid-key">${esc(course.name)}. Each name shows tee, course handicap, then playing
-    handicap ${modeOf(g) === "RELATIVE" ? "(relative — lowest course handicap here plays off scratch)" : "(full)"}.
+    <p class="sgrid-key">${esc(course.name)}. ${relative
+      ? "Each name shows tee, course handicap, then the playing handicap it comes down to — the lowest course handicap here plays off scratch."
+      : "Each name shows tee and course handicap, which is what each man plays off in full."}
     A dot is a stroke on that hole.</p>`;
   return out;
 }

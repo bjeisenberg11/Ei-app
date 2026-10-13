@@ -377,7 +377,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **177 passed, 0 failed**. The suite is
+Current status against `index.html`: **178 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
