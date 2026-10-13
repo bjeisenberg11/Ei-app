@@ -3035,6 +3035,42 @@ t("R134 the wolf card draws, and the pickers are what settle the hole", () => is
   w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
+t("R135 the draw sets tee order, and with it who starts as wolf", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles() };
+    GAMES.push(g);
+    isAdmin = true; SYNC.on = false;
+    view.tab = "home"; view.gameId = g.id; view.hole = 0; render();
+    const offered = /data-wolfdraw="gw"/.test(document.getElementById("app").innerHTML);
+    /* Twenty draws: the order has to actually move, and it must stay the same
+       five men every time. A sort() with a random comparator passes neither. */
+    const seen = {}; let sameFive = true;
+    for (let k = 0; k < 20; k++){
+      handleClick({ dataset:{ wolfdraw:"gw" } });
+      seen[g.teams[0].join(",")] = 1;
+      if (g.teams[0].slice().sort().join(",") !== "p1,p2,p3,p4,p5") sameFive = false;
+    }
+    const first = wolfOn(g, 0), second = wolfOn(g, 1);
+    g.holes[0].scores[g.teams[0][0]] = 4;
+    view.hole = 0; render();
+    return JSON.stringify({ offered, orders: Object.keys(seen).length, sameFive,
+      first, second, firstIsOrder: first === g.teams[0][0],
+      stillOffered: /data-wolfdraw="gw"/.test(document.getElementById("app").innerHTML) });
+  })()`));
+  ok(out.offered, "the draw is on the card before anything is played:");
+  ok(out.orders > 1, "and it actually moves the order: " + out.orders + " of 20 distinct");
+  ok(out.sameFive, "always the same five men, nobody dropped or duplicated:");
+  ok(out.firstIsOrder, "the man drawn first is the wolf on hole 1:");
+  ok(out.first !== out.second, "and hole 2 moves on to the next one:");
+  /* The order is a fact about holes already played off it, so it stops being
+     a thing you can re-roll rather than asking a question. */
+  ok(!out.stillOffered, "once a score is in, the draw is gone:");
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

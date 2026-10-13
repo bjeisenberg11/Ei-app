@@ -1773,7 +1773,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.1540";
+const BUILD = "2026-10-12.2115";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4856,6 +4856,12 @@ function renderWolf(g, h){
   const ro = isArchive() ? " disabled" : "";
   const nm = id => esc((P(id) || {}).name || "?");
 
+  /* The draw is a first-tee thing. Once anything has been entered the order is
+     already a fact about holes that were played off it, so the button goes
+     rather than asking a question nobody should answer yes to. */
+  const touched = holeList(g).some(hl =>
+    Object.keys(hl.scores || {}).length || hl.wolf || hl.lone || (hl.pack || []).length);
+
   let out = `<div class="wolfpick">
     <div class="wolfhead"><span class="wolflab">Wolf</span>
       <span class="wolfname">${w ? nm(w) : "—"}</span></div>
@@ -4864,6 +4870,10 @@ function renderWolf(g, h){
         nm(id)}</button>`).join("")}</div>
     <p class="note">Last man to tee off. Rotates by tee order — change it here if
       the order moved.</p>
+    ${touched || ro ? "" : `<div class="wolfrow" style="margin-top:9px">
+      <button class="chip" data-wolfdraw="${g.id}">Draw for order</button></div>
+      <p class="note">Tee order is the rotation, so drawing it picks who starts
+        as wolf.</p>`}
   </div>`;
 
   const others = roster.filter(id => id !== w);
@@ -5759,6 +5769,25 @@ function handleClick(el){
     if (hole.lone){ hole.lone = false; pushHole(g, hh, "lone", false); }
     render(); return;
   }
+  if (el.dataset.wolfdraw){
+    const gg = GAMES.find(x => x.id === el.dataset.wolfdraw);
+    if (!gg) return;
+    /* The draw settles tee order, and the rotation is the tee order, so this
+       is also the draw for who starts as wolf. Fisher-Yates rather than a
+       sort(() => Math.random() - 0.5), which isn't a shuffle and visibly
+       favours leaving people where they were. */
+    const a = (gg.teams[0] || []).slice();
+    for (let i = a.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    gg.teams[0] = a;
+    /* Order is the whole roster, so this is a game write, not a hole write. */
+    pushGame(gg);
+    toast(a.map((id, i) => `${i + 1} ${(P(id) || {}).name || "?"}`).join("  ·  "));
+    render(); return;
+  }
+
   if (el.dataset.lone){
     const hh = +el.dataset.lone, hole = g.holes[hh];
     hole.lone = !hole.lone;
