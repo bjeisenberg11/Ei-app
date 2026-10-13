@@ -370,6 +370,27 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .btn:disabled{opacity:.32;cursor:default}
 .note{font-size:13px;color:var(--ink-soft);margin:9px 0 0;text-align:center}
 .note.warn{color:var(--pencil);font-weight:500}
+.note.ok{color:var(--ink);font-weight:500}
+
+/* Wolf. Two pickers above the scores, because on a wolf hole the decision is
+   made on the tee before anybody has a number. They are deliberately the
+   plainest thing on the card — a row of names you tap. */
+.wolfpick{border:1px solid var(--rule);padding:10px 12px 12px;margin-top:10px}
+.wolfhead{display:flex;align-items:baseline;gap:9px;margin-bottom:9px}
+.wolflab{font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-faint)}
+.wolfname{font-weight:600;font-size:15px}
+.wolfrow{display:flex;flex-wrap:wrap;gap:6px}
+/* Aim at thirds so five names wrap 3 and 2. Left to grow freely the odd one
+   out stretched the width of the card and read as a different control. */
+.wolfrow .chip{flex:1 1 calc(33.333% - 4px)}
+/* Who is on which side of the hole, once the wolf has decided. A tint rather
+   than a label: the rows are already named and five more words would push the
+   stepper off a phone. */
+.prow.w-wolf{box-shadow:inset 3px 0 0 var(--ink)}
+.prow.w-pack{box-shadow:inset 3px 0 0 var(--rule)}
+.wtag{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:10px;
+  text-transform:uppercase;letter-spacing:.09em;color:var(--ink-faint);margin-left:6px}
 
 /* 40ball corridor */
 .corridor{border:1.5px solid var(--ink);background:var(--paper-2);padding:11px;margin-top:11px}
@@ -938,19 +959,26 @@ const freshDefaults = () => JSON.parse(JSON.stringify(DEFAULTS));
 
 const LABEL = { BESTBALL:"2v2 Best Ball", SCRAMBLE4:"4v4 Scramble",
                 SCRAMBLE3:"3v3 Scramble", SCRAMBLE2X4:"2v2v2v2 Scramble",
-                FORTYBALL:"40ball" };
+                FORTYBALL:"40ball", WOLF5:"5-man Wolf" };
 /* Match play: holes won. Stroke play: one aggregate total for the round.
    Only best ball is match play — every scramble is decided on total strokes. */
 const isMatch  = g => g.type === "BESTBALL";
 const isStroke = g => g.type === "SCRAMBLE4" || g.type === "SCRAMBLE3"
                    || g.type === "SCRAMBLE2X4";
 const isScramble = isStroke;
-const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL";
+/* Wolf is neither. Its sides are made and unmade on every tee, so there is no
+   match to be up in and no team total to carry: it keeps a running count of
+   points per man and nothing else here applies to it. Every branch that asks
+   isMatch / isStroke has to let it past. */
+const isWolf = g => g.type === "WOLF5";
+const usesHcp = g => g.type === "BESTBALL" || g.type === "FORTYBALL" || isWolf(g);
 
 /* How many sides a game has. Everything else here is two-sided — A against B,
    one winner and one loser — so the count lives in one place rather than being
-   assumed at every call site. */
-const SIDES = { BESTBALL:2, SCRAMBLE4:2, SCRAMBLE3:2, FORTYBALL:2, SCRAMBLE2X4:4 };
+   assumed at every call site. Wolf is one side of five: the roster is the whole
+   field in tee order, and who is against whom is a property of the hole. */
+const SIDES = { BESTBALL:2, SCRAMBLE4:2, SCRAMBLE3:2, FORTYBALL:2, SCRAMBLE2X4:4,
+                WOLF5:1 };
 const sideCount = g => SIDES[g.type] || 2;
 const sides = g => Array.from({ length: sideCount(g) }, (_, i) => i);
 const isMulti = g => sideCount(g) > 2;
@@ -1004,9 +1032,15 @@ function courseHcp(pid, course){
   if (!t) return Math.round(P(pid).index);
   return Math.round(P(pid).index * (t.slope / 113) + (t.rating - t.par));
 }
+/* Everyone in the game, whatever shape its sides are. Three helpers used to
+   write [...g.teams[0], ...g.teams[1]] instead, which was harmless only
+   because no format with a side count other than two took handicaps. Wolf is
+   one side of five, and all three read a side that isn't there. */
+const rosterOf = g => sides(g).flatMap(i => g.teams[i] || []);
 function baseline(g){
   const course = courseOf(g);
-  const all = [...g.teams[0], ...g.teams[1]];
+  const all = rosterOf(g);
+  if (!all.length) return 0;
   return Math.min(...all.map(id => courseHcp(id, course)));
 }
 function playingHcp(pid, g){
@@ -1040,6 +1074,9 @@ function teamHoleScore(g, t, h){
 function holeComplete(g, h){
   const hole = g.holes[h];
   if (hole.conceded !== null) return true;                      // §4
+  /* Wolf needs the pack settled as well as the scores — five numbers with
+     nobody having said who was with whom decide nothing. */
+  if (isWolf(g)) return wolfHolePoints(g, h) != null;
   if (isScramble(g)) return sides(g).every(i => hole.teamScore[i] != null);
   return teamHoleScore(g,0,h) != null && teamHoleScore(g,1,h) != null;  // §5.3
 }
@@ -1107,6 +1144,10 @@ function teamsLine(g){
   return names.join(" <b>v</b> ");
 }
 function winnerLabel(g, code){
+  /* Wolf names a man rather than a side, so a result can carry a player id
+     where every other format carries "A".."D". */
+  const p = P(code);
+  if (p) return p.name;
   const i = SIDE_CODES.indexOf(code);
   return teamLabel(g, i < 0 ? 0 : i);
 }
@@ -1262,11 +1303,117 @@ function skinsState(g){
               label: totals.slice().sort((a, b) => b - a).map(fmtSkins).join("–") } };
 }
 
+/* ---------- Wolf, five men ----------
+   One side of five in tee order. The teams last exactly one hole, so nothing
+   here may read g.teams beyond the roster — who is with whom is a property of
+   the hole, not of the game.
+
+   The wolf is the last man to tee off and the order rotates, so hole h belongs
+   to roster[h % 5] unless the hole says otherwise. Only an override is stored:
+   writing the default into eighteen holes is eighteen writes that say nothing
+   and eighteen more things to go stale if the roster is edited. Eighteen holes
+   over five men isn't a whole number of cycles — the first three are wolf a
+   fourth time — which is the rotation as it falls out rather than a rule, so
+   the wolf is editable on every hole.
+
+   Who he took is two fields, not one. pack fills up as he taps names, so it
+   passes through a half-made state of one man that must not score as a 2v3;
+   lone is a flag of its own, because "went alone" and "hasn't decided" are
+   different things and an empty pack can't say which. wolfPack resolves the
+   pair down to one answer: the two men, [] for a lone wolf, or null while it
+   is still being made up.
+
+   Points as the game is played: the wolf's three win, a point each; the other
+   two win, three each; a lone wolf wins, eight; a lone wolf loses, two to each
+   of the other four. Level is nothing to anybody, and nothing carries. */
+const WOLF_LONE_WIN = 8, WOLF_LONE_LOSS = 2, WOLF_PACK_WIN = 1, WOLF_OTHERS_WIN = 3;
+const wolfOn = (g, h) => {
+  const r = rosterOf(g);
+  return (g.holes[h] || {}).wolf || r[h % (r.length || 1)] || null;
+};
+const wolfPack = (g, h) => {
+  const hole = g.holes[h] || {};
+  if (hole.lone) return [];
+  const p = hole.pack || [];
+  return p.length === 2 ? p : null;
+};
+/* points to each man on one hole, or null while the hole can't be settled */
+function wolfHolePoints(g, h){
+  const roster = rosterOf(g);
+  if (roster.length < 3) return null;
+  const w = wolfOn(g, h), pack = wolfPack(g, h);
+  if (!w || !pack || !roster.includes(w)) return null;
+  const withWolf = pack.length ? [w, ...pack] : [w];
+  const against = roster.filter(id => !withWolf.includes(id));
+  if (!against.length) return null;
+  /* A man who picked up has no ball on the hole but he has finished with it.
+     Only a hole nobody has entered for him is still out there. */
+  const hole = g.holes[h];
+  if (roster.some(id => hole.scores[id] == null)) return null;
+  const best = ids => {
+    const v = ids.map(id => netOf(id, g, h)).filter(n => n != null);
+    return v.length ? Math.min(...v) : null;
+  };
+  const a = best(withWolf), b = best(against);
+  const pts = {};
+  roster.forEach(id => pts[id] = 0);
+  if (a == null && b == null) return pts;                  // everybody picked up
+  const wolfWins = b == null || (a != null && a < b);
+  const otherWins = a == null || (b != null && b < a);
+  if (!wolfWins && !otherWins) return pts;                 // level: no points, no carry
+  if (!pack.length){
+    if (wolfWins) pts[w] = WOLF_LONE_WIN;
+    else against.forEach(id => pts[id] = WOLF_LONE_LOSS);
+  } else if (wolfWins){
+    withWolf.forEach(id => pts[id] = WOLF_PACK_WIN);
+  } else {
+    against.forEach(id => pts[id] = WOLF_OTHERS_WIN);
+  }
+  return pts;
+}
+function wolfTotals(g){
+  const roster = rosterOf(g);
+  const pts = {};
+  roster.forEach(id => pts[id] = 0);
+  let holes = 0;
+  for (let h = 0; h < 18; h++){
+    const p = wolfHolePoints(g, h);
+    if (!p) continue;
+    holes++;
+    roster.forEach(id => pts[id] += p[id] || 0);
+  }
+  return { pts, holes };
+}
+function wolfState(g){
+  const { pts, holes } = wolfTotals(g);
+  const roster = rosterOf(g);
+  if (holes < 18 || !roster.length) return { done:false, result:null, pts, holes };
+  const best = Math.max(...roster.map(id => pts[id]));
+  const top = roster.filter(id => pts[id] === best);
+  return { done:true, pts, holes,
+    /* The winner is a player id, not a side code — the sides only lasted a
+       hole. winnerLabel resolves either. */
+    result: { winner: top.length === 1 ? top[0] : "TIE",
+              label: roster.map(id => pts[id]).sort((a,b) => b - a).join("–") } };
+}
+/* the roster in points order, for anything that draws a wolf leaderboard */
+function wolfRanked(g){
+  const { pts } = wolfTotals(g);
+  return rosterOf(g).slice()
+    .sort((a,b) => (pts[b] - pts[a])
+      || ((P(a)||{}).name || "").localeCompare((P(b)||{}).name || ""))
+    .map(id => ({ id, pts: pts[id] }));
+}
+
 /* What each side got out of the game, as the leaderboard counts it. Two-sided
    games are the obvious thing. With four teams the top two win and the bottom
    two lose — and a tie straddling that line is a tie for everyone in it,
    because there's no honest way to split second from third. */
 function teamOutcomes(g){
+  /* Wolf has no sides to hand an outcome to — five men on their own points,
+     and the round it belongs to isn't sanctioned in the first place.
+     standings() already drops a game whose outcomes come back null. */
+  if (isWolf(g)) return null;
   if (!gameResult(g)) return null;
   if (!isMulti(g)){
     const r = gameResult(g);
@@ -1294,6 +1441,7 @@ function strokeParSoFar(g, t){
 
 /* ---------- unified result ---------- */
 function gameResult(g){
+  if (isWolf(g))   return wolfState(g).result;
   if (isMatch(g))  return matchState(g).result;
   /* Before isStroke: a skins game is still a SCRAMBLE2X4 and would otherwise
      be totted up on strokes. */
@@ -1499,7 +1647,21 @@ function allTime(){
 /* ---------- shared status text, used by home cards and the score bug ---------- */
 function gameStatusLabel(g){
   const res = gameResult(g);
-  if (res) return { text: res.winner === "TIE" ? "HALVED" : `${winnerLabel(g,res.winner)} WIN ${res.label}`, cls:"done" };
+  if (res) return { text: res.winner === "TIE" ? "HALVED"
+    /* One man wins a wolf game, so "Blake WINS", not "Blake WIN". */
+    : `${winnerLabel(g,res.winner)} ${isWolf(g) ? "WINS" : "WIN"} ${res.label}`, cls:"done" };
+  if (isWolf(g)){
+    const st = wolfTotals(g);
+    if (!st.holes) return { text:"Not started", cls:"" };
+    const roster = rosterOf(g);
+    const best = Math.max(...roster.map(id => st.pts[id]));
+    const lead = roster.filter(id => st.pts[id] === best);
+    const text = lead.length === roster.length
+      ? `All level on ${best}`
+      : `${lead.map(id => (P(id)||{}).name).join(" and ")} `
+        + `${lead.length === 1 ? "leads" : "lead"} on ${best}`;
+    return { text:`${text} · thru ${st.holes}`, cls:"live" };
+  }
   if (isMatch(g)){
     const st = matchState(g);
     if (st.played === 0) return { text:"Not started", cls:"" };
@@ -1571,6 +1733,12 @@ function gameStatusLabel(g){
 /* which hole to land on when jumping into a game — the next one needing action */
 function currentHoleFor(g){
   if (isMatch(g)) return Math.min(matchState(g).played, 17);
+  /* Wolf locks nothing, so "next hole needing action" is the first one that
+     can't be settled yet. */
+  if (isWolf(g)){
+    for (let i = 0; i < 18; i++) if (wolfHolePoints(g, i) == null) return i;
+    return 17;
+  }
   for (let i = 0; i < 18; i++){
     if (!sides(g).every(t => g.holes[i].locked[t])) return i;
   }
@@ -1605,7 +1773,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-10.0345";
+const BUILD = "2026-10-12.1540";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3204,7 +3372,8 @@ const FORMATS = { BESTBALL:"BESTBALL", "2V2":"BESTBALL", "BEST BALL":"BESTBALL",
   SCRAMBLE4:"SCRAMBLE4", "4V4":"SCRAMBLE4", SCRAMBLE3:"SCRAMBLE3", "3V3":"SCRAMBLE3",
   SCRAMBLE2X4:"SCRAMBLE2X4", "2V2V2V2":"SCRAMBLE2X4", "2X4":"SCRAMBLE2X4",
   "2V2V2V2-8":"SCRAMBLE2X4", "2X4-8":"SCRAMBLE2X4",
-  "40BALL":"FORTYBALL", FORTYBALL:"FORTYBALL" };
+  "40BALL":"FORTYBALL", FORTYBALL:"FORTYBALL",
+  WOLF:"WOLF5", WOLF5:"WOLF5", "5 MAN WOLF":"WOLF5", "5-MAN WOLF":"WOLF5" };
 /* The -8 suffix means all eight play as one group, which keeps the round out of
    the "same foursome" column. Without it in the CSV the flag was a toggle you
    had to remember after importing, and forgetting it silently changes what the
@@ -3272,14 +3441,21 @@ function parseCSV(text){
           return p ? p.id : null;
         }).filter(Boolean);
       const need = NEEDED[fmt];
-      const picked = need.map((_, k) => side(sideCells[k]));
+      /* A one-sided game is the whole field in one list, and five men don't fit
+         four columns. So its names are read straight across every name cell in
+         the row, which is also how you'd type them, and scheduleToCSV writes
+         them back the same way. */
+      const oneSided = need.length === 1;
+      const picked = oneSided ? [side(sideCells.flat())]
+                              : need.map((_, k) => side(sideCells[k]));
       if (picked.some((x, k) => x.length !== need[k]))
-        errors.push(`Line ${n}: ${LABEL[fmt]} needs ${need.join(" v ")}, got `
+        errors.push(`Line ${n}: ${LABEL[fmt]} needs ${
+          oneSided ? need[0] + " players" : need.join(" v ")}, got `
           + picked.map(x => x.length).join(" v ") + ".");
       /* Anyone in a column the format doesn't use is a mistake worth naming —
          four names in c and d on a 2v2 means the row is in the wrong format. */
-      const spare = sideCells.slice(need.length)
-        .flatMap(c => c).map(x => x.trim()).filter(Boolean);
+      const spare = oneSided ? []
+        : sideCells.slice(need.length).flatMap(c => c).map(x => x.trim()).filter(Boolean);
       if (spare.length)
         errors.push(`Line ${n}: ${LABEL[fmt]} has only ${need.length} sides, but `
           + `"${spare.join('", "')}" ${spare.length === 1 ? "is" : "are"} in a later column.`);
@@ -3356,8 +3532,15 @@ function scheduleToCSV(){
                   : g.type === "SCRAMBLE2X4" ? (g.oneGroup ? "2V2V2V2-8" : "2V2V2V2")
                   : g.type;
         const all = [];
-        for (let k = 0; k < 4; k++) all.push(...(k < sideCount(g) ? cells(k)
-                                   : Array(CSV_SIDE_COLS).fill("")));
+        if (sideCount(g) === 1){
+          /* Straight across, because a five-man roster doesn't fit one side's
+             four columns. parseCSV reads a one-sided game the same way. */
+          all.push(...(g.teams[0] || []).map(id => esc2((P(id)||{}).name)));
+          while (all.length < 4 * CSV_SIDE_COLS) all.push("");
+        } else {
+          for (let k = 0; k < 4; k++) all.push(...(k < sideCount(g) ? cells(k)
+                                     : Array(CSV_SIDE_COLS).fill("")));
+        }
         /* Both halves of the round trip, or it's lost on export — the way
            ROUND notes were for months. */
         const bits = [];
@@ -3681,7 +3864,9 @@ function renderEventEditor(h, id){
 
 /* ---------- per-game roster editor ---------- */
 const NEEDED = { BESTBALL:[2,2], SCRAMBLE4:[4,4], SCRAMBLE3:[3,3],
-                 SCRAMBLE2X4:[2,2,2,2], FORTYBALL:[4,4] };
+                 SCRAMBLE2X4:[2,2,2,2], FORTYBALL:[4,4],
+                 /* one side of five — the field, in tee order */
+                 WOLF5:[5] };
 
 function gameEditor(g){
   const need = NEEDED[g.type];
@@ -4238,6 +4423,8 @@ function renderGame(){
   for (let i = 0; i < 18; i++){
     const done = isMatch(g) ? holeComplete(g,i)
       : isStroke(g) ? sides(g).every(t => g.holes[i].teamScore[t] != null)
+      /* Wolf locks nothing — a hole is done when it can be settled. */
+      : isWolf(g) ? holeComplete(g, i)
       : (g.holes[i].locked[0] && g.holes[i].locked[1]);
     let cls = "hcell";
     if (done && isMatch(g)){
@@ -4269,6 +4456,20 @@ function renderGame(){
       <div class="thru">${st.played ? `Thru ${st.played}` : "Not started"}${
         !st.closed && st.left ? ` · ${st.left} to play` : ""}</div>
       ${st.dormie ? `<div class="tag">Dormie</div>` : ""}
+    </div>`;
+  } else if (isWolf(g)){
+    /* Unlike every other format this box isn't a repeat of the card: the hole
+       strip above can only say which holes are settled, and the points per man
+       appear nowhere else on the screen. So it stays up all round. */
+    const st = wolfState(g);
+    out += `<div class="banner ${st.done ? "closed" : ""}">
+      ${st.done ? `<div class="st">${st.result.winner === "TIE" ? "TIED"
+        : `${esc(winnerLabel(g, st.result.winner))} WINS`}</div>` : ""}
+      ${wolfRanked(g).map(r => `<div class="strokerow">
+        <span class="sname">${esc((P(r.id) || {}).name || "?")}</span>
+        <span class="stot wide">${r.pts}</span>
+      </div>`).join("")}
+      <div class="thru">Wolf · ${st.holes ? `thru ${st.holes}` : "not started"}</div>
     </div>`;
   } else if (isSkins(g)){
     /* The card above already carries every side's skins and gross, in order,
@@ -4349,7 +4550,8 @@ function renderGame(){
   if (hardLocked)
     out += `<p class="note warn">Match closed out. This hole is locked and not scored.</p>`;
 
-  sides(g).forEach(t => out += renderTeam(g, t, h, hardLocked));
+  if (isWolf(g)) out += renderWolf(g, h);
+  else sides(g).forEach(t => out += renderTeam(g, t, h, hardLocked));
 
   if (isMatch(g) && !hardLocked && !isArchive()){
     const hole = g.holes[h];
@@ -4387,6 +4589,22 @@ function randomHole(g, h){
       hole.teamScore[t] = Math.max(2, roll() - 1);
       pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
     });
+    return;
+  }
+
+  /* Wolf before the two-sided path below: there is no teams[1] to iterate. */
+  if (isWolf(g)){
+    const roster = rosterOf(g);
+    roster.forEach(id => {
+      hole.scores[id] = roll();
+      pushHole(g, h, `scores.${id}`, hole.scores[id]);
+    });
+    if (!wolfPack(g, h)){
+      hole.lone = false;
+      hole.pack = roster.filter(id => id !== wolfOn(g, h)).slice(0, 2);
+      pushHole(g, h, "lone", false);
+      pushHole(g, h, "pack", hole.pack);
+    }
     return;
   }
 
@@ -4432,7 +4650,7 @@ function renderOtherBug(g){
 /* who gets strokes on this hole */
 function strokesHereLine(g, h){
   if (!usesHcp(g)) return "";
-  const gets = [...g.teams[0], ...g.teams[1]]
+  const gets = rosterOf(g)
     .map(id => ({ id, s: strokesOn(id, g, h) }))
     .filter(x => x.s > 0);
   if (!gets.length) return `<p class="hstrokes">No strokes on this hole — everyone plays it level.</p>`;
@@ -4444,7 +4662,7 @@ function strokesHereLine(g, h){
 function renderStrokeGrid(g, h){
   if (!usesHcp(g)) return "";
   const course = courseOf(g);
-  const ids = [...g.teams[0], ...g.teams[1]];
+  const ids = rosterOf(g);
   let out = `<div class="sgrid-wrap"><table class="sgrid">
     <thead><tr><th>Hole</th>`;
   for (let i = 0; i < 18; i++) out += `<th class="${i===h?"cur":""}">${i+1}</th>`;
@@ -4626,6 +4844,77 @@ function renderTeam(g, t, h, hardLocked){
 /* `tone` is the under/even/over class for this score against the hole's par.
    The number in the stepper is the one being read while it's being changed,
    so it carries the same colour as the same score does everywhere else. */
+/* The wolf hole: who the wolf is, who he took, then five scores. The two
+   pickers come first because the hole can't be settled without them and
+   because the decision is made on the tee, before anybody has a score. */
+function renderWolf(g, h){
+  const hole = g.holes[h];
+  const roster = rosterOf(g);
+  const w = wolfOn(g, h);
+  const picked = hole.pack || [];
+  const lone = !!hole.lone;
+  const ro = isArchive() ? " disabled" : "";
+  const nm = id => esc((P(id) || {}).name || "?");
+
+  let out = `<div class="wolfpick">
+    <div class="wolfhead"><span class="wolflab">Wolf</span>
+      <span class="wolfname">${w ? nm(w) : "—"}</span></div>
+    <div class="wolfrow">${roster.map(id =>
+      `<button class="chip ${id === w ? "on" : ""}" data-wolf="${h}:${id}"${ro}>${
+        nm(id)}</button>`).join("")}</div>
+    <p class="note">Last man to tee off. Rotates by tee order — change it here if
+      the order moved.</p>
+  </div>`;
+
+  const others = roster.filter(id => id !== w);
+  const takes = lone ? "Lone wolf — 8 points, or 2 to everyone else"
+    : picked.length === 2 ? picked.map(nm).join(" & ")
+    : `pick ${2 - picked.length} more, or go alone`;
+  out += `<div class="wolfpick">
+    <div class="wolfhead"><span class="wolflab">Takes</span>
+      <span class="wolfname">${takes}</span></div>
+    <div class="wolfrow">
+      ${others.map(id => `<button class="chip ${!lone && picked.includes(id) ? "on" : ""}"
+        data-pack="${h}:${id}"${ro}>${nm(id)}</button>`).join("")}
+      <button class="chip ${lone ? "on" : ""}" data-lone="${h}"${ro}>Lone wolf</button>
+    </div>
+  </div>`;
+
+  const pack = wolfPack(g, h);
+  const pts = wolfHolePoints(g, h);
+  const withWolf = pack ? (pack.length ? [w, ...pack] : [w]) : [];
+  const par = courseOf(g).holes[h].par;
+  out += `<div class="team"><div class="thead"><span class="tname">Hole ${h + 1}</span>
+    <span class="tsub">Par ${par} · best net ball</span></div>`;
+  roster.forEach(id => {
+    const s = strokesOn(id, g, h);
+    const v = hole.scores[id];
+    const side = !pack ? "" : withWolf.includes(id) ? " w-wolf" : " w-pack";
+    out += `<div class="prow${side}">
+      <span class="pname">${nm(id)}${s ? `<span class="dots">${"•".repeat(s)}</span>` : ""}${
+        id === w ? `<span class="wtag">wolf</span>` : ""}</span>
+      ${stepper(`sc-${id}`, v === "PU" ? null : v, !!ro,
+                typeof v === "number" ? parClass(v - par) : "")}
+      ${netCell(id, g, h)}
+      <button class="pu ${v === "PU" ? "on" : ""}" data-pu="${id}"${ro}>PU</button>
+    </div>`;
+  });
+  out += `</div>`;
+
+  if (pts){
+    const won = roster.filter(id => pts[id] > 0);
+    out += won.length
+      ? `<p class="note ok">${won.map(id => `${nm(id)} ${pts[id]}`).join(", ")}</p>`
+      : `<p class="note">Level — no points, nothing carries.</p>`;
+  } else if (!pack){
+    out += `<p class="note">The wolf has to take two men or go alone before this
+      hole can be scored.</p>`;
+  } else {
+    out += `<p class="note">Every man needs a score — PU counts as finished.</p>`;
+  }
+  return out;
+}
+
 function stepper(key, val, disabled, tone){
   return `<span class="step">
     <button data-step="${key}:-1" ${disabled?"disabled":""}>−</button>
@@ -5442,6 +5731,39 @@ function handleClick(el){
       hole.scores[ref] = Math.max(1, Math.min(14, cur + d));
       pushHole(g, h, `scores.${ref}`, hole.scores[ref]);
     }
+    render(); return;
+  }
+
+  /* Wolf: both the wolf and who he took belong to the hole, not the game, so
+     every one of these writes a single hole field like a score does. */
+  if (el.dataset.wolf){
+    const [hRaw, id] = el.dataset.wolf.split(":");
+    const hh = +hRaw, hole = g.holes[hh];
+    hole.wolf = id;
+    pushHole(g, hh, "wolf", id);
+    /* The pack was chosen out of a different four and may well contain the new
+       wolf, so it cannot survive him changing. */
+    if ((hole.pack || []).length){ hole.pack = []; pushHole(g, hh, "pack", []); }
+    if (hole.lone){ hole.lone = false; pushHole(g, hh, "lone", false); }
+    render(); return;
+  }
+  if (el.dataset.pack){
+    const [hRaw, id] = el.dataset.pack.split(":");
+    const hh = +hRaw, hole = g.holes[hh];
+    let p = (hole.pack || []).filter(x => x !== wolfOn(g, hh) && x !== id);
+    /* Two is the whole pack, so a third name pushes out the older of the two
+       rather than being ignored — on the tee nobody deselects first. */
+    if (!(hole.pack || []).includes(id)) p = (p.length < 2 ? [...p, id] : [p[1], id]);
+    hole.pack = p;
+    pushHole(g, hh, "pack", p);
+    if (hole.lone){ hole.lone = false; pushHole(g, hh, "lone", false); }
+    render(); return;
+  }
+  if (el.dataset.lone){
+    const hh = +el.dataset.lone, hole = g.holes[hh];
+    hole.lone = !hole.lone;
+    pushHole(g, hh, "lone", hole.lone);
+    if (hole.lone && (hole.pack || []).length){ hole.pack = []; pushHole(g, hh, "pack", []); }
     render(); return;
   }
 

@@ -49,6 +49,40 @@ The app covers:
       each man's own tee.
   - `FORTYBALL`: "40ball". Each team must count exactly 40 net scores across
     18 holes. Selections are hidden from the other team until they are locked.
+  - `WOLF5`: "5-man Wolf", for the Thursday-morning fivesome. **The only format
+    whose sides change hole to hole**, so `SIDES.WOLF5 = 1` and `teams[0]` is
+    the whole field in tee order. Nothing may read `g.teams` beyond the roster;
+    who is against whom lives on the hole.
+    - Played **net, on best ball** (`usesHcp` includes it). A halved hole pays
+      nobody and **nothing carries**.
+    - Points: the wolf's three win → **1 each**; the two he left out win →
+      **3 each**; a lone wolf wins → **8**; a lone wolf loses → **2 to each of
+      the other four**.
+    - The wolf is the **last man to tee off** and rotates: hole `h` belongs to
+      `roster[h % 5]`. Only an override is stored (`holes[h].wolf`), because
+      writing the default into 18 holes is 18 writes saying nothing. 18 over 5
+      isn't whole — the first three are wolf a fourth time — so the wolf is
+      editable on every hole rather than the remainder being a rule.
+    - Who he took is **two fields, not one**: `pack` fills up as names are
+      tapped, so it passes through a half-made state of one man that must not
+      score as a 2v3; `lone` is its own flag because "went alone" and "hasn't
+      decided" are different and an empty `pack` can't say which. `wolfPack()`
+      resolves them to the pair, `[]`, or `null`.
+    - `teamOutcomes` returns **null** — five men on their own points, no sides
+      to hand a W/L to. `standings()` already drops a game whose outcomes are
+      null, so a wolf game can't reach the record even if someone puts one on a
+      sanctioned round. The result's `winner` is a **player id**, not a side
+      code; `winnerLabel` resolves either.
+    - The banner is the one case where the box is **not** a repeat of the card:
+      the hole strip can only say which holes are settled, so the points per man
+      appear nowhere else and the box stays up all round.
+    - Like `counts`, the new per-hole fields are **absent-means-undecided**, so
+      older games read out of Firestore are unaffected and there was no `SCHEMA`
+      bump.
+    - CSV: `WOLF` / `WOLF5` / `5-man Wolf`. A **one-sided** game's names are read
+      and written **straight across** every name cell in the row, because five
+      men don't fit one side's four columns. Both `parseCSV` and `scheduleToCSV`
+      have to agree on that or the roster is lost on a round trip.
 - **Handicaps**: course handicap = `index × slope/113 + (rating − par)`,
   calculated per course and tee. A player's tee is stored per course. A round's
   `mode` is either `RELATIVE` (strokes off the lowest player in the game) or
@@ -187,9 +221,18 @@ Each hole is `{ scores:{pid: n|"PU"}, teamScore:{0..3}, conceded, selected:{0:[]
 
 **Sides are not always two.** `SIDES[g.type]` gives the count, and
 `sides(g)` / `sideCount(g)` / `isMulti(g)` are the only correct way to iterate
-them — `teams` runs 0..3 for a `SCRAMBLE2X4`. Most bugs in this app's history
-are some helper hardcoding `[0,1]` or `locked[0] && locked[1]`; before writing
-either, check whether a four-team game can reach that line.
+them — `teams` runs 0..3 for a `SCRAMBLE2X4` and is a single side of five for
+`WOLF5`. Most bugs in this app's history are some helper hardcoding `[0,1]` or
+`locked[0] && locked[1]`; before writing either, check whether a four-team game
+*or a one-sided one* can reach that line. **`rosterOf(g)` is how you get
+everyone in a game** — `baseline`, `strokesHereLine` and `renderStrokeGrid` all
+spread `teams[0]` and `teams[1]` instead, which was invisible until Wolf became
+the first format with a side count other than two that takes handicaps (R132).
+
+A `WOLF5` hole also carries `wolf`, `pack` and `lone` (see the format notes
+above). It has no `teamScore` and never locks, so anything keyed off `locked`
+has to let it past — `holeComplete`, `currentHoleFor` and the hole strip all
+branch on `isWolf` for exactly that reason.
 
 **Shape rules that are easy to break and are covered by tests:**
 
@@ -279,7 +322,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **167 passed, 0 failed**. The suite is
+Current status against `index.html`: **173 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

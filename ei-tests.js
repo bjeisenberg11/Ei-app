@@ -2862,6 +2862,179 @@ t("R128 a flight goes in by pasting it", () => isolate(() => {
   w.eval("editEvent = null; SYNC.on = false; isAdmin = true; view.tab = 'home'; render();");
 }));
 
+section("Wolf — five men, new teams every hole");
+
+/* Every player on the same index, so net is gross and the points table can be
+   read off the scores. Restored inside the same eval, so nothing leaks. */
+function wolfHole(scores, opts){
+  const o = opts || {};
+  return JSON.parse(dom.window.eval(`(function(){
+    const save = PLAYERS.map(p => p.index);
+    PLAYERS.forEach(p => p.index = 10);
+    try {
+      GAMES.length = 0;
+      const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                  teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles() };
+      Object.assign(g, ${JSON.stringify(o.game || {})});
+      Object.assign(g.holes[0], ${JSON.stringify(o.hole || {})});
+      ${JSON.stringify(scores)}.forEach((v, i) => {
+        if (v != null) g.holes[0].scores[g.teams[0][i]] = v;
+      });
+      GAMES.push(g);
+      const p = wolfHolePoints(g, 0);
+      return JSON.stringify(p && g.teams[0].map(id => p[id]));
+    } finally { PLAYERS.forEach((p, i) => p.index = save[i]); }
+  })()`));
+}
+/* p1 is wolf on hole 0 by rotation; pack of p2+p3 unless a test says otherwise */
+const PACK = { hole:{ pack:["p2","p3"] } };
+const LONE = { hole:{ lone:true } };
+
+t("R129 the wolf points table, exactly as the game is played", () => isolate(() => {
+  eq(wolfHole([4,5,5,6,6], PACK).join(","), "1,1,1,0,0",
+     "wolf's three win the hole, a point each:");
+  eq(wolfHole([6,6,6,4,5], PACK).join(","), "0,0,0,3,3",
+     "the two he left out win, three each — the pack is paid more for being fewer:");
+  eq(wolfHole([4,6,6,5,5], LONE).join(","), "8,0,0,0,0",
+     "a lone wolf who beats the other four takes eight:");
+  eq(wolfHole([6,5,5,5,5], LONE).join(","), "0,2,2,2,2",
+     "and when he loses it's two to each of them:");
+  /* Nothing carries, so a halved hole is simply gone. */
+  eq(wolfHole([4,5,5,4,5], PACK).join(","), "0,0,0,0,0",
+     "level is nothing to anybody:");
+  eq(wolfHole([4,5,5,4,5], LONE).join(","), "0,0,0,0,0",
+     "including a lone wolf who only ties:");
+  /* Only the best ball counts, so the man who blew up costs his side nothing. */
+  eq(wolfHole([4,9,9,5,5], PACK).join(","), "1,1,1,0,0",
+     "it's best net ball, not a total — two wrecked cards don't matter:");
+}));
+
+t("R130 the wolf rotates by tee order, and an override takes the pack with it", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles() };
+    GAMES.push(g);
+    const rot = [0,1,2,3,4,5,14,15,16,17].map(h => wolfOn(g, h));
+    g.holes[0].pack = ["p2","p3"];
+    view.gameId = g.id; view.hole = 0; view.tab = "home"; render();
+    handleClick({ dataset:{ wolf:"0:p4" } });
+    return JSON.stringify({ rot, wolf: wolfOn(g, 0), pack: g.holes[0].pack });
+  })()`));
+  eq(out.rot.slice(0, 6).join(","), "p1,p2,p3,p4,p5,p1",
+     "the wolf is the next man in tee order and wraps at five:");
+  /* Eighteen over five isn't whole, so the first three are wolf a fourth time.
+     That falls out of the rotation rather than being a rule, which is why the
+     wolf is editable on every hole. */
+  eq(out.rot.slice(6).join(","), "p5,p1,p2,p3",
+     "and holes 15-18 carry on rather than stopping at fifteen:");
+  eq(out.wolf, "p4", "an override sticks:");
+  eq(out.pack.length, 0,
+     "and clears the pack, which was picked out of a four he's now left:");
+}));
+
+t("R131 a half-made pack doesn't score, and going alone isn't the same as not deciding",
+  () => isolate(() => {
+  eq(wolfHole([4,5,5,6,6], { hole:{ pack:["p2"] } }), null,
+     "one name tapped is a decision in progress, not a 1+1 against three:");
+  eq(wolfHole([4,5,5,6,6], { hole:{ pack:[] } }), null,
+     "an empty pack is nobody chosen yet, not a lone wolf:");
+  eq(wolfHole([4,5,5,6,6], LONE).join(","), "8,0,0,0,0",
+     "the lone flag is what says he went alone:");
+  eq(wolfHole([4,5,5,6,null], PACK), null,
+     "and a hole with a man still out there can't be settled:");
+  /* PU is a finished hole with no ball, which is different again. */
+  eq(wolfHole([4,"PU","PU",5,5], PACK).join(","), "1,1,1,0,0",
+     "picking up is finished — the wolf's ball still wins it for his three:");
+}));
+
+t("R132 Wolf takes handicaps off one side of five", () => isolate(() => {
+  /* baseline(), strokesHereLine() and renderStrokeGrid() all spread teams[0]
+     and teams[1]. That was invisible while nothing with a side count other
+     than two took handicaps; a one-sided game threw on a side that isn't
+     there. */
+  const o = JSON.parse(dom.window.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles() };
+    GAMES.push(g);
+    const course = courseOf(g);
+    const chs = g.teams[0].map(id => courseHcp(id, course));
+    return JSON.stringify({ usesHcp: usesHcp(g), base: baseline(g),
+      low: Math.min.apply(null, chs), phs: g.teams[0].map(id => playingHcp(id, g)),
+      line: strokesHereLine(g, 0).length > 0, grid: renderStrokeGrid(g, 0).length > 0,
+      roster: rosterOf(g).join(",") });
+  })()`));
+  ok(o.usesHcp, "wolf is played net:");
+  eq(o.roster, "p1,p2,p3,p4,p5", "the roster is the whole one-sided field:");
+  eq(o.base, o.low, "baseline is the lowest course handicap of all five:");
+  eq(Math.min.apply(null, o.phs), 0, "so the lowest man plays off scratch:");
+  ok(o.line && o.grid, "and both stroke readouts draw rather than throwing:");
+}));
+
+t("R133 a wolf game survives the CSV, five names straight across", () => isolate(() => {
+  const w = dom.window;
+  const csv = ["day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4,"
+    + "c1,c2,c3,c4,d1,d2,d3,d4",
+    "Thursday,8:15am,ROUND-CASUAL," + w.eval("JSON.parse(JSON.stringify(COURSES[0].name))")
+      + ",,,Five players",
+    "Thursday,,GAME,,WOLF,,,Blake,Dan,Jason,Daniel,Howard,,,,,,,,,,,"].join("\n");
+  const out = JSON.parse(w.eval(`(function(){
+    const r = parseCSV(${JSON.stringify(csv)});
+    return JSON.stringify({ errs: r.errors, teams: (r.games[0]||{}).teams,
+                            type: (r.games[0]||{}).type });
+  })()`));
+  eq(out.errs.length, 0, "it imports clean: " + out.errs.join(" | "));
+  eq(out.type, "WOLF5", "as a wolf game:");
+  eq((out.teams[0] || []).length, 5, "with all five men on the one side:");
+  /* Both halves of the trip, or it's lost on export the way ROUND notes were. */
+  const back = w.eval(`(function(){
+    const r = parseCSV(${JSON.stringify(csv)});
+    SCHEDULE = r.events; GAMES = r.games; DAYS.length = 0; DAYS.push("Thursday");
+    return scheduleToCSV();
+  })()`);
+  ok(/,GAME,,WOLF5,/.test(back), "and writes back out as a GAME row: " + back.split("\n")[2]);
+  eq(JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(back)})
+      .games[0].teams[0].length)`)), 5,
+     "which re-imports with the same five:");
+}));
+
+t("R134 the wolf card draws, and the pickers are what settle the hole", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles() };
+    GAMES.push(g);
+    isAdmin = true; SYNC.on = false;
+    view.tab = "home"; view.gameId = g.id; view.hole = 0; render();
+  })()`);
+  const html = appHTML();
+  ok(/data-wolf="0:/.test(html), "the wolf picker is on the card:");
+  ok(/data-lone="0"/.test(html), "so is going alone:");
+  eq((html.match(/data-pack="0:/g) || []).length, 4,
+     "and the four men he can take, which is everyone but the wolf:");
+  /* Five steppers, not two teams' worth. */
+  eq((html.match(/data-step="sc-/g) || []).length, 10,
+     "five scores, each with a pair of stepper buttons:");
+  const settled = JSON.parse(w.eval(`(function(){
+    const g = GAMES[0];
+    handleClick({ dataset:{ pack:"0:p2" } });
+    handleClick({ dataset:{ pack:"0:p3" } });
+    g.teams[0].forEach((id, i) => g.holes[0].scores[id] = [4,5,5,6,6][i]);
+    const before = wolfHolePoints(g, 0);
+    handleClick({ dataset:{ pack:"0:p4" } });
+    return JSON.stringify({ before: before && g.teams[0].map(id => before[id]),
+      pack: g.holes[0].pack, done: holeComplete(g, 0) });
+  })()`));
+  eq(settled.before.join(","), "1,1,1,0,0", "two taps make a pack and the hole scores:");
+  eq(settled.pack.join(","), "p3,p4",
+     "a third name pushes out the older of the two rather than being ignored:");
+  ok(settled.done, "and the hole reads as played:");
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
