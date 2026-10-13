@@ -315,8 +315,13 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
   text-transform:uppercase;letter-spacing:.07em;font-size:12px;color:var(--ink-faint)}
 .team-name .teetag{margin-left:6px}
 .pname .dots{color:var(--pencil);font-size:11px;letter-spacing:1px;margin-left:4px}
+/* Two columns, not one right-aligned string. Aligning the pair as a whole let
+   the par text set where the net landed, so "3 −1", "4 E" and "6 +2" each put
+   their first number in a different place and no column read down the block.
+   Baseline, because the two are different sizes. */
 .pnet{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
-  width:58px;text-align:right;flex:none;line-height:1.25}
+  width:58px;text-align:right;flex:none;line-height:1.25;
+  display:flex;justify-content:flex-end;align-items:baseline;gap:5px}
 .pnet .adj{color:var(--pencil);font-weight:600}
 /* Names the two numbers once per block instead of on every row. The hidden PU
    holds the column open so the label lands exactly over .pnet rather than
@@ -328,8 +333,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 /* Hidden, but still the width of a PU button. Its height and border have to go
    as well or it props the caption open to the height of a real score row. */
 .prow-cap .pu{visibility:hidden;height:0;border:none;overflow:hidden}
-.pnet .net{color:var(--ink);font-weight:600;font-size:13px}
-.pnet .par{font-size:11px;font-weight:600}
+.pnet .net{color:var(--ink);font-weight:600;font-size:13px;width:17px;text-align:right}
+.pnet .par{font-size:11px;font-weight:600;width:20px;text-align:right}
 .pnet .par.under{color:var(--pencil)}
 .pnet .par.over{color:var(--ink-faint)}
 .pnet .par.even{color:var(--ink-soft)}
@@ -1793,7 +1798,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2145";
+const BUILD = "2026-10-12.2155";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
