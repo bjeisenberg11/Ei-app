@@ -3490,6 +3490,33 @@ t("R142 a games-list card scores each side on its own row, and never says 'X's t
      "as does any game not started:");
 }));
 
+t("R143 a flight links out to its live status", () => isolate(() => {
+  const w = dom.window;
+  const url = (title, type) => w.eval(`flightTrackUrl(${JSON.stringify({ type: type || "TRAVEL", title })})`);
+  /* FlightAware's canonical ident is ICAO + number: UAL2137, not UA2137. */
+  eq(url("United 2137"), "https://www.flightaware.com/live/flight/UAL2137", "the form's titles:");
+  eq(url("Southwest 1442"), "https://www.flightaware.com/live/flight/SWA1442", "every airline mapped:");
+  eq(url("Sun Country 401"), "https://www.flightaware.com/live/flight/SCX401", "two-word names too:");
+  eq(url("UA2137"), "https://www.flightaware.com/live/flight/UAL2137", "a pasted code with no space:");
+  eq(url("B6 123"), "https://www.flightaware.com/live/flight/JBU123", "a code with a digit in it:");
+  ok(/^https:\/\/www\.google\.com\/search\?q=Breeze%20410/.test(url("Breeze 410")) === false
+     && /flightaware.*MXY410/.test(url("Breeze 410")), "Breeze is mapped as well");
+  ok(/^https:\/\/www\.google\.com\/search\?q=Avelo%20212/.test(url("Avelo 212")),
+     "an airline outside the list falls back to Google's flight status");
+  eq(url("driving down with Jason"), null, "no flight number, no link:");
+  eq(url("United 2137", "MEAL"), null, "and only on a flight:");
+
+  w.eval(`SYNC.on = false; isAdmin = true; view.gameId = null; view.tab = "sched";
+          schedMode = "travel"; editEvent = null;
+          SCHEDULE.push({ id:"tz1", type:"TRAVEL", dir:"ARRIVAL", day: DAYS[0], time:"14:57",
+            pid: PLAYERS[0].id, title:"United 2137", notes:"" });
+          render();`);
+  const a = document.querySelector('a.track[href*="UAL2137"]');
+  ok(a, "the card carries a Track link");
+  eq(a.getAttribute("target"), "_blank", "which opens outside the app, so the app stays where it was:");
+  w.eval(`view.tab = "home"; render();`);
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

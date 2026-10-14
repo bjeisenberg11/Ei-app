@@ -615,6 +615,9 @@ input.cc.bad{background:var(--pencil);color:var(--paper)}
   letter-spacing:.1em;font-size:11px;padding:9px 13px;cursor:pointer;min-height:36px}
 .chip.edit{border-color:var(--ink)}
 .chip.del{border-color:var(--pencil);color:var(--pencil)}
+/* A link that looks like its neighbours, so a flight's actions read as one row. */
+a.chip.track{text-decoration:none;display:inline-flex;align-items:center;
+  border-color:var(--ink)}
 .chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .addev{font-size:11px;padding:11px 8px}
 .dayclear{font-size:11px;padding:11px 8px;color:var(--pencil);border-color:var(--pencil)}
@@ -1993,7 +1996,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.1100";
+const BUILD = "2026-10-14.1730";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3540,6 +3543,39 @@ const EVMETA = {
    Everything else on the schedule stays admin-only. */
 const canEdit = e => !SYNC.on || isAdmin || (e && e.type === "TRAVEL");
 
+/* ---------- a flight's live status, one tap away ----------
+   Not a tracker built in: live status needs a paid flight-data service, and
+   with no server behind this page its key would sit in the source for anyone
+   with the link. So a flight card links out to FlightAware, which is the real
+   tracker, for whichever flight it is.
+
+   FlightAware's canonical ident is the ICAO airline code plus the number —
+   UAL2137, not UA2137 — so the airlines the form offers, and the ones the
+   paste box recognises, are mapped here. Anything else (an "Other" airline)
+   falls back to Google's flight-status search, which is just as good on a
+   phone. A title with no flight number in it gets no link at all, rather than
+   one that opens a search for "driving down with Jason". */
+const AIRLINE_ICAO = { united:"UAL", american:"AAL", delta:"DAL", southwest:"SWA",
+  alaska:"ASA", jetblue:"JBU", spirit:"NKS", frontier:"FFT", allegiant:"AAY",
+  hawaiian:"HAL", "sun country":"SCX", breeze:"MXY", "air canada":"ACA" };
+function flightTrackUrl(e){
+  if (!e || e.type !== "TRAVEL") return null;
+  const t = String(e.title || "").trim();
+  /* "UA2137" / "B6 123" — a two-character code the paste box knows */
+  let m = /^([A-Z0-9]{2})\s?(\d{1,4})\b/i.exec(t);
+  let name = m && AIRLINES[m[1].toUpperCase()];
+  let num = name ? m[2] : null;
+  /* "United 2137", "Sun Country 401", "Breeze 410" */
+  if (!name){
+    m = /^(.*?[A-Za-z])\s*(\d{1,4})\b/.exec(t);
+    if (!m) return null;
+    name = m[1].trim(); num = m[2];
+  }
+  const icao = AIRLINE_ICAO[name.toLowerCase()];
+  return icao ? `https://www.flightaware.com/live/flight/${icao}${num}`
+    : "https://www.google.com/search?q=" + encodeURIComponent(`${name} ${num} flight status`);
+}
+
 function eventCard(e, ro, showDay){
   ro = ro && !canEdit(e);
   const m = EVMETA[e.type] || EVMETA.OTHER;
@@ -3568,6 +3604,7 @@ function eventCard(e, ro, showDay){
       e.location && e.type === "ROUND" ? " \u00b7 " + esc(e.location) : ""}${
       e.notes ? " \u00b7 " + esc(e.notes) : ""}</div>
     <div class="ev-acts">
+      ${(u => u ? `<a class="chip track" href="${esc(u)}" target="_blank" rel="noopener">Track \u2197</a>` : "")(flightTrackUrl(e))}
       ${games.map(g => `<button class="chip" data-game="${g.id}"
           data-jumphole="${currentHoleFor(g)}">${LABEL[g.type]} \u2192</button>`).join("")}
       ${ro ? "" : `<button class="chip edit" data-editev="${e.id}">Edit</button>

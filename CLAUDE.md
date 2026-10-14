@@ -188,6 +188,13 @@ The app covers:
     open the event: there's nothing left to correct.
   - The old "Enter it by hand" button (the generic event editor) is gone; an
     existing flight still opens that editor when tapped.
+  - **Track ↗** on every flight card links out to its live status
+    (`flightTrackUrl`). Not a tracker built in: live status needs a paid
+    flight-data service, and with no server its key would sit in the page
+    source. FlightAware's canonical ident is **ICAO** + number (`UAL2137`, not
+    `UA2137`), hence `AIRLINE_ICAO`; an airline outside it falls back to
+    Google's flight-status search, and a title with no flight number gets no
+    link at all (R143). It opens in a new tab so the app stays put.
   - `parseFlight(text)` reads a confirmation line — airline and number,
   both airports, both times, the day — and `flightNotes` builds the route line
   from whatever it recognised. It never rejects anything: an unreadable paste
@@ -396,7 +403,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **181 passed, 0 failed**. The suite is
+Current status against `index.html`: **182 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
