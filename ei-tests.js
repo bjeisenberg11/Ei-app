@@ -3517,6 +3517,39 @@ t("R143 a flight links out to its live status", () => isolate(() => {
   w.eval(`view.tab = "home"; render();`);
 }));
 
+t("R144 a casual 3v3 leaves the standings, and the Board says which round it was", () => isolate(() => {
+  const w = dom.window;
+  /* Saturday has two rounds at the same course; only the afternoon 3v3 is
+     casual. Named by course alone the footnote couldn't say which. */
+  const o = JSON.parse(w.eval(`(function(){
+    const c = COURSES[0];
+    SCHEDULE = [
+      { id:"ra", type:"ROUND", day:"Saturday", time:"09:45", courseId:c.id },
+      { id:"rb", type:"ROUND", day:"Saturday", time:"14:30", courseId:c.id, counts:false } ];
+    DAYS.length = 0; DAYS.push("Saturday");
+    GAMES = [
+      { id:"bb", roundId:"ra", type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes:blankHoles() },
+      { id:"s3", roundId:"rb", type:"SCRAMBLE3", teams:{0:["p1","p5","p6"],1:["p2","p7","p8"]}, holes:blankHoles() } ];
+    for (let h = 0; h < 18; h++) GAMES[1].holes[h].teamScore = {0:3, 1:5};
+    const done = !!gameResult(GAMES[1]);
+    const st = standings();
+    const p5 = (Array.isArray(st) ? st.find(r => r.id === "p5") : st.p5) || {};
+    isAdmin = true; SYNC.on = false; view.gameId = null; view.tab = "board"; boardMode = "year"; render();
+    return JSON.stringify({ done, p5gp: p5.gp || 0, p5w: p5.w || 0,
+      foot: document.getElementById("app").innerHTML });
+  })()`));
+  ok(o.done, "the 3v3 is finished and has a winner:");
+  eq(o.p5w, 0, "but the win doesn't reach the standings:");
+  eq(o.p5gp, 0, "nor does the game count as played:");
+  ok(/Casual rounds \(Saturday 2:30pm /.test(o.foot),
+     "and the Board names the afternoon round, not just the course: "
+     + ((/Casual rounds \([^)]*\)/.exec(o.foot) || [""])[0]));
+  ok(!/Saturday 9:45am/.test((/Casual rounds \([^)]*\)/.exec(o.foot) || [""])[0]),
+     "leaving the morning round out of that list:");
+  ok(!/3v3\s+sits two players out/.test(o.foot), "and nothing claims the 3v3 counts");
+  w.eval(`view.tab = "home"; render();`);
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

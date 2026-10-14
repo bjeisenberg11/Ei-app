@@ -1996,7 +1996,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.1730";
+const BUILD = "2026-10-14.1735";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3211,11 +3211,15 @@ function renderBoard(){
   });
   h += `</tbody></table>
   <textarea id="exportbox" readonly style="display:none"></textarea>
-  <div class="footnote">Win 1 point, tie 0.5, loss 0. Games played is shown because the 3v3
-  sits two players out, so records are not expected to be even.<br>${
+  <div class="footnote">Win 1 point, tie 0.5, loss 0. Games played is shown because not
+  every man plays every game, so records aren't expected to be even.<br>${
+    /* Named by day and time as well as course: two rounds at the same course
+       on one day ("Rookery at Marco", twice on Saturday) were otherwise the
+       same words, and the note couldn't say which one was left out. */
     ROUNDS().some(r => !roundCounts(r))
-      ? `Casual rounds (${ROUNDS().filter(r => !roundCounts(r)).map(r => esc(eventName(r)))
-          .join(", ")}) are left out of this table entirely \u2014 they're on the Games tab and
+      ? `Casual rounds (${ROUNDS().filter(r => !roundCounts(r)).map(r =>
+          esc([r.day, r.time ? fmtTime(r.time) : "", eventName(r)].filter(Boolean).join(" "))
+        ).join(", ")}) are left out of this table entirely \u2014 they're on the Games tab and
          scored normally, they just aren't EI rounds.<br>` : ""}
   <b>Export</b> copies every score entered so far as plain text \u2014 worth doing at the end of
   each round as a backup.</div>`;
@@ -4612,8 +4616,8 @@ function renderHistory(){
 
   h += `<div class="footnote">Years the app scored are computed from their own games and
     can't be edited here. Earlier years are typed in from whatever records exist.<br>
-    <b>Win%</b> counts a tie as half a win and divides by games played, so sitting out the
-    3v3 neither helps nor hurts.</div>`;
+    <b>Win%</b> counts a tie as half a win and divides by games played, so sitting a game
+    out neither helps nor hurts.</div>`;
   app.innerHTML = h;
 }
 

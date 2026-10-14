@@ -144,7 +144,11 @@ The app covers:
   on the schedule and scored like any other, but **excluded from `standings()`
   and `pairMatrix()`** — not as a win, not as a loss, not even as a game played,
   since counting a played game with no result would drag win% down. 2026's
-  Thursday-morning fivesome at Hammock Bay is the case it exists for.
+  Thursday-morning fivesome at Hammock Bay is the case it exists for, and the
+  Saturday-afternoon 3v3 at the Rookery is casual too (R144).
+  - The Board's footnote names casual rounds by **day, time and course**,
+    because two rounds can share a course on one day — Saturday has two at the
+    Rookery — and "Rookery at Marco" alone couldn't say which was left out.
   - **Absent means sanctioned** (`roundCounts = r => !r || r.counts !== false`),
     so rounds from older builds and every past year read out of Firestore keep
     their records. That's why there was no `SCHEMA` bump.
@@ -403,7 +407,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **182 passed, 0 failed**. The suite is
+Current status against `index.html`: **183 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
