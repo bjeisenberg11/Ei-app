@@ -191,6 +191,8 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hg-tot{width:42px;flex:none;position:sticky;right:0;z-index:2;background:var(--paper-3);
   font-weight:700;cursor:default;border-left:1px solid var(--rule)}
 .hg-lab.hg-corner{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
+/* A side of three or four, two names a line — see gridName. */
+.hg-nm{display:flex;flex-direction:column;line-height:1.15;min-width:0}
 /* What the hole was worth, under what was scored on it. Small on purpose: the
    score is what's being read hole to hole, the skins are the running argument. */
 /* Two slots in a cell: the number the game is decided on leads, whatever is
@@ -1991,7 +1993,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.1045";
+const BUILD = "2026-10-14.1100";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4588,6 +4590,22 @@ function renderHistory(){
 
    A side of more than two uses sideName, so a 4v4's row is "Blake's team"
    rather than four names that would set the label column by the longest one. */
+/* A side's name for the grid's narrow left-hand column. A pair fits on one
+   line. A bigger side used to be "Adam's team" — sideName's answer to a label
+   that won't fit — which credited one man with the other three. Now every man
+   is named, two to a line in the column's small capitals: "Adam, Howard," over
+   "Blake & Dan", or "Blake, Adam" over "& Jake" for a 3v3. The row grows a
+   line taller, which is the price of nobody being left off. */
+function gridName(g, t){
+  const names = (g.teams[t] || []).map(id => (P(id) || {}).name).filter(Boolean);
+  if (names.length <= 2) return esc(teamLabel(g, t));
+  const top = names.slice(0, 2), rest = names.slice(2);
+  const second = rest.length === 1 ? "& " + rest[0]
+    : rest.slice(0, -1).join(", ") + " & " + rest[rest.length - 1];
+  return `<span class="hg-nm"><span>${esc(top.join(", "))}${rest.length > 1 ? "," : ""} </span><span>${
+    esc(second)}</span></span>`;
+}
+
 function holeGrid(g){
   const ix = sides(g), course = courseOf(g), sk = isSkins(g);
   /* Precomputed once: holeSkins walks every side, so calling it per cell would
@@ -4630,7 +4648,7 @@ function holeGrid(g){
     o += `<div class="hg-row" data-side="${t}" data-key="${esc(g.id)}:${t}">`;
     o += `<span class="hg-lab">${anyPlay
       ? `<span class="hg-rk${rankOf(t) <= through && isMulti(g) ? " in" : ""}">${
-          rankOf(t)}</span>` : ""}${esc(sideName(g, t))}</span>`;
+          rankOf(t)}</span>` : ""}${gridName(g, t)}</span>`;
     let tot = 0, any = false;
     for (let i = 0; i < 18; i++){
       const v = g.holes[i].teamScore[t];

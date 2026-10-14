@@ -2726,8 +2726,9 @@ t("R126 nothing on a grid is labelled with a truncated name", () => isolate(() =
   ok(/th\.pmn span\{[^}]*writing-mode:\s*vertical/.test(html),
      "the headings need to be turned on their side to fit");
 
-  /* Same rule on the scorecard: a side of two is named in full, and a side too
-     big to name gets sideName's "X's team" rather than a chopped list. */
+  /* Same rule on the scorecard: every man on a side is named. A side of four
+     used to be "Adam's team", which credited one man with the other three; it
+     is now all four, two to a line. */
   w.eval(`(function(){
     GAMES.length = 0;
     GAMES.push({ id:"g4v4", roundId: ROUNDS()[0].id, type:"SCRAMBLE4",
@@ -2736,10 +2737,14 @@ t("R126 nothing on a grid is labelled with a truncated name", () => isolate(() =
   })()`);
   const labs = [...document.querySelectorAll(".hg-lab")].slice(1).map(x => x.textContent.trim());
   eq(labs.length, 2, "a 4v4 gets a row per side:");
+  const sideNames = JSON.parse(w.eval(`JSON.stringify([0,1].map(t =>
+    GAMES[0].teams[t].map(id => P(id).name)))`));
   labs.forEach((l,i) => {
-    eq(l, w.eval(`sideName(GAMES[0], ${i})`), "the side's name, whole:");
+    sideNames[i].forEach(n => ok(l.includes(n), "every man on the side is named — " + n + " in: " + l));
+    ok(!/'s team/.test(l), "and nobody is the team's namesake: " + l);
     ok(!/\.\.\.|…/.test(l), "and never an ellipsis: " + l);
   });
+  ok(document.querySelectorAll(".hg-lab .hg-nm").length === 2, "two lines to a side of four");
   ok(document.querySelector(".hgwrap"), "the 4v4 card is the same scrolling strip");
 }));
 

@@ -476,8 +476,10 @@ about, because they fail for reasons that aren't about the code you just wrote:
   say made those cells two lines and the rest one, so numbers sat at different
   heights along a row.
 - **Nothing on a grid is labelled with a truncated name** (R126). A row is
-  `sideName(g, t)`, which gives both names for a pair and "Blake's team" for a
-  side too big to name. The pairings matrix headings are whole names turned
+  `gridName(g, t)`: both names for a pair, and for a side of three or four
+  every man, two to a line in the column's small capitals ("Adam, Howard," over
+  "Blake & Dan"). It used to be "Blake's team", which credited one man with
+  the other three. The pairings matrix headings are whole names turned
   vertical (`th.pmn span`, `writing-mode:vertical-rl` plus a 180° rotate) —
   four letters made Dan and Daniel the same column while the row labels beside
   them were full names, so the two halves of the grid disagreed about who was
@@ -507,7 +509,8 @@ about, because they fail for reasons that aren't about the code you just wrote:
   reads the **shown** numbers only, so a sealed hole stays sealed here too.
   - The scorecard's sibling-game ticker (`renderOtherBug`) still uses the
     one-line `gameStatusLabel`, because a ticker is one line — so "X's team"
-    can still appear there.
+    can still appear there, for a round holding a 3v3 or 4v4 alongside
+    another game. 2026 has no such round.
 - **Rules behind an (i).** `gameRules(g)` explains each format in plain
   bullets; a small `#rulesbtn` after the game's name in the header opens it at
   the top of the card. The (i) is glued to the last word of the name (`.nw`),
