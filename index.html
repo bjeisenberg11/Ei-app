@@ -630,6 +630,29 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
 /* Number and time side by side: both short, and together they're the flight. */
 .fa-pair{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .fa-pair .fin{margin-bottom:0;height:44px}
+/* iOS gives a time box a minimum width of its own, and a grid column lets a
+   child's minimum win — so on the owner's iPhone the box ran out past the
+   card, and drew taller than the number box beside it. min-width:0 on the
+   column lets it shrink; appearance:none hands size back to us. Tapping it
+   still opens the wheel: appearance only changes how it's drawn. */
+.fa-pair > div{min-width:0}
+.fa-tw{position:relative;display:block}
+input.fa-time{-webkit-appearance:none;appearance:none;display:block;width:100%;
+  min-width:0;max-width:100%;box-sizing:border-box;line-height:22px;text-align:left;
+  font-family:'IBM Plex Mono',monospace}
+input.fa-time::-webkit-date-and-time-value{text-align:left}
+/* An empty time box on iOS shows nothing at all — no placeholder, just a
+   blank rectangle. "required" makes an empty one :invalid, which is the only
+   handle CSS gets on "has no value", so the prompt needs no script and no
+   redraw (redrawing would shut the wheel). */
+.fa-ph{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  pointer-events:none;color:var(--ink-faint);font-size:15px}
+input.fa-time:valid + .fa-ph{display:none}
+/* Other browsers do draw something in an empty time box (Chrome's "--:-- --"),
+   which showed through the prompt like a strikethrough. Hide it while empty
+   and unfocused; once you're in it, its own segments are what you need. */
+input.fa-time:invalid:not(:focus)::-webkit-datetime-edit{color:transparent}
+input.fa-time:focus + .fa-ph{display:none}
 .flightadd .lnk{background:none;border:none;padding:0;color:var(--ink-soft);
   text-decoration:underline;font:inherit;cursor:pointer}
 /* Tees per team, for a 2v2v2v2 levelled by the boxes rather than by handicaps.
@@ -1859,7 +1882,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.0730";
+const BUILD = "2026-10-14.0800";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3266,8 +3289,9 @@ function flightForm(dir){
           inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="2137"
           value="${esc(d.num || "")}"></div>
       <div><label class="fa-l" for="fdt-${dir}">${lands ? "Lands" : "Takes off"}</label>
-        <input type="time" class="fin fa-time" id="fdt-${dir}" data-fd="${dir}:time"
-          value="${esc(d.time || "")}"></div>
+        <label class="fa-tw"><input type="time" class="fin fa-time" id="fdt-${dir}"
+          data-fd="${dir}:time" required value="${esc(d.time || "")}"><span
+          class="fa-ph">Tap to set</span></label></div>
     </div>
     <label class="fa-l">Day</label>
     <div class="fa-row">${DAYS.map(x =>

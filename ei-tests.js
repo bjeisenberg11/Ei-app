@@ -3314,6 +3314,15 @@ t("R140 a flight goes in as airline, number and time", () => isolate(() => {
   ok(!/<select/.test(q(".flightadd").outerHTML), "and no native dropdown anywhere in the form");
   ok(q('#fdt-ARRIVAL[type="time"]'), "the time is the native wheel:");
   ok(q('#fdn-ARRIVAL[inputmode="numeric"]'), "and the number box brings up the number pad:");
+  /* iOS drew the empty time box as a blank rectangle, taller than the number
+     box and running out past the card. jsdom has no layout to measure, so the
+     three fixes are pinned at the source. */
+  ok(/\.fa-pair > div\{min-width:0\}/.test(html),
+     "the grid column must be allowed to shrink, or iOS's time box pushes out of the card");
+  ok(/input\.fa-time\{-webkit-appearance:none;appearance:none/.test(html),
+     "the time box drops iOS's own sizing, so it takes the height and width given");
+  ok(q("#fdt-ARRIVAL[required] + .fa-ph"),
+     "and an empty one says 'Tap to set' — iOS shows nothing at all in an empty time box");
 
   /* Nothing chosen yet: it says what's missing rather than making a blank. */
   const before = w.eval("SCHEDULE.length");
