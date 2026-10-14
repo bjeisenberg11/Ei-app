@@ -864,9 +864,12 @@ t("R57 the built-in history matches the source it came from", () => {
     w.eval(`HIST.years = {}; Object.keys(HISTORY_SEED).forEach(y =>
       HIST.years[y] = { source:"recorded", rows: HISTORY_SEED[y].rows });`);
     const all = JSON.parse(w.eval("JSON.stringify(allTime())"));
+    /* The sheet's totals less the two 3v3s (2024 and 2025), which aren't EI
+       games: Blake, Jake and Adam a win and a game fewer each year, Daniel, Dan
+       and Jason a loss and a game fewer. Howard and Luke never played it. */
     const sheet = {
-      Blake:"13-7-1-21", Dan:"12-8-1-21", Adam:"11-10-0-21", Jason:"10-11-0-21",
-      Daniel:"8-12-1-21", Luke:"8-9-2-19", Howard:"8-8-3-19", Jake:"5-9-0-14",
+      Blake:"11-7-1-19", Dan:"12-6-1-19", Adam:"9-10-0-19", Jason:"10-9-0-19",
+      Daniel:"8-10-1-19", Luke:"8-9-2-19", Howard:"8-8-3-19", Jake:"3-9-0-12",
       Gabe:"2-3-2-7"
     };
     eq(all.length, Object.keys(sheet).length, "every player in the sheet should appear:");
@@ -884,8 +887,9 @@ t("R57 the built-in history matches the source it came from", () => {
        "2022 should be Blake outright:");
     eq(w.eval('JSON.stringify(yearWinners(HISTORY_SEED["2024"].rows))'), '["Daniel"]',
        "2024 should be Daniel outright:");
-    eq(w.eval('JSON.stringify(yearWinners(HISTORY_SEED["2025"].rows))'), '["Adam"]',
-       "2025 should be Adam outright:");
+    /* Adam's 2025 was 4-1 with the 3v3 in it; without it he's 3-1, level. */
+    eq(w.eval('JSON.stringify(yearWinners(HISTORY_SEED["2025"].rows))'), '["Adam","Dan","Howard"]',
+       "2025 is a three-way tie once the 3v3 is out:");
     eq(w.eval('yearWinners(HISTORY_SEED["2021"].rows).length'), 4, "2021 was a four-way tie:");
     eq(w.eval('yearWinners(HISTORY_SEED["2023"].rows).length'), 3, "2023 was a three-way tie:");
   } finally {

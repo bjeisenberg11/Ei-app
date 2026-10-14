@@ -1623,7 +1623,8 @@ function standings(){
 }
 
 /* The EIs played before this app existed, read off Blake's groupings sheet and
-   checked against its own "through 2025" totals — every player reconciles.
+   checked against its own "through 2025" totals — every player reconciles,
+   less the two 3v3 scrambles (see 2024 and 2025 below).
    Written to the database once, on the first run that finds no history there;
    after that the stored copy is the record and this is never consulted again,
    so editing a year in the app sticks. */
@@ -1658,25 +1659,32 @@ const HISTORY_SEED = {
     {name:"Daniel",w:1,l:3,t:0,gp:4},
     {name:"Jake",w:0,l:4,t:0,gp:4}
   ]},
+  /* 2024 and 2025 have the 3v3 scramble taken out. It was always Blake, Jake
+     and Adam against Daniel, Dan and Jason, played those two years only, and
+     Blake's three won both — so each year is one win off each of them and one
+     loss off each of the others, a game fewer for all six. It isn't an EI
+     game, and Howard and Luke never had the chance to play it, which is why
+     their games-played already ran one short. Taking it out cost Adam his
+     outright 2025: 4-1 became 3-1, level with Dan and Howard. */
   "2024": { rows: [
-    {name:"Daniel",w:4,l:1,t:0,gp:5},
-    {name:"Jake",w:3,l:2,t:0,gp:5},
-    {name:"Dan",w:3,l:2,t:0,gp:5},
-    {name:"Blake",w:2,l:3,t:0,gp:5},
-    {name:"Jason",w:2,l:3,t:0,gp:5},
-    {name:"Adam",w:2,l:3,t:0,gp:5},
+    {name:"Daniel",w:4,l:0,t:0,gp:4},
+    {name:"Dan",w:3,l:1,t:0,gp:4},
+    {name:"Jake",w:2,l:2,t:0,gp:4},
+    {name:"Jason",w:2,l:2,t:0,gp:4},
     {name:"Luke",w:2,l:2,t:0,gp:4},
+    {name:"Blake",w:1,l:3,t:0,gp:4},
+    {name:"Adam",w:1,l:3,t:0,gp:4},
     {name:"Howard",w:1,l:3,t:0,gp:4}
   ]},
   "2025": { rows: [
-    {name:"Adam",w:4,l:1,t:0,gp:5},
+    {name:"Adam",w:3,l:1,t:0,gp:4},
     {name:"Howard",w:3,l:1,t:0,gp:4},
-    {name:"Dan",w:3,l:2,t:0,gp:5},
-    {name:"Blake",w:3,l:2,t:0,gp:5},
-    {name:"Jake",w:2,l:3,t:0,gp:5},
+    {name:"Dan",w:3,l:1,t:0,gp:4},
+    {name:"Blake",w:2,l:2,t:0,gp:4},
     {name:"Luke",w:2,l:2,t:0,gp:4},
-    {name:"Jason",w:1,l:4,t:0,gp:5},
-    {name:"Daniel",w:1,l:4,t:0,gp:5}
+    {name:"Jason",w:1,l:3,t:0,gp:4},
+    {name:"Daniel",w:1,l:3,t:0,gp:4},
+    {name:"Jake",w:1,l:3,t:0,gp:4}
   ]},
 };
 
@@ -1996,7 +2004,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.1735";
+const BUILD = "2026-10-14.1750";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -6164,7 +6172,12 @@ function handleClick(el){
         + (errs.length === 1 ? "" : "s") + " — " + errs.slice(0,3).join("; "));
     }
     if (!names.length){ histPlan = null; return say("bad", "Nothing to read yet."); }
-    const clash = names.filter(y => YEARS.includes(y));
+    /* Refused only where the app really has that year's games. A year that's
+       registered but was never scored here shows its typed-in record, so it
+       has to be correctable the same way. Until history has loaded, go by
+       the registry as before. */
+    const clash = names.filter(y => HIST.loadedAt
+      ? (HIST.years[y] || {}).source === "played" : YEARS.includes(y));
     if (clash.length){
       histPlan = null;
       return say("bad", clash.join(", ") + (clash.length === 1 ? " was" : " were")

@@ -158,7 +158,15 @@ The app covers:
   - The flag is on the **round**, never the game: a round can hold several games
     and it's the round that is or isn't part of the tournament.
 - **Board tab**: the leaderboard for the year (W/L/T, ranked on points) and
-  a **History** view. History combines years the app scored with years from
+  a **History** view. The 3v3 scramble is **not an EI game in any year**: the
+  2024 and 2025 records (`HISTORY_SEED`, and the live `_history` doc, which
+  is corrected through the History paste box, never by code) have it taken out
+  — Blake/Jake/Adam a win and a game fewer each year, Daniel/Dan/Jason a loss
+  and a game fewer. That made 2025 a three-way tie (Adam, Dan, Howard at 3-1)
+  where it had been Adam outright. The paste box refuses a year only when the
+  app really has that year's games (`source === "played"`), not merely
+  because the year is registered.
+  History combines years the app scored with years from
   before the app (`HISTORY_SEED`) and ranks all-time records by win percentage.
   History needs no special casing for the above: `recordsFor` runs `standings()`
   inside `withYearData`, which swaps `SCHEDULE` in, so the round lookup resolves
