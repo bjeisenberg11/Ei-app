@@ -396,7 +396,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **180 passed, 0 failed**. The suite is
+Current status against `index.html`: **181 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -496,6 +496,18 @@ about, because they fail for reasons that aren't about the code you just wrote:
   roster editor still shows every player's tee, which is where sides are
   picked and where it matters.
 
+- **The games-list card is a little scoreboard** (`gameBoard(g)`): a row per
+  side with its own number, the leader in bold, and a line under it for
+  progress only ("thru 5", "4/40 · 3/40"). The status used to be one sentence,
+  which had to name a side — and for three or four men the only short name was
+  the first man's, so "Howard's team −7" credited one man with a four-man side
+  (R142). Two-sided games keep side order; four teams and Wolf's five sort into
+  standings. Best ball puts "2 UP" beside the pair it belongs to. Before
+  anything's scored the card keeps the plain names and "Not started". 40ball
+  reads the **shown** numbers only, so a sealed hole stays sealed here too.
+  - The scorecard's sibling-game ticker (`renderOtherBug`) still uses the
+    one-line `gameStatusLabel`, because a ticker is one line — so "X's team"
+    can still appear there.
 - **Rules behind an (i).** `gameRules(g)` explains each format in plain
   bullets; a small `#rulesbtn` after the game's name in the header opens it at
   the top of the card. The (i) is glued to the last word of the name (`.nw`),

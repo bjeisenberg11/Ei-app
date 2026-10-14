@@ -3207,8 +3207,9 @@ t("R138 40ball reveals a hole only once both sides have locked it", () => isolat
       takenA: (/Taken this hole <b>([^<]+)<\\/b>/.exec(card) || [])[1],
       sealedNote: /sealed until/.test(card),
       bannerSpent: (/40ball \\u00b7 (\\d+)\\/40 and (\\d+)\\/40/.exec(card) || []).slice(1).join("/"),
-      listSpent: (/(\\d+)\\/40 &amp; (\\d+)\\/40|(\\d+)\\/40 & (\\d+)\\/40/.exec(list) || [])
-        .slice(1).filter(Boolean).join("/"),
+      /* The card is a little scoreboard now; progress reads "2/40 \u00b7 3/40". */
+      listSpent: (/(\\d+)\\/40 \u00b7 (\\d+)\\/40/.exec(list) || [])
+        .slice(1).join("/"),
       budgetR: fbBudget(g, 0, 1).R,
       revealed: fbRevealed(g, 0)
     });
@@ -3418,6 +3419,70 @@ t("R141 every game explains itself behind a small (i), and only when asked", () 
 
   w.eval(`rulesOpen = null; view.gameId = null; view.tab = "home"; render();`);
   ok(!document.getElementById("rulesbtn"), "leaving the game takes the (i) with it");
+}));
+
+t("R142 a games-list card scores each side on its own row, and never says 'X's team'", () => isolate(() => {
+  const w = dom.window;
+  /* "Howard's team −7, leads by 6" credited one man with a four-man side. Each
+     side now gets a row with its own number, so no side needs a nickname. */
+  const html = w.eval(`(function(){
+    const r = ROUNDS()[0].id, co = courseOf(GAMES[0]), par = h => co.holes[h].par;
+    GAMES.length = 0;
+    const fb = { id:"gf", roundId:r, type:"FORTYBALL",
+      teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes:blankHoles() };
+    for (let h = 0; h < 2; h++){
+      fb.teams[0].forEach(id => fb.holes[h].scores[id] = par(h) - 1);
+      fb.teams[1].forEach(id => fb.holes[h].scores[id] = par(h) + 1);
+      fb.holes[h].selected = {0: fb.teams[0].slice(0,2), 1: fb.teams[1].slice(0,2)};
+      fb.holes[h].locked = {0:true,1:true,2:false,3:false};
+    }
+    const s4 = { id:"g4", roundId:r, type:"SCRAMBLE4",
+      teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes:blankHoles() };
+    s4.holes[0].teamScore = {0: par(0) - 1, 1: par(0)};
+    const sk = { id:"gk", roundId:r, type:"SCRAMBLE2X4", skins:true,
+      teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes:blankHoles() };
+    sk.holes[0].teamScore = {0:4,1:5,2:5,3:5};
+    const bb = { id:"gb", roundId:r, type:"BESTBALL",
+      teams:{0:["p1","p2"],1:["p3","p4"]}, holes:blankHoles() };
+    ["p1","p2"].forEach(id => bb.holes[0].scores[id] = 3);
+    ["p3","p4"].forEach(id => bb.holes[0].scores[id] = 6);
+    const wf = { id:"gw", roundId:r, type:"WOLF5",
+      teams:{0:["p1","p2","p3","p4","p5"]}, holes:blankHoles() };
+    const fresh = { id:"gn", roundId:r, type:"SCRAMBLE3",
+      teams:{0:["p1","p2","p3"],1:["p4","p5","p6"]}, holes:blankHoles() };
+    GAMES.push(fb, s4, sk, bb, wf, fresh);
+    isAdmin = true; SYNC.on = false; homeShowAll = true;
+    view.gameId = null; view.tab = "home"; render();
+    return document.getElementById("app").innerHTML;
+  })()`);
+  ok(!/'s team/.test(html), "no card calls a side by one man's name");
+  const card = id => {
+    const d = document.createElement("div"); d.innerHTML = html;
+    return d.querySelector('[data-game="' + id + '"]');
+  };
+  const rows = id => [...card(id).querySelectorAll(".gb-row")];
+
+  eq(rows("gf").length, 2, "40ball: a row per team:");
+  ok(rows("gf")[0].classList.contains("lead") && /-\d/.test(rows("gf")[0].textContent),
+     "the team under par leads, with its number beside it: " + rows("gf")[0].textContent);
+  ok(/4\/40 · 4\/40/.test(card("gf").textContent),
+     "and progress underneath — two holes at two scores each: " + card("gf").textContent);
+
+  eq(rows("g4").length, 2, "scramble: a row per team:");
+  ok(rows("g4")[0].classList.contains("lead"), "the side ahead in bold:");
+
+  eq(rows("gk").length, 4, "skins: four rows:");
+  ok(/1\b/.test(rows("gk")[0].querySelector(".gb-v").textContent)
+     && rows("gk")[0].classList.contains("lead"),
+     "sorted into standings, the skin-winner first: " + rows("gk")[0].textContent);
+
+  eq(rows("gb").length, 2, "best ball: a row per pair:");
+  eq(rows("gb")[0].querySelector(".gb-v").textContent, "1 UP", "the state beside the pair it belongs to:");
+  ok(!rows("gb")[1].querySelector(".gb-v"), "and nothing beside the other:");
+
+  ok(!card("gw").querySelector(".gboard"), "a Wolf game nobody's played yet keeps the plain names:");
+  ok(!card("gn").querySelector(".gboard") && /Not started/.test(card("gn").textContent),
+     "as does any game not started:");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

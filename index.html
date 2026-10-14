@@ -120,6 +120,16 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .gtype{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.05em;font-size:16px;line-height:1.1}
 .gteams{font-size:14px;color:var(--ink);margin-top:2px;line-height:1.3}
+/* One row per side, its number pinned right, the leader in bold. */
+.gboard{margin-top:4px}
+.gb-row{display:flex;align-items:baseline;gap:10px;padding:2px 0;font-size:14px;
+  line-height:1.3;color:var(--ink-soft)}
+.gb-row.lead{color:var(--ink);font-weight:600}
+.gb-n{flex:1;min-width:0}
+.gb-v{flex:none;font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;
+  color:var(--ink)}
+.gb-v.under{color:var(--pencil)}
+.gb-v.over{color:var(--over)}
 .gstate{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;
   margin-top:6px;color:var(--ink-soft);line-height:1.35}
 /* in progress, not a problem — red was reading as something wrong */
@@ -1771,6 +1781,88 @@ function allTime(){
 }
 
 /* ---------- shared status text, used by home cards and the score bug ---------- */
+/* ---------- the games-list card as a little scoreboard ----------
+   The status used to be one sentence, which has to name a side — and for a
+   team of three or four the only short name there is, is the first man's:
+   "Howard's team −7, leads by 6". Nobody calls it that, and it's arbitrary
+   which of the four gets the credit. So each side gets its own row with its
+   own number beside it, the leader in bold, and the line under it carries
+   only progress ("thru 5", "4/40 · 3/40"). No side ever needs a nickname.
+
+   Returns null before anything has been scored, and the card keeps the plain
+   names and "Not started" — five empty rows for a Wolf game say nothing.
+
+   Two-sided games keep side order (it's A against B, as the names were
+   written); four teams and Wolf's five men sort into standings, because that
+   is the question being asked of them. 40ball reads only the shown numbers,
+   so a sealed hole stays sealed here as everywhere else (R138). */
+function gameBoard(g){
+  const res = gameResult(g);
+  const rowsOf = (vals, better) => {
+    const live = vals.filter(v => v.n != null);
+    if (!live.length) return null;
+    const best = better(live.map(v => v.n));
+    return vals.map(v => ({ ...v, lead: v.n != null && v.n === best }));
+  };
+
+  if (isWolf(g)){
+    const st = wolfTotals(g);
+    if (!st.holes) return null;
+    const top = Math.max(...rosterOf(g).map(id => st.pts[id]));
+    return { rows: wolfRanked(g).map(r => ({ label: (P(r.id) || {}).name || "?",
+        val: String(r.pts), n: r.pts, lead: r.pts === top })),
+      foot: res ? "Final" : `thru ${st.holes}` };
+  }
+
+  if (isSkins(g)){
+    const st = skinTotals(g);
+    if (!st.holes) return null;
+    const rows = rowsOf(sides(g).map(i => ({ label: teamLabel(g, i),
+      n: st.totals[i], val: fmtSkins(st.totals[i]) })), xs => Math.max(...xs));
+    rows.sort((a, b) => b.n - a.n);
+    return { rows, foot: (res ? "Final" : `thru ${st.holes}`) + " \u00b7 skins \u00b7 top two win" };
+  }
+
+  if (isStroke(g)){
+    const st = strokeTotals(g);
+    const thru = Math.max(...st.holes);
+    if (!thru) return null;
+    const rows = rowsOf(sides(g).map(i => {
+      if (!st.holes[i]) return { label: teamLabel(g, i), n: null, val: "" };
+      const rel = st.totals[i] - strokeParSoFar(g, i);
+      return { label: teamLabel(g, i), n: rel, val: toPar(rel), tone: parClass(rel) };
+    }), xs => Math.min(...xs));
+    if (isMulti(g)) rows.sort((a, b) => (a.n == null) - (b.n == null) || a.n - b.n);
+    return { rows, foot: (res ? "Final" : `thru ${thru}`) + (isMulti(g) ? " \u00b7 top two win" : "") };
+  }
+
+  if (g.type === "FORTYBALL"){
+    const spent = [0, 1].map(t => fbShownSpent(g, t));
+    if (!spent[0] && !spent[1] && !fbHolesLocked(g, 0) && !fbHolesLocked(g, 1)) return null;
+    const rows = rowsOf([0, 1].map(t => {
+      if (!spent[t]) return { label: teamLabel(g, t), n: null, val: "" };
+      const rel = fbTotal(g, t, true) - fbParBasis(g, t, true);
+      return { label: teamLabel(g, t), n: rel, val: toPar(rel), tone: parClass(rel) };
+    }), xs => Math.min(...xs)) || [0, 1].map(t => ({ label: teamLabel(g, t), val: "" }));
+    const sealed = [0, 1].some(t => fbWaiting(g, t));
+    return { rows, foot: res ? "Final"
+      : `${spent[0]}/40 \u00b7 ${spent[1]}/40${sealed ? " \u00b7 a hole is sealed" : ""}` };
+  }
+
+  /* best ball, match play: the state is one relation, so it sits beside
+     whichever pair it belongs to and the other row is left bare. */
+  const st = matchState(g);
+  if (!st.played) return null;
+  const up = st.result ? (st.result.winner === "TIE" ? null : st.result.winner)
+           : st.status > 0 ? "A" : st.status < 0 ? "B" : null;
+  const what = st.result ? st.result.label : `${Math.abs(st.status)} UP`;
+  return { rows: [0, 1].map(t => ({ label: teamLabel(g, t),
+      val: up === SIDE_CODES[t] ? what : "", lead: up === SIDE_CODES[t] })),
+    foot: st.result ? (st.result.winner === "TIE" ? "Final \u00b7 halved" : "Final")
+      : (st.status === 0 ? "All square" : st.dormie ? "Dormie" : "")
+        + `${st.status === 0 || st.dormie ? " \u00b7 " : ""}thru ${st.played}` };
+}
+
 function gameStatusLabel(g){
   const res = gameResult(g);
   if (res) return { text: res.winner === "TIE" ? "HALVED"
@@ -1899,7 +1991,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.1030";
+const BUILD = "2026-10-14.1045";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3052,13 +3144,19 @@ function renderHome(){
         isAdmin || !SYNC.on ? " \u2014 add them on the Schedule tab" : ""}.</p>`;
     inRound.forEach(g => {
       const stt = gameStatusLabel(g);
+      const board = gameBoard(g);
       const meta = usesHcp(g)
         ? (modeOf(g) === "RELATIVE" ? "Relative handicaps" : "Full handicaps")
         : "Gross — no handicaps";
       h += `<button class="gcard ${stt.cls==="done"?"done":""}" data-game="${g.id}">
         <div class="gtype">${LABEL[g.type]}</div>
-        <div class="gteams">${teamsLine(g)}</div>
-        <div class="gstate ${stt.cls}">${esc(stt.text)}</div>
+        ${board ? `<div class="gboard">${board.rows.map(r =>
+            `<div class="gb-row${r.lead ? " lead" : ""}"><span class="gb-n">${esc(r.label)}</span>${
+              r.val !== "" ? `<span class="gb-v ${r.tone || ""}">${esc(r.val)}</span>` : ""}</div>`
+          ).join("")}</div>
+          <div class="gstate ${stt.cls}">${esc(board.foot)}</div>`
+        : `<div class="gteams">${teamsLine(g)}</div>
+          <div class="gstate ${stt.cls}">${esc(stt.text)}</div>`}
         <div class="gmeta">${meta}</div>
       </button>`;
     });
