@@ -405,7 +405,7 @@ t("schedule is admin-only except for travel", () => {
   ok(editable.length > 0, "travel should still be editable without the code");
   ok(editable.every(t => t === "TRAVEL"), "only travel may be edited: got " + editable.join(","));
   w.eval("schedMode='travel'; render();");
-  ok(document.querySelector("[data-addtravel]"), "players need a way to add their own flights");
+  ok(document.querySelector("[data-flightsave]"), "players need a way to add their own flights");
   w.eval("schedMode='timeline'; view.tab='home'; render();");
 });
 
@@ -2847,6 +2847,8 @@ t("R128 a flight goes in by pasting it", () => isolate(() => {
   const before = w.eval("SCHEDULE.length");
   w.eval(`SYNC.on = true; isAdmin = false; view.gameId = null; view.tab = "sched";
           schedMode = "travel"; editEvent = null; render();`);
+  /* The paste box is now the second way in, behind a link under the form. */
+  click(document.querySelector('[data-flightpaste="ARRIVAL"]'));
   ok(document.querySelector('[data-flightadd="ARRIVAL"]'), "no paste box on arrivals");
   document.getElementById("fin-ARRIVAL").value = "United 2137 ORD 10:51am RSW 2:57pm";
   document.querySelector('[data-flightadd="ARRIVAL"]').click();
@@ -2859,7 +2861,7 @@ t("R128 a flight goes in by pasting it", () => isolate(() => {
   eq(made.time, "14:57", "at the landing time:");
   ok(/ORD/.test(made.notes) && /RSW/.test(made.notes), "with the route in the notes: " + made.notes);
   ok(w.eval("editEvent") === made.id, "and opened, so who-it-is is one tap away");
-  w.eval("editEvent = null; SYNC.on = false; isAdmin = true; view.tab = 'home'; render();");
+  w.eval("editEvent = null; flightPasteOpen = null; SYNC.on = false; isAdmin = true; view.tab = 'home'; render();");
 }));
 
 section("Wolf — five men, new teams every hole");
@@ -3293,6 +3295,70 @@ t("R139 the stroke grid only shows a playing handicap where it differs", () => i
   ok(!/→/.test(o.full), "a full round prints the course handicap once:");
   ok(/in full/.test(o.full), "and the key says that's what each man plays off:");
   ok(/→ 0/.test(o.rel), "a relative round keeps the arrow, down to scratch for the low man:");
+}));
+
+t("R140 a flight goes in as airline, number and time", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`SYNC.on = true; isAdmin = false; view.gameId = null; view.tab = "sched";
+          schedMode = "travel"; editEvent = null; flightPasteOpen = null;
+          flightDraft.ARRIVAL = {}; flightDraft.DEPARTURE = {};
+          try { localStorage.removeItem("ei-me"); } catch(e){}
+          render();`);
+  const app = () => document.getElementById("app");
+  const q = sel => app().querySelector(sel);
+  const blake = w.eval(`PLAYERS.find(p => p.name === "Blake").id`);
+
+  /* Airlines are buttons, never a select — a native select is what showed an
+     empty box on the owner's iPhone (R60). */
+  ok(q('[data-fdair="ARRIVAL:United"]'), "an airline button for United:");
+  ok(!/<select/.test(q(".flightadd").outerHTML), "and no native dropdown anywhere in the form");
+  ok(q('#fdt-ARRIVAL[type="time"]'), "the time is the native wheel:");
+  ok(q('#fdn-ARRIVAL[inputmode="numeric"]'), "and the number box brings up the number pad:");
+
+  /* Nothing chosen yet: it says what's missing rather than making a blank. */
+  const before = w.eval("SCHEDULE.length");
+  click(q('[data-flightsave="ARRIVAL"]'));
+  eq(w.eval("SCHEDULE.length"), before, "an empty form adds nothing:");
+
+  /* Typed values survive the redraw a tap causes — the whole reason the form
+     keeps a draft. */
+  type(q("#fdn-ARRIVAL"), "2137");
+  type(q("#fdt-ARRIVAL"), "14:57");
+  click(q('[data-fdpid="ARRIVAL:' + blake + '"]'));
+  click(q('[data-fdair="ARRIVAL:United"]'));
+  eq(q("#fdn-ARRIVAL").value, "2137", "the number is still there after two taps:");
+  eq(q("#fdt-ARRIVAL").value, "14:57", "and so is the time:");
+
+  click(q('[data-flightsave="ARRIVAL"]'));
+  eq(w.eval("SCHEDULE.length"), before + 1, "one flight added:");
+  const made = JSON.parse(w.eval("JSON.stringify(SCHEDULE[SCHEDULE.length - 1])"));
+  eq(made.title, "United 2137", "titled airline and number:");
+  eq(made.type + "/" + made.dir, "TRAVEL/ARRIVAL", "as an arrival:");
+  eq(made.pid, blake, "for the man picked:");
+  eq(made.time, "14:57", "at the time typed:");
+  eq(made.day, w.eval("DAYS[0]"), "on the first day, which is when people arrive:");
+  ok(w.eval("editEvent") == null, "and it doesn't drop you into an editor — there's nothing left to fix");
+
+  /* The form resets for the next flight but remembers who, on both legs. */
+  eq(q("#fdn-ARRIVAL").value, "", "the number clears:");
+  ok(q('[data-fdpid="DEPARTURE:' + blake + '"].on'),
+     "and the departure form already knows whose it is:");
+  ok(q('[data-fdday="DEPARTURE:' + w.eval("DAYS[DAYS.length-1]") + '"].on'),
+     "departures default to the last day:");
+
+  /* "Other" asks for the name rather than inventing one. */
+  click(q('[data-fdair="DEPARTURE:Other"]'));
+  ok(q('[data-fd="DEPARTURE:other"]'), "Other opens a box for the airline's name:");
+  type(q('[data-fd="DEPARTURE:other"]'), "Breeze");
+  type(q("#fdn-DEPARTURE"), "MX 410");
+  click(q('[data-flightsave="DEPARTURE"]'));
+  const dep = JSON.parse(w.eval("JSON.stringify(SCHEDULE[SCHEDULE.length - 1])"));
+  eq(dep.title, "Breeze 410", "with only the digits kept from the number:");
+  eq(dep.time, null, "and no time is TBD, not a refusal:");
+
+  w.eval(`SYNC.on = false; isAdmin = true; view.tab = "home";
+          flightDraft.ARRIVAL = {}; flightDraft.DEPARTURE = {};
+          try { localStorage.removeItem("ei-me"); } catch(e){} render();`);
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

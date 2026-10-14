@@ -168,8 +168,27 @@ The app covers:
   way for months (R109).
 - **Field tab**: players, handicap indexes, tees, courses, pairings matrix and
   admin setup.
-- **Flights**: the Travel view's paste box is the main way a flight gets added
-  (R128). `parseFlight(text)` reads a confirmation line — airline and number,
+- **Flights**: each Travel section opens on **`flightForm(dir)`** — who, airline,
+  flight #, time, day — and that is the main way in (R140). The paste box is the
+  second way, behind a link under the form.
+  - Airlines are **buttons, not a `<select>`**, for the same reason the course
+    picker is (R60). "Other" opens a box for the name. The number box is
+    `inputmode="numeric"`, and only its digits are kept, so "MX 410" is 410.
+  - The time is `<input type="time">`, labelled **Lands** for an arrival and
+    **Takes off** for a departure. No time is a real answer (TBD), not a refusal.
+  - Half-filled state lives in **`flightDraft[dir]`**, not the DOM, because
+    every chip tap redraws the screen and a number typed a moment earlier has
+    to survive it. Typing and the wheel write to the draft and **never
+    redraw**. Save also reads the boxes directly: iOS doesn't always fire
+    `input` when the keyboard is dismissed by tapping a button.
+  - Who defaults to `myId()`. After a save the draft clears except **who**, and
+    an arrival seeds the departure form's who too — the next flight from that
+    phone is almost always the same man's other leg. Arrivals default to the
+    first day, departures to the last. Unlike the paste route, a save doesn't
+    open the event: there's nothing left to correct.
+  - The old "Enter it by hand" button (the generic event editor) is gone; an
+    existing flight still opens that editor when tapped.
+  - `parseFlight(text)` reads a confirmation line — airline and number,
   both airports, both times, the day — and `flightNotes` builds the route line
   from whatever it recognised. It never rejects anything: an unreadable paste
   still makes an event with the text as its title, which is no worse than the
@@ -377,7 +396,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **178 passed, 0 failed**. The suite is
+Current status against `index.html`: **179 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

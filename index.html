@@ -620,6 +620,18 @@ table.rost td.rn{text-align:left;font-size:14px;width:40%}
   background:var(--paper);color:var(--ink);font-family:'Barlow',sans-serif;margin-bottom:8px}
 .flightadd .fin:focus{outline:none;border-color:var(--brass)}
 .flightadd .hint{margin:7px 0 0;font-size:11.5px;color:var(--ink-faint)}
+.fa-h{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;font-size:13px;margin-bottom:2px}
+.fa-l{display:block;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--ink-faint);
+  margin:10px 0 5px}
+.fa-row{display:flex;flex-wrap:wrap;gap:5px}
+.fa-row .chip{padding:7px 10px;min-height:32px}
+/* Number and time side by side: both short, and together they're the flight. */
+.fa-pair{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.fa-pair .fin{margin-bottom:0;height:44px}
+.flightadd .lnk{background:none;border:none;padding:0;color:var(--ink-soft);
+  text-decoration:underline;font:inherit;cursor:pointer}
 /* Tees per team, for a 2v2v2v2 levelled by the boxes rather than by handicaps.
    Two columns on a phone, so four teams are two short rows and not a scroll. */
 .teeset{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;margin-top:10px;
@@ -1847,7 +1859,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-12.2220";
+const BUILD = "2026-10-14.0730";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2719,6 +2731,11 @@ let boardMode = "table";
    saw a single day and assumed the rest hadn't been set up. The "Just today"
    chip is still there for the people who want it. */
 let homeShowAll = true;
+/* The flight form's half-filled state, per direction. Kept off the page
+   because tapping an airline or a name redraws the screen, and a number typed
+   a moment earlier has to survive that. */
+const flightDraft = { ARRIVAL:{}, DEPARTURE:{} };
+let flightPasteOpen = null;     // which direction's paste box is showing, if either
 let showUnlock = false;        // the admin code field, asked for rather than offered
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
 let cfgTimer = null;
@@ -3203,29 +3220,71 @@ function renderSchedule(){
       const missing = PLAYERS.filter(p => !listed.includes(p.id));
       if (missing.length)
         h += `<p class="note">No ${dir.toLowerCase()} entered: ${missing.map(p=>esc(p.name)).join(", ")}</p>`;
-      /* Paste first, because that's the whole point: a line out of the
-         confirmation email beats six fields nobody fills in. The blank-form
-         button stays for anyone who has no email to hand. */
-      const me = myId();
-      h += `<div class="flightadd">
-        <input class="fin" id="fin-${dir}" placeholder="${
-          dir === "ARRIVAL" ? "Paste your flight \u2014 e.g. United 2137 ORD 10:51am RSW 2:57pm"
-                            : "Paste your flight \u2014 e.g. United 2472 RSW 2:12pm ORD 4:22pm"}">
-        <div class="acts cwrap">
-          <button class="btn" data-flightadd="${dir}">Add ${
-            me ? "my " + (dir === "ARRIVAL" ? "arrival" : "departure") : "flight"}</button>
-          <button class="btn ghost addev" data-addtravel="${dir}">Enter it by hand</button>
-        </div>
-        ${me ? `<p class="hint">Adding as ${esc((P(me)||{}).name || "")} \u00b7 change it on the
-          flight itself and this phone will remember.</p>`
-             : `<p class="hint">It'll ask who this is the first time.</p>`}
-      </div>`;
+      h += flightForm(dir);
     });
   }
 
   h += `<div class="footnote">Rounds live on this schedule \u2014 open one to set its course and
     who's playing whom. Players, courses and tees are on the Field tab.</div>`;
   app.innerHTML = h;
+}
+
+/* ---------- the flight form ----------
+   Airline, number, time — the three things on every boarding pass — plus who
+   and which day, both of which default to the obvious answer. It replaced a
+   paste box as the way in: guessing at a pasted line was clever, but a form
+   you can see the whole of is easier than wondering what the guess got wrong.
+
+   Airlines are buttons, not a <select>. A native select is what showed the
+   chosen course as an empty box on the owner's iPhone, twice (see R60), and a
+   row of buttons is the same single tap with no list to scroll through.
+
+   The time is the native iPhone wheel, as in the event editor, and like there
+   nothing redraws while it's being used: redrawing mid-spin shuts the wheel. */
+const FLIGHT_AIRLINES = ["United","American","Delta","Southwest","Spirit",
+                         "JetBlue","Allegiant","Other"];
+function flightForm(dir){
+  const d = flightDraft[dir];
+  const pid = d.pid || myId() || null;
+  const day = d.day || (dir === "ARRIVAL" ? DAYS[0] : DAYS[DAYS.length - 1]);
+  const lands = dir === "ARRIVAL";
+  return `<div class="flightadd">
+    <div class="fa-h">Add ${lands ? "an arrival" : "a departure"}</div>
+    <label class="fa-l">Who</label>
+    <div class="fa-row">${PLAYERS.map(p =>
+      `<button class="chip ${pid === p.id ? "on" : ""}" data-fdpid="${dir}:${p.id}">${
+        esc(p.name)}</button>`).join("")}</div>
+    <label class="fa-l">Airline</label>
+    <div class="fa-row">${FLIGHT_AIRLINES.map(a =>
+      `<button class="chip ${d.airline === a ? "on" : ""}" data-fdair="${dir}:${a}">${
+        a}</button>`).join("")}</div>
+    ${d.airline === "Other" ? `<input class="fin" data-fd="${dir}:other"
+      placeholder="Which airline?" value="${esc(d.other || "")}">` : ""}
+    <div class="fa-pair">
+      <div><label class="fa-l" for="fdn-${dir}">Flight #</label>
+        <input class="fin fa-num" id="fdn-${dir}" data-fd="${dir}:num"
+          inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="2137"
+          value="${esc(d.num || "")}"></div>
+      <div><label class="fa-l" for="fdt-${dir}">${lands ? "Lands" : "Takes off"}</label>
+        <input type="time" class="fin fa-time" id="fdt-${dir}" data-fd="${dir}:time"
+          value="${esc(d.time || "")}"></div>
+    </div>
+    <label class="fa-l">Day</label>
+    <div class="fa-row">${DAYS.map(x =>
+      `<button class="chip ${day === x ? "on" : ""}" data-fdday="${dir}:${esc(x)}">${
+        esc(x.slice(0, 3))}</button>`).join("")}</div>
+    <div class="acts" style="margin-top:12px">
+      <button class="btn" data-flightsave="${dir}">Add ${
+        pid ? esc((P(pid) || {}).name || "") + "'s " : ""}${lands ? "arrival" : "departure"}</button>
+    </div>
+    ${flightPasteOpen === dir ? `
+      <input class="fin" id="fin-${dir}" style="margin-top:12px" placeholder="${
+        lands ? "e.g. United 2137 ORD 10:51am RSW 2:57pm"
+              : "e.g. United 2472 RSW 2:12pm ORD 4:22pm"}">
+      <div class="acts"><button class="btn ghost" data-flightadd="${dir}">Add from paste</button></div>`
+    : `<p class="hint"><button class="lnk" data-flightpaste="${dir}">Or paste a line from
+        the confirmation email</button></p>`}
+  </div>`;
 }
 
 /* ---------- flights, from whatever you have in your hand ----------
@@ -5601,11 +5660,57 @@ function handleClick(el){
     toast(f.title ? f.title + " added" : "Flight added");
     return;
   }
-  if (el.dataset.addtravel){
+  /* The flight form. Every tap redraws, so every tap writes to the draft
+     first — that's what keeps the number and time you typed. */
+  if (el.dataset.fdpid){
+    const [dir, pid] = el.dataset.fdpid.split(":");
+    flightDraft[dir].pid = pid; render(); return;
+  }
+  if (el.dataset.fdair){
+    const [dir, a] = el.dataset.fdair.split(":");
+    flightDraft[dir].airline = a; render(); return;
+  }
+  if (el.dataset.fdday){
+    const i = el.dataset.fdday.indexOf(":");
+    flightDraft[el.dataset.fdday.slice(0, i)].day = el.dataset.fdday.slice(i + 1);
+    render(); return;
+  }
+  if (el.dataset.flightpaste){
+    flightPasteOpen = el.dataset.flightpaste; render(); return;
+  }
+  if (el.dataset.flightsave){
+    const dir = el.dataset.flightsave, d = flightDraft[dir];
+    /* Read the boxes as well as the draft. iOS doesn't always fire input
+       when the keyboard is dismissed by tapping a button, and a number that
+       was on screen but never reached the draft would be a flight lost. */
+    const numBox = document.getElementById("fdn-" + dir);
+    const timeBox = document.getElementById("fdt-" + dir);
+    if (numBox) d.num = numBox.value;
+    if (timeBox) d.time = timeBox.value;
+    const pid = d.pid || myId();
+    const num = String(d.num || "").replace(/\D/g, "");
+    const airline = d.airline === "Other" ? String(d.other || "").trim() : d.airline;
+    const missing = [!pid && "who", !airline && "the airline", !num && "the flight number"]
+      .filter(Boolean);
+    if (missing.length){
+      toast("Still need " + missing.join(" and ").replace(/ and (?=.* and )/, ", "));
+      return;
+    }
+    const day = d.day || (dir === "ARRIVAL" ? DAYS[0] : DAYS[DAYS.length - 1]);
     const id = "e" + Date.now().toString(36);
-    SCHEDULE.push({ id, day: DAYS[0], time:null, type:"TRAVEL",
-                    dir: el.dataset.addtravel, pid: myId() || PLAYERS[0].id, title:"" });
-    queueConfig(); openEvent(id, true); render(); return;
+    SCHEDULE.push({ id, type:"TRAVEL", dir, day, pid,
+      /* No time is a real answer — it shows as TBD — not a reason to refuse. */
+      time: d.time || null,
+      title: airline + " " + num, notes:"" });
+    setMe(pid);
+    queueConfig();
+    /* Who stays, because the next flight from this phone is almost certainly
+       the same man's other leg. Everything about the flight itself clears. */
+    flightDraft[dir] = { pid };
+    if (dir === "ARRIVAL" && !flightDraft.DEPARTURE.pid) flightDraft.DEPARTURE.pid = pid;
+    render();
+    toast(airline + " " + num + " added");
+    return;
   }
   if (el.dataset.addev){
     /* No placeholder title. "New event" was landing on the schedule as if it
@@ -6024,6 +6129,14 @@ function handleClick(el){
 document.addEventListener("input", e => {
   const t = e.target;
 
+  /* The flight form: into the draft and nothing else. A redraw while typing
+     loses the keyboard, and while the time wheel spins it shuts the wheel. */
+  if (t.dataset && t.dataset.fd){
+    const [dir, k] = t.dataset.fd.split(":");
+    flightDraft[dir][k] = t.value;
+    return;
+  }
+
   /* The time wheel fires input as it spins and change when it's dismissed;
      iOS isn't reliable about the second, so take whichever arrives. No
      render() — redrawing would close the wheel mid-spin. */
@@ -6164,6 +6277,13 @@ function advanceCell(t){
 /* tee assignment */
 document.addEventListener("change", e => {
   const t = e.target;
+  /* iOS fires input as the wheel spins and change when it closes, and isn't
+     reliable about the first — take whichever comes. */
+  if (t.dataset && t.dataset.fd){
+    const [dir, k] = t.dataset.fd.split(":");
+    flightDraft[dir][k] = t.value;
+    return;
+  }
   if (t.id === "evtime" && editEvent){
     /* No render(): the wheel is open on top of this, and redrawing would shut
        it mid-spin. The card picks the new time up when the editor closes. */
