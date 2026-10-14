@@ -3370,6 +3370,56 @@ t("R140 a flight goes in as airline, number and time", () => isolate(() => {
           try { localStorage.removeItem("ei-me"); } catch(e){} render();`);
 }));
 
+t("R141 every game explains itself behind a small (i), and only when asked", () => isolate(() => {
+  const w = dom.window;
+  w.eval(`isAdmin = true; SYNC.on = false; rulesOpen = null;
+          view.gameId = null; view.tab = "home"; render();`);
+  ok(!document.getElementById("rulesbtn"), "no (i) on the home screen — there's no game to explain");
+
+  /* One of every format, including the two that branch away from the rest. */
+  const kinds = JSON.parse(w.eval(`(function(){
+    const r = ROUNDS()[0].id;
+    GAMES.push({ id:"gw", roundId:r, type:"WOLF5", teams:{0:["p1","p2","p3","p4","p5"]}, holes:blankHoles() });
+    GAMES.push({ id:"gs", roundId:r, type:"SCRAMBLE2X4", skins:true,
+      teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes:blankHoles() });
+    const seen = {}, out = [];
+    GAMES.forEach(g => { const k = g.type + (g.skins ? "+skins" : "");
+      if (!seen[k]){ seen[k] = 1; out.push([g.id, k]); } });
+    return JSON.stringify(out);
+  })()`));
+  ok(kinds.length >= 6, "a game of every format to look at: " + kinds.map(k => k[1]).join(", "));
+
+  const expect = { BESTBALL:/better net score/, SCRAMBLE4:/Four to a team/, SCRAMBLE3:/Three to a team/,
+    FORTYBALL:/exactly 40/, WOLF5:/last<\/b> man to tee off/, "SCRAMBLE2X4+skins":/Two skins a hole/ };
+  kinds.forEach(([id, k]) => {
+    w.eval(`rulesOpen = null; view.gameId = "${id}"; view.hole = 0; render();`);
+    const btn = document.getElementById("rulesbtn");
+    ok(btn, k + ": the (i) sits in the header");
+    ok(!document.querySelector(".rules"), k + ": and the rules are shut until it's tapped");
+    click(btn);
+    const box = document.querySelector(".rules");
+    ok(box, k + ": tapping it opens them");
+    if (expect[k]) ok(expect[k].test(box.innerHTML), k + ": with that game's own rules: "
+      + box.textContent.slice(0, 80));
+  });
+
+  /* Wolf's points table is the thing people will actually check mid-round. */
+  w.eval(`rulesOpen = "gw"; view.gameId = "gw"; render();`);
+  const wolf = document.querySelector(".rules").textContent;
+  ok(/1 point/.test(wolf) && /3 points/.test(wolf) && /8 points/.test(wolf) && /2 points/.test(wolf),
+     "wolf spells out all four payouts");
+
+  /* Open on one game doesn't follow you to the next. */
+  w.eval(`view.gameId = "gs"; render();`);
+  ok(!document.querySelector(".rules"), "moving to another game closes them");
+  w.eval(`rulesOpen = "gs"; render();`);
+  click(document.getElementById("rulesclose"));
+  ok(!document.querySelector(".rules"), "and Got it shuts them");
+
+  w.eval(`rulesOpen = null; view.gameId = null; view.tab = "home"; render();`);
+  ok(!document.getElementById("rulesbtn"), "leaving the game takes the (i) with it");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

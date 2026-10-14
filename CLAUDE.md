@@ -396,7 +396,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **179 passed, 0 failed**. The suite is
+Current status against `index.html`: **180 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -495,6 +495,16 @@ about, because they fail for reasons that aren't about the code you just wrote:
   with a chip after them pushed the page wider than the phone (R99). The
   roster editor still shows every player's tee, which is where sides are
   picked and where it matters.
+
+- **Rules behind an (i).** `gameRules(g)` explains each format in plain
+  bullets; a small `#rulesbtn` after the game's name in the header opens it at
+  the top of the card. The (i) is glued to the last word of the name (`.nw`),
+  because on its own it wrapped onto a header line of its own. `rulesOpen` is a
+  **game id**, not a flag, so moving to another game closes it (R141).
+  - Every line must describe what the **scoring code actually does** — change
+    a rule and change `gameRules` in the same commit, or the app will explain
+    one game and score another. Handicap mode and "this round is casual" are
+    read off the round, not written in.
 
 ## UI decisions that look odd and aren't
 

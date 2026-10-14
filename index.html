@@ -387,6 +387,23 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .note.warn{color:var(--pencil);font-weight:500}
 .note.ok{color:var(--ink);font-weight:500}
 
+/* The (i) after the game's name. Small and faint so it reads as a footnote
+   mark, not a control competing with the card; the hit area is a good deal
+   bigger than the circle, because it's on a phone. */
+.top h1 .info{position:relative;display:inline-grid;place-items:center;width:17px;
+  height:17px;margin-left:8px;vertical-align:3px;padding:0;border:1.5px solid currentColor;
+  border-radius:50%;background:none;color:inherit;opacity:.5;cursor:pointer;
+  font:italic 700 11px/1 Georgia,'Times New Roman',serif;text-transform:none;letter-spacing:0}
+.top h1 .info::after{content:"";position:absolute;inset:-13px}
+.top h1 .nw{white-space:nowrap}
+.top h1 .info.on{opacity:1}
+.rules{border:1px solid var(--rule);background:var(--paper-2);padding:12px 14px 4px;
+  margin:10px 0 6px;font-size:14px;line-height:1.45;color:var(--ink)}
+.rules h3{margin:0 0 4px;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;font-size:13px}
+.rules ul{margin:4px 0 0;padding-left:18px}
+.rules li{margin:5px 0}
+
 /* Wolf. Two pickers above the scores, because on a wolf hole the decision is
    made on the tee before anybody has a number. They are deliberately the
    plainest thing on the card — a row of names you tap. */
@@ -1882,7 +1899,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.0800";
+const BUILD = "2026-10-14.1030";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2754,6 +2771,9 @@ let boardMode = "table";
    saw a single day and assumed the rest hadn't been set up. The "Just today"
    chip is still there for the people who want it. */
 let homeShowAll = true;
+/* Which game's rules are open, if any. A game id rather than a flag, so moving
+   to another game closes it instead of greeting you with a wall of text. */
+let rulesOpen = null;
 /* The flight form's half-filled state, per direction. Kept off the page
    because tapping an airline or a name redraws the screen, and a number typed
    a moment earlier has to survive that. */
@@ -2884,7 +2904,16 @@ function render(){
       toast("That game was removed");
       return render();
     }
-    $("#ttl").textContent = LABEL[g.type];
+    /* The rules live behind a small (i) on the line that already says what
+       you're playing — it costs no height on the card, which is precious. */
+    /* Glued to the last word of the name. On its own it wrapped onto a line of
+       its own under the title — the header column is narrow beside Sync and
+       Back — and a whole extra header line is the opposite of unobtrusive. */
+    const words = LABEL[g.type].split(" ");
+    const last = words.pop();
+    $("#ttl").innerHTML = (words.length ? esc(words.join(" ")) + " " : "")
+      + `<span class="nw">${esc(last)}<button class="info${
+        rulesOpen === g.id ? " on" : ""}" id="rulesbtn" aria-label="How this game works">i</button></span>`;
     /* the round is usually named after its course, so don't print it twice */
     const r = roundOf(g);
     const when = r ? [r.day, r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ") : "";
@@ -4593,11 +4622,87 @@ function syncHoleStrip(){
   wrap.scrollLeft = Math.max(0, want);
 }
 
+/* ---------- how each game works ----------
+   Written for someone standing on a tee, not for whoever maintains the code:
+   what wins, what counts, and the one or two things that trip people up.
+   Every line here describes what the scoring code actually does — if a rule
+   changes, this has to change with it, or the app will explain one game and
+   score another. */
+function gameRules(g){
+  const li = xs => `<ul>${xs.filter(Boolean).map(x => `<li>${x}</li>`).join("")}</ul>`;
+  const hcp = usesHcp(g) ? (modeOf(g) === "FULL"
+    ? "Full handicaps: everyone gets his whole course handicap."
+    : "Relative handicaps: the lowest course handicap in the game plays off scratch "
+      + "and everyone else gets the difference.")
+    + " Strokes fall on the hardest holes first — a dot by your name means you get one here."
+    : null;
+  const casual = gameCounts(g) ? null
+    : "This round is casual — scored, but it doesn't count toward the EI standings.";
+  const pu = "PU means picked up: finished the hole, no score to count.";
+
+  if (isWolf(g)) return `<h3>5-man Wolf</h3>` + li([
+    "Tee order rotates every hole. The wolf is the <b>last</b> man to tee off.",
+    "After each drive the wolf takes that player or passes — no going back. He needs "
+      + "<b>two</b> partners (3 v 2), or he goes alone. Pass on the first three and he's alone.",
+    "Each side's <b>best net ball</b> wins the hole. A tie pays nothing, and nothing carries.",
+    "Wolf's three win: <b>1 point</b> each. The other two win: <b>3 points</b> each.",
+    "Lone wolf wins: <b>8 points</b>. Lone wolf loses: <b>2 points</b> to each of the other four.",
+    "Most points after 18 wins. “Draw for order” sets the tee order before the first hole.",
+    hcp, pu, casual ]);
+
+  if (g.type === "FORTYBALL") return `<h3>40ball</h3>` + li([
+    "Four against four, everyone plays his own ball, scored net.",
+    "Each team must count <b>exactly 40</b> of its 72 scores — no more, no fewer.",
+    "On each hole, tick which scores to count (none to all four), then <b>lock</b> the hole.",
+    "The bar shows how many you have left and how much slack. Fall behind and it will "
+      + "tell you the least you must take.",
+    "<b>Sealed until both lock:</b> once a team locks a hole, what it took goes dark until "
+      + "the other team locks too. Then the hole opens for good.",
+    "Lowest total of the 40 wins, read against the par of the holes you counted.",
+    hcp, pu + " A picked-up score can't be counted.", casual ]);
+
+  if (isSkins(g)) return `<h3>2v2v2v2 skins</h3>` + li([
+    "Four teams of two, scramble: both hit, take the better shot, both play from there.",
+    "No handicaps — teams are evened out by which tees they play.",
+    "<b>Two skins a hole</b>, to the two best team scores.",
+    "Ties share the skins for the places they cover: 4, 5, 5, 5 is one skin to the 4 "
+      + "and a third each to the 5s. All four level is half each.",
+    "Skins aren't paid on a hole until all four teams have a score.",
+    "Most skins wins. <b>Top two teams win, bottom two lose</b>; a tie across that line "
+      + "is a tie for both.",
+    casual ]);
+
+  if (isStroke(g)) {
+    const n = g.type === "SCRAMBLE4" ? "Four" : g.type === "SCRAMBLE3" ? "Three" : "Two";
+    return `<h3>${esc(LABEL[g.type])}</h3>` + li([
+      `${n} to a team. Everyone hits, take the best shot, everyone plays from there, `
+        + "until it's holed.",
+      "One score per team per hole. No handicaps.",
+      isMulti(g) ? "Lowest 18-hole total wins. <b>Top two teams win, bottom two lose.</b>"
+                 : "Lowest 18-hole total wins.",
+      "Lock your team's score once it's in — after that only an admin can change it.",
+      casual ]);
+  }
+
+  /* best ball, match play */
+  return `<h3>2v2 best ball</h3>` + li([
+    "Match play: each hole is won, lost or halved — the total doesn't matter.",
+    "Each side counts its <b>better net score</b> on the hole.",
+    "The match is over when one side is up more holes than are left (e.g. 3&2). "
+      + "Dormie means up by exactly the holes remaining.",
+    "A side can concede a hole — it's awarded without scores.",
+    "Lock your side's scores once they're in — after that only an admin can change them.",
+    hcp, pu, casual ]);
+}
+
 function renderGame(){
   const g = GAMES.find(x => x.id === view.gameId);
   const course = courseOf(g);
   const h = view.hole;
   let out = "";
+
+  if (rulesOpen === g.id) out += `<div class="rules">${gameRules(g)}
+    <div class="acts"><button class="btn ghost" id="rulesclose">Got it</button></div></div>`;
 
   /* score bug — other matches running in this same round */
   out += renderOtherBug(g);
@@ -5433,6 +5538,8 @@ function handleClick(el){
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
+  if (el.id === "rulesbtn" && g){ rulesOpen = rulesOpen === g.id ? null : g.id; render(); return; }
+  if (el.id === "rulesclose"){ rulesOpen = null; render(); return; }
   if (el.id === "updnow"){ applyUpdate(); return; }
   if (el.id === "upddismiss"){ updDismissed = true; paintUpdate(); return; }
   if (el.id === "updcheck"){
