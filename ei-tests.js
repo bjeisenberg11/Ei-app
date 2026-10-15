@@ -3622,6 +3622,25 @@ t("R145 2v2v2v2 points: 5-3-1-0, birdie doubles, eagle triples, ties split", () 
   eq(cycle.join(">"), "strokes>skins>points", "points → strokes → skins → points:");
 }));
 
+t("R146 the Test bar is only on the 2v2v2v2, one tap from nothing live", () => isolate(() => {
+  const w = dom.window;
+  /* Random scores and Reset sat on every card during the tournament itself.
+     They're left on the 2v2v2v2 only, so points can be tried before the round. */
+  const has = id => w.eval(`(function(){ isAdmin = true; SYNC.on = false;
+    view.tab = "home"; view.gameId = "${id}"; view.hole = 0; render();
+    return !!document.getElementById("randhole"); })()`);
+  w.eval(`(function(){ const r = ROUNDS()[0].id;
+    GAMES.push({ id:"t4", roundId:r, type:"SCRAMBLE2X4", teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes:blankHoles() });
+    GAMES.push({ id:"tw", roundId:r, type:"WOLF5", teams:{0:["p1","p2","p3","p4","p5"]}, holes:blankHoles() }); })()`);
+  ok(has("t4"), "the 2v2v2v2 keeps it");
+  const others = JSON.parse(w.eval(`JSON.stringify(GAMES.filter(g => g.type !== "SCRAMBLE2X4").map(g => [g.id, g.type]))`));
+  ok(others.length >= 4, "a game of every other format to check");
+  others.forEach(([id, type]) => ok(!has(id), type + " has no Test bar"));
+  ok(/const BUILD = "\d{4}-\d{2}-\d{2}\.\d{4}";/.test(html),
+     "and the build stamp is a plain value the update check can read");
+  w.eval(`view.gameId = null; view.tab = "home"; render();`);
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

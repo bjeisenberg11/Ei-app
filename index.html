@@ -2027,7 +2027,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.0715";
+const BUILD = "2026-10-15.0720";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -5036,7 +5036,11 @@ function renderGame(){
       <button id="next" ${h===17?"disabled":""}>&rarr;</button>
     </span></div>`;
 
-  if (!isArchive()) out += `<div class="testbar">
+  /* Off for the real thing. Random scores and Reset sat on every card, one
+     tap from wiping a live game. Left on the 2v2v2v2 only, so its new points
+     scoring can be tried before Thursday's round \u2014 reset it before the
+     first tee. Remove this line entirely once that's done. */
+  if (!isArchive() && g.type === "SCRAMBLE2X4") out += `<div class="testbar">
     <span class="testbar-t">Test</span>
     <button class="btn ghost" id="randhole">Random scores</button>
     <button class="btn ghost" id="reset">Reset game</button>

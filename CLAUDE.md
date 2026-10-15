@@ -426,7 +426,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **184 passed, 0 failed**. The suite is
+Current status against `index.html`: **185 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -550,6 +550,11 @@ about, because they fail for reasons that aren't about the code you just wrote:
     a rule and change `gameRules` in the same commit, or the app will explain
     one game and score another. Handicap mode and "this round is casual" are
     read off the round, not written in.
+
+- **The Test bar** (Random scores / Reset game) shows on the **2v2v2v2 only**,
+  so its points scoring could be tried before Thursday's round; every other
+  card lost it, one tap from wiping a live game (R146). Reset the 2v2v2v2
+  before the first tee, then remove the bar entirely.
 
 ## UI decisions that look odd and aren't
 
