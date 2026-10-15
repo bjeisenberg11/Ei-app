@@ -1397,7 +1397,19 @@ function strokeState(g){
    — divides into twelve exactly. A weekend of thirds stored as 0.33 would not
    add up, and the leaderboard reads these totals. */
 const SKIN = 12, HOLE_SKINS = 2;
-const isSkins = g => isMulti(g) && g.skins === true;
+/* Points is the other way to score a four-team game hole by hole: 5-3-1-0 by
+   place, a birdie doubling that team's points and an eagle or better tripling
+   them, a tie splitting the points for the places it covers. Skins pays the
+   top two and nothing else, so a side that keeps finishing third can be out
+   of it by the turn; points keeps all four in it, and a birdie can drag a
+   side back. It's the same machine as skins \u2014 a number per side per hole, in
+   twelfths, most wins, top two through \u2014 so isSkins covers both and only the
+   per-hole sum and the words differ. Every split still divides into twelve:
+   (5+3)/2, (5+3+1)/3, (5+3+1+0)/4, then times 2 or 3. */
+const PLACE_PTS = [5, 3, 1, 0];
+const isPoints = g => isMulti(g) && g.points === true;
+const isSkins = g => isMulti(g) && (g.skins === true || g.points === true);
+const unitWord = g => isPoints(g) ? "points" : "skins";
 const fmtSkins = u => {
   const v = u / SKIN;
   return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0$/, "");
@@ -1415,10 +1427,21 @@ function holeSkins(g, h){
     let j = k;
     while (j + 1 < order.length && sc[order[j + 1]] === sc[order[k]]) j++;
     let pot = 0;
-    for (let m = k; m <= j; m++) if (m < HOLE_SKINS) pot += SKIN;
+    for (let m = k; m <= j; m++)
+      pot += isPoints(g) ? (PLACE_PTS[m] || 0) * SKIN : (m < HOLE_SKINS ? SKIN : 0);
     const each = pot / (j - k + 1);
     for (let m = k; m <= j; m++) out[order[m]] = each;
     k = j + 1;
+  }
+  /* Points only: a side's own score against par multiplies what it took \u2014
+     birdie twice, eagle or better three times. A birdie that finishes second
+     still doubles its second-place points. */
+  if (isPoints(g)){
+    const par = courseOf(g).holes[h].par;
+    ix.forEach(i => {
+      const rel = sc[i] - par;
+      out[i] *= rel <= -2 ? 3 : rel === -1 ? 2 : 1;
+    });
   }
   return out;
 }
@@ -1833,7 +1856,7 @@ function gameBoard(g){
     const rows = rowsOf(sides(g).map(i => ({ label: teamLabel(g, i),
       n: st.totals[i], val: fmtSkins(st.totals[i]) })), xs => Math.max(...xs));
     rows.sort((a, b) => b.n - a.n);
-    return { rows, foot: (res ? "Final" : `thru ${st.holes}`) + " \u00b7 skins \u00b7 top two win" };
+    return { rows, foot: (res ? "Final" : `thru ${st.holes}`) + ` \u00b7 ${unitWord(g)} \u00b7 top two win` };
   }
 
   if (isStroke(g)){
@@ -2004,7 +2027,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-14.1750";
+const BUILD = "2026-10-15.0715";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3804,7 +3827,10 @@ function parseCSV(text){
          stroke-play game it has always been, so importing an old schedule
          doesn't quietly rescore it. */
       if (isMulti(g)){
-        if (/\bskins\b/i.test(notes)) g.skins = true;
+        /* Points before skins: a note that somehow says both is a points game,
+           and the two are never set together. */
+        if (/\bpoints\b/i.test(notes)) g.points = true;
+        else if (/\bskins\b/i.test(notes)) g.skins = true;
         const m = /tees?\s*:\s*([^.;]+)/i.exec(notes);
         if (m){
           const co = C(currentRound.courseId);
@@ -3905,7 +3931,8 @@ function scheduleToCSV(){
         /* Both halves of the round trip, or it's lost on export — the way
            ROUND notes were for months. */
         const bits = [];
-        if (g.skins) bits.push("Skins");
+        if (g.points) bits.push("Points");
+        else if (g.skins) bits.push("Skins");
         /* A side writes its box, or the men on it who have one of their own,
            or "own". Both halves of this have to agree or the tees are lost on
            a round trip, the way ROUND notes were for months. */
@@ -4271,8 +4298,9 @@ function gameEditor(g){
         counts[i]}/${need[i]}</span>`).join("")}
       ${isMulti(g) ? `<button class="chip ${g.oneGroup?"on":""}" data-onegroup="${g.id}">${
         g.oneGroup ? "All eight \u2014 not counted in pairings" : "Two foursomes"}</button>` : ""}
-      ${isMulti(g) ? `<button class="chip ${g.skins?"on":""}" data-skins="${g.id}">${
-        g.skins ? "Skins \u2014 two a hole" : "Stroke play"}</button>` : ""}
+      ${isMulti(g) ? `<button class="chip ${isSkins(g)?"on":""}" data-skins="${g.id}">${
+        isPoints(g) ? "Points \u2014 5-3-1-0, birdie \u00d72"
+        : g.skins ? "Skins \u2014 two a hole" : "Stroke play"}</button>` : ""}
     </div>
     ${isMulti(g) && course.tees.length > 1 ? `<div class="teeset">
       <span class="teeset-t">Tees</span>
@@ -4687,7 +4715,7 @@ function holeGrid(g){
      order as the two halves of every cell below, so it reads as a key without
      having to be one. */
   o += `<div class="hg-row hg-head"><span class="hg-lab hg-corner">${sk
-    ? `<span class="hg-key"><span class="k-sk">Skins</span><span class="k-st">Strokes</span></span>`
+    ? `<span class="hg-key"><span class="k-sk">${isPoints(g) ? "Points" : "Skins"}</span><span class="k-st">Strokes</span></span>`
     : "Hole"}</span>`;
   for (let i = 0; i < 18; i++)
     o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}" data-hole="${i}">${
@@ -4826,6 +4854,20 @@ function gameRules(g){
     "Lowest total of the 40 wins, read against the par of the holes you counted.",
     hcp, pu + " A picked-up score can't be counted.", casual ]);
 
+  if (isPoints(g)) return `<h3>2v2v2v2 points</h3>` + li([
+    "Four teams of two, scramble: both hit, take the better shot, both play from there.",
+    "No handicaps \u2014 teams are evened out by which tees they play.",
+    "Every hole pays by place: <b>5</b> to the best score, <b>3</b> to second, "
+      + "<b>1</b> to third, <b>0</b> to fourth.",
+    "<b>Birdie doubles</b> that team's points; <b>eagle triples</b> them. A birdie that "
+      + "wins is 10; a birdie in second is 6.",
+    "Ties split the points for the places they cover: two tied for first share 5+3, so "
+      + "par, par, bogey, bogey is 4, 4, \u00bd, \u00bd. Two birdies tied for first is 8 each.",
+    "Points aren't paid on a hole until all four teams have a score.",
+    "Most points wins. <b>Top two teams win, bottom two lose</b>; a tie across that line "
+      + "is a tie for both.",
+    casual ]);
+
   if (isSkins(g)) return `<h3>2v2v2v2 skins</h3>` + li([
     "Four teams of two, scramble: both hit, take the better shot, both play from there.",
     "No handicaps — teams are evened out by which tees they play.",
@@ -4944,11 +4986,10 @@ function renderGame(){
       ? `<div class="banner tight closed">
           <div class="st">${sk.result.winner === "TIE" ? "TIED"
             : `${winnerLabel(g, sk.result.winner)} WIN`}</div>
-          <div class="thru">${esc(sk.result.label)} · skins</div>
+          <div class="thru">${esc(sk.result.label)} · ${unitWord(g)}</div>
         </div>`
-      : `<div class="cardcap">${sk.holes
-          ? `Skins · two a hole · thru ${sk.holes}`
-          : "Skins · two a hole · not started"} · top two win</div>`;
+      : `<div class="cardcap">${isPoints(g) ? "Points · 5-3-1-0, birdie ×2" : "Skins · two a hole"}${
+          sk.holes ? ` · thru ${sk.holes}` : " · not started"} · top two win</div>`;
   } else if (isStroke(g)){
     /* Same as skins: the card above carries every side's gross and to par with
        its rank beside the name, so a box repeating it mid-round is the same
@@ -5289,7 +5330,7 @@ function renderTeam(g, t, h, hardLocked){
     const ts = hole.teamScore[t];
     head += `${ts != null ? ts : "—"} <span class="tsub">` +
             `${hs ? `<span class="skin">+${fmtSkins(hs[t])}</span> ` : ""}` +
-            `${fmtSkins(totals[t])} skins</span>`;
+            `${fmtSkins(totals[t])} ${unitWord(g)}</span>`;
     if (hole.locked[t]) head += ` <span class="locked-flag">Locked</span>`;
   } else if (isStroke(g)){
     /* stroke play: this hole's score and the round total so far. The 40-score
@@ -6096,7 +6137,12 @@ function handleClick(el){
   }
   if (el.dataset.skins){
     const g = GAMES.find(x => x.id === el.dataset.skins);
-    g.skins = !g.skins; pushGame(g); render(); return;
+    /* One chip, three ways to score: stroke play \u2192 skins \u2192 points \u2192 back.
+       Never both flags at once. */
+    if (g.points){ g.points = false; g.skins = false; }
+    else if (g.skins){ g.skins = false; g.points = true; }
+    else g.skins = true;
+    pushGame(g); render(); return;
   }
 
   if (el.id === "ashow"){ showUnlock = true; render(); return; }

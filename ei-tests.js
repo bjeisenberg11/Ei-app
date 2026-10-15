@@ -3554,6 +3554,74 @@ t("R144 a casual 3v3 leaves the standings, and the Board says which round it was
   w.eval(`view.tab = "home"; render();`);
 }));
 
+t("R145 2v2v2v2 points: 5-3-1-0, birdie doubles, eagle triples, ties split", () => isolate(() => {
+  const w = dom.window;
+  const par0 = w.eval("COURSES[0].holes[0].par");
+  w.eval("COURSES[0].holes[0].par = 4");
+  try {
+    /* Blake's own examples, on the 16-point scale he sent, carried onto 5-3-1-0.
+       In twelfths, so 10 points is 120. */
+    const P = sc => skinsHole(sc, { skins:false, points:true }).map(u => u / 12).join(",");
+    eq(P([4,5,6,7]), "5,3,1,0", "plain hole pays by place:");
+    eq(P([3,4,5,6]), "10,3,1,0", "a birdie that wins doubles its 5:");
+    eq(P([3,3,5,6]), "8,8,1,0", "two birdies tied for first share 5+3, each doubled:");
+    eq(P([2,3,5,6]), "15,6,1,0", "eagle triples, and a birdie in second still doubles:");
+    eq(P([4,4,5,5]), "4,4,0.5,0.5", "par, par, bogey, bogey splits both pairs:");
+    eq(skinsHole([4,5,5,5], { skins:false, points:true }).join(","), "60,16,16,16",
+       "a three-way tie for second shares 3+1+0 — thirds, whole in twelfths:");
+    eq(P([4,4,4,4]), "2.25,2.25,2.25,2.25", "all four level share the nine:");
+    eq(skinsHole([4,5,6,null], { skins:false, points:true }), null,
+       "nothing is paid until every team has a score:");
+    /* Skins is untouched by any of it. */
+    eq(skinsHole([3,4,5,6]).join(","), "12,12,0,0", "a skins game still pays two skins, birdie or not:");
+
+    /* The whole game runs off the same machine: most points wins. */
+    const o = JSON.parse(w.eval(`(function(){
+      GAMES.length = 0;
+      const g = { id:"gp", roundId: ROUNDS()[0].id, type:"SCRAMBLE2X4", points:true,
+        teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes: blankHoles() };
+      const par = h => courseOf(g).holes[h].par;
+      /* Team 3 is last on every hole but birdies the first four, where nobody
+         else does; team 0 wins everything else. */
+      for (let h = 0; h < 18; h++)
+        g.holes[h].teamScore = h < 4 ? {0:par(h), 1:par(h)+1, 2:par(h)+2, 3:par(h)-1}
+                                     : {0:par(h), 1:par(h)+1, 2:par(h)+2, 3:par(h)+3};
+      GAMES.push(g);
+      return JSON.stringify({ r: gameResult(g), out: teamOutcomes(g),
+        tot: skinTotals(g).totals.map(u => u / 12), rules: gameRules(g),
+        word: unitWord(g) });
+    })()`));
+    /* By hand: four birdie holes pay D 10, A 3, B 1, C 0; fourteen plain ones
+       pay A 5, B 3, C 1, D 0. */
+    eq(o.tot.join(","), "82,46,14,40", "totals add up hole by hole: " + o.tot.join(","));
+    eq(o.r.winner, "A", "most points wins:");
+    eq(o.out.join(","), "W,W,L,L", "and the top two go through:");
+    ok(/Birdie doubles/.test(o.rules) && /5<\/b> to the best/.test(o.rules),
+       "the (i) explains points, not skins");
+    eq(o.word, "points", "every label says points:");
+  } finally {
+    w.eval("COURSES[0].holes[0].par = " + par0);
+  }
+
+  /* The CSV carries it both ways, and the one chip cycles through all three. */
+  const co = w.eval("COURSES[0].name");
+  const csv = "day,time,type,course,detail,player,notes,a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4,d1,d2,d3,d4\n"
+    + `Thursday,1:03pm,ROUND,${co}\n`
+    + "Thursday,,GAME,,2V2V2V2-8,,Points,Blake,Daniel,,,Dan,Howard,,,Jason,Luke,,,Jake,Adam\n";
+  const plan = JSON.parse(w.eval(`JSON.stringify(parseCSV(${JSON.stringify(csv)}))`));
+  eq(plan.games[0].points, true, "'Points' in the notes makes a points game:");
+  ok(!plan.games[0].skins, "and never both:");
+  w.eval(`SCHEDULE = ${JSON.stringify(plan.events)};
+          GAMES = ${JSON.stringify(plan.games)}.map(x => { x.holes = blankHoles(); return x; });`);
+  ok(/,Points,/.test(w.eval("scheduleToCSV()")), "and the export writes it back:");
+  const cycle = [];
+  for (let k = 0; k < 3; k++){
+    w.eval(`handleClick({ dataset:{ skins: GAMES[0].id } })`);
+    cycle.push(w.eval(`(GAMES[0].points ? "points" : GAMES[0].skins ? "skins" : "strokes")`));
+  }
+  eq(cycle.join(">"), "strokes>skins>points", "points → strokes → skins → points:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

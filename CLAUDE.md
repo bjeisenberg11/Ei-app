@@ -38,6 +38,17 @@ The app covers:
     - The flag is **absent-means-strokes** on purpose. Changing the format
       itself would re-score every stored 2v2v2v2 and move the all-time
       records.
+    - **Or scored on points when `g.points` is set** (R145): 5-3-1-0 by place
+      (`PLACE_PTS`), a side's own **birdie doubles** its points and **eagle or
+      better triples** them, ties split the points for the places they cover.
+      Skins pays only the top two, so a side that keeps finishing third can be
+      out of it by the turn; points keeps all four in it. Same machine as
+      skins — `holeSkins` returns twelfths for both (every split, ×2 or ×3,
+      still divides into twelve), so **`isSkins` is true for both** and
+      totals, ranking, grid, card and top-two-through are shared. `isPoints`
+      picks the per-hole sum and the words (`unitWord`). The two flags are
+      never set together: the roster chip cycles stroke play → skins → points,
+      and the CSV notes take `Points` (checked before `Skins`).
     - `g.tees` is a per-side tee name (`{0:"Black",1:"Blue",…}`) for a
       four-team game, since the teams are levelled by the boxes rather than by
       handicaps and the same man plays a different tee depending on his
@@ -415,7 +426,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **183 passed, 0 failed**. The suite is
+Current status against `index.html`: **184 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
