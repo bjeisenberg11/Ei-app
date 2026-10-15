@@ -153,6 +153,15 @@ The app covers:
       changed wolf still tees last and the other four keep their rotation
       places. The "Takes" chips run in the same order, since he decides on each
       man as that man hits.
+    - **"Change" sets the order by hand** (`teeSet`, R148): tap the five as
+      they teed off on hole 1 (four taps; the fifth fills in), confirm, and the
+      roster becomes `[last, ...first four]` so `wolfOn` and `wolfTeeOrder`
+      agree with the tee. Unlike the draw it stays **available mid-round** —
+      it records what happened rather than rolling something new. It writes
+      through `pushWolfOrder`, an `updateDoc` of **`teams.0` and `drawn`
+      only**, never `pushGame`: a whole-game `setDoc` from one phone's copy
+      mid-round could wipe a score another phone just sent. Hole-level wolf
+      overrides survive it; unoverridden holes re-derive their wolf.
     - CSV: `WOLF` / `WOLF5` / `5-man Wolf`. A **one-sided** game's names are read
       and written **straight across** every name cell in the row, because five
       men don't fit one side's four columns. Both `parseCSV` and `scheduleToCSV`
@@ -436,7 +445,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **186 passed, 0 failed**. The suite is
+Current status against `index.html`: **187 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

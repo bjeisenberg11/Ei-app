@@ -435,6 +435,8 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .teeord li::before{content:counter(tee);font-family:'Barlow Condensed',sans-serif;
   font-weight:700;font-size:12px;color:var(--ink-faint);margin-right:5px}
 .teeord li.is-wolf{font-weight:700}
+.teechg{margin-left:auto;background:none;border:none;padding:0;font:inherit;
+  font-size:13px;color:var(--ink-soft);text-decoration:underline;cursor:pointer}
 /* Who is on which side of the hole, once the wolf has decided. A tint rather
    than a label: the rows are already named and five more words would push the
    stepper off a phone. */
@@ -2046,7 +2048,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.0845";
+const BUILD = "2026-10-15.0900";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2780,6 +2782,18 @@ function pushGame(g){
     .then(() => setSync("live", {lastAt:new Date()}))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
+/* Write a wolf game's tee order and nothing else. pushGame would setDoc the
+   whole game from this phone's copy, which mid-round could wipe a score
+   another phone sent a second ago; two fields can't touch a hole. */
+function pushWolfOrder(g){
+  if (staleDevice || isArchive()) return;
+  if (!SYNC.on || !SYNC.api) return;
+  const { doc, updateDoc } = SYNC.api;
+  updateDoc(doc(SYNC.db, "tournaments", tidFor(activeYear), "games", g.id),
+            { "teams.0": g.teams[0], drawn: true })
+    .then(() => setSync("live", {lastAt:new Date()}))
+    .catch(e => setSync("error", { err: (e.code||e.message) + " (tee order write failed)" }));
+}
 /* Deleting is asynchronous, but the games listener keeps firing meanwhile —
    and it rebuilds the list from whatever the snapshot holds. A snapshot sent
    before the delete landed (or served from cache) would put the game straight
@@ -2921,6 +2935,9 @@ let homeShowAll = true;
 /* Which game's rules are open, if any. A game id rather than a flag, so moving
    to another game closes it instead of greeting you with a wall of text. */
 let rulesOpen = null;
+/* A wolf tee order being tapped in by hand: { gid, picks:[ids in order] }.
+   Keyed by game id like rulesOpen, so it can't leak onto another game. */
+let teeSet = null;
 /* The flight form's half-filled state, per direction. Kept off the page
    because tapping an airline or a name redraws the screen, and a number typed
    a moment earlier has to survive that. */
@@ -5413,11 +5430,29 @@ function renderWolf(g, h){
     Object.keys(hl.scores || {}).length || hl.wolf || hl.lone || (hl.pack || []).length);
 
   const order = wolfTeeOrder(g, h);
-  let out = `<div class="wolfpick">
-    <div class="wolfhead"><span class="wolflab">Tee order</span></div>
+  /* Setting the order by hand: tap the five as they teed off on hole 1. For a
+     game whose order was settled on the tee rather than by the draw — and,
+     unlike the draw, it stays available mid-round, because it records what
+     happened rather than rolling something new. */
+  const setting = !ro && teeSet && teeSet.gid === g.id;
+  let out = setting ? `<div class="wolfpick">
+    <div class="wolfhead"><span class="wolflab">Set tee order</span>
+      <span class="wolfname">${teeSet.picks.length < roster.length
+        ? `Who hit ${["first", "second", "third", "fourth", "fifth"][teeSet.picks.length] || "next"} on hole 1?`
+        : ""}</span></div>
+    <ol class="teeord">${teeSet.picks.map(id => `<li>${nm(id)}</li>`).join("")}</ol>
+    <div class="wolfrow" style="margin-top:9px">${roster.filter(id => !teeSet.picks.includes(id)).map(id =>
+      `<button class="chip" data-teepick="${id}">${nm(id)}</button>`).join("")}
+      <button class="chip" data-teeset="">Cancel</button></div>
+    <p class="note">The last man on hole 1 is its wolf. Scores and picks already
+      entered stay as they are.</p>
+  </div>` : `<div class="wolfpick">
+    <div class="wolfhead"><span class="wolflab">Tee order</span>${ro ? "" :
+      `<button class="lnk teechg" data-teeset="${g.id}">Change</button>`}</div>
     <ol class="teeord">${order.map(id =>
       `<li${id === w ? ` class="is-wolf"` : ""}>${nm(id)}</li>`).join("")}</ol>
-  </div>
+  </div>`;
+  out += `
   <div class="wolfpick">
     <div class="wolfhead"><span class="wolflab">Wolf</span>
       <span class="wolfname">${w ? nm(w) : "—"}</span></div>
@@ -6400,6 +6435,34 @@ function handleClick(el){
     hole.pack = p;
     pushHole(g, hh, "pack", p);
     if (hole.lone){ hole.lone = false; pushHole(g, hh, "lone", false); }
+    render(); return;
+  }
+  if (el.dataset.teeset !== undefined){
+    teeSet = el.dataset.teeset ? { gid: el.dataset.teeset, picks: [] } : null;
+    render(); return;
+  }
+  if (el.dataset.teepick){
+    if (!teeSet) return;
+    const gg = GAMES.find(x => x.id === teeSet.gid);
+    if (!gg) { teeSet = null; render(); return; }
+    const r = gg.teams[0] || [];
+    const picks = [...teeSet.picks, el.dataset.teepick];
+    /* Four taps settle the fifth: nobody needs to be asked who's left. */
+    if (picks.length === r.length - 1) picks.push(r.find(id => !picks.includes(id)));
+    if (picks.length < r.length){ teeSet.picks = picks; render(); return; }
+    const nm = id => (P(id) || {}).name || "?";
+    if (!confirm("Hole 1 tee order: " + picks.map(nm).join(", ") + "\n\n"
+        + nm(picks[picks.length - 1]) + " is wolf on hole 1, and it rotates from there. "
+        + "Holes where the wolf was changed by hand keep that wolf.")){
+      teeSet = null; render(); return;
+    }
+    /* The stored roster puts hole 1's wolf first (wolfOn reads roster[h % 5])
+       and hole 1's tee order then runs from roster[1] — so the last man to hit
+       moves to the front and the rest keep their order. */
+    gg.teams[0] = [picks[picks.length - 1], ...picks.slice(0, -1)];
+    gg.drawn = true;
+    teeSet = null;
+    pushWolfOrder(gg);
     render(); return;
   }
   if (el.dataset.wolfdraw){

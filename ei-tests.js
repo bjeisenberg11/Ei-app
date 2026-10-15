@@ -3138,6 +3138,62 @@ t("R147 each wolf hole shows its tee order, wolf last, without a write", () => i
   w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
+/* Asked for mid-round: the order was settled on the tee, not by the draw, and
+   the app's rotation had to be brought into line with it without touching
+   what had already been scored. So the write is two fields, never a setDoc
+   of the whole game from one phone's copy. */
+t("R148 a wolf tee order set by hand mid-round writes the order and nothing else", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles(), drawn:true };
+    g.holes[0].scores = { p1:4, p2:5, p3:4, p4:6, p5:5 }; g.holes[0].pack = ["p2","p3"];
+    g.holes[1].scores = { p1:3 };
+    GAMES.push(g);
+    const saved = { on: SYNC.on, api: SYNC.api, db: SYNC.db };
+    const updates = []; let sets = 0;
+    SYNC.on = true; SYNC.db = {};
+    SYNC.api = { doc: (...a) => a.slice(1).join("/"),
+      updateDoc: (ref, d) => { updates.push({ ref, d }); return Promise.resolve(); },
+      setDoc: () => { sets++; return Promise.resolve(); } };
+    isAdmin = true;
+    view.tab = "home"; view.gameId = g.id; view.hole = 1; render();
+    const holesBefore = JSON.stringify(g.holes);
+    const html = () => document.getElementById("app").innerHTML;
+    const offeredMidRound = /data-teeset="gw"/.test(html());
+    const realConfirm = window.confirm;
+    const tapAll = () => { handleClick({ dataset:{ teeset:"gw" } });
+      ["p3","p1","p4","p2"].forEach(id => handleClick({ dataset:{ teepick:id } })); };
+    /* Say no first: nothing may move. */
+    window.confirm = () => false; tapAll();
+    const heldOnNo = g.teams[0].join(",") === "p1,p2,p3,p4,p5" && !updates.length;
+    window.confirm = () => true; tapAll();
+    window.confirm = realConfirm;
+    const res = JSON.stringify({ offeredMidRound, heldOnNo,
+      roster: g.teams[0].join(","),
+      h1: wolfTeeOrder(g, 0).join(","), h2: wolfTeeOrder(g, 1).join(","),
+      wolf1: wolfOn(g, 0),
+      holesSame: JSON.stringify(g.holes) === holesBefore,
+      updates: updates.map(u => Object.keys(u.d).sort().join(",")),
+      ref: (updates[0] || {}).ref, sets,
+      closed: !/data-teepick/.test(html()) });
+    Object.assign(SYNC, saved);
+    return res;
+  })()`));
+  ok(out.offeredMidRound, "Change is on the card with scores already in:");
+  ok(out.heldOnNo, "a no at the confirm leaves the order alone and writes nothing:");
+  eq(out.h1, "p3,p1,p4,p2,p5", "hole 1 tees off exactly as tapped, the fifth filled in:");
+  eq(out.wolf1, "p5", "the last man on hole 1 is its wolf:");
+  eq(out.h2, "p1,p4,p2,p5,p3", "and hole 2 rotates on from there:");
+  ok(out.holesSame, "no score or pick on any hole changed:");
+  eq(out.updates.join("|"), "drawn,teams.0", "one write, of the order and the drawn flag only:");
+  ok(/games\/gw$/.test(out.ref || ""), "to that game's document:");
+  eq(out.sets, 0, "never a whole-game setDoc:");
+  ok(out.closed, "and the picker closes:");
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
 t("R136 a split pair carries its two boxes on the game, not on the Field tab",
   () => isolate(() => {
   const w = dom.window;
