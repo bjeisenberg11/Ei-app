@@ -3735,20 +3735,22 @@ t("R145 2v2v2v2 points: 5-3-1-0, birdie doubles, eagle triples, ties split", () 
   eq(cycle.join(">"), "strokes>skins>points", "points → strokes → skins → points:");
 }));
 
-t("R146 the Test bar is only on the 2v2v2v2, one tap from nothing live", () => isolate(() => {
+t("R146 no card carries the Test bar, one tap from wiping a live game", () => isolate(() => {
   const w = dom.window;
   /* Random scores and Reset sat on every card during the tournament itself.
-     They're left on the 2v2v2v2 only, so points can be tried before the round. */
+     They were cut to the 2v2v2v2 so points could be tried before the round,
+     then removed from it too once the round was under way. */
   const has = id => w.eval(`(function(){ isAdmin = true; SYNC.on = false;
     view.tab = "home"; view.gameId = "${id}"; view.hole = 0; render();
-    return !!document.getElementById("randhole"); })()`);
+    const app = document.getElementById("app");
+    return !!(document.getElementById("randhole") || document.getElementById("reset")
+              || app.querySelector(".testbar")); })()`);
   w.eval(`(function(){ const r = ROUNDS()[0].id;
     GAMES.push({ id:"t4", roundId:r, type:"SCRAMBLE2X4", teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes:blankHoles() });
     GAMES.push({ id:"tw", roundId:r, type:"WOLF5", teams:{0:["p1","p2","p3","p4","p5"]}, holes:blankHoles() }); })()`);
-  ok(has("t4"), "the 2v2v2v2 keeps it");
-  const others = JSON.parse(w.eval(`JSON.stringify(GAMES.filter(g => g.type !== "SCRAMBLE2X4").map(g => [g.id, g.type]))`));
-  ok(others.length >= 4, "a game of every other format to check");
-  others.forEach(([id, type]) => ok(!has(id), type + " has no Test bar"));
+  const all = JSON.parse(w.eval(`JSON.stringify(GAMES.map(g => [g.id, g.type]))`));
+  ok(all.some(([, t]) => t === "SCRAMBLE2X4") && all.length >= 5, "a game of every format to check");
+  all.forEach(([id, type]) => ok(!has(id), type + " has no Test bar"));
   ok(/const BUILD = "\d{4}-\d{2}-\d{2}\.\d{4}";/.test(html),
      "and the build stamp is a plain value the update check can read");
   w.eval(`view.gameId = null; view.tab = "home"; render();`);

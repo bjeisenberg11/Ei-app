@@ -761,12 +761,6 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
   letter-spacing:.11em;font-size:12px;color:var(--ink-soft)}
 .tabs button.on{color:var(--ink);box-shadow:inset 0 3px 0 var(--ink)}
 
-.testbar{display:flex;align-items:center;gap:7px;margin-top:10px;
-  border:1px dashed var(--rule);padding:8px 9px;background:var(--paper-2)}
-.testbar-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.14em;font-size:9px;color:var(--ink-faint);flex:none}
-.testbar .btn{padding:9px 6px;font-size:11px}
-
 .footnote{border-top:1px solid var(--rule);margin-top:26px;padding:14px 0 8px;
   font-size:13px;color:var(--ink-soft);line-height:1.5}
 .toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%) translateY(140%);
@@ -2055,7 +2049,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.0905";
+const BUILD = "2026-10-15.1250";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -5079,15 +5073,10 @@ function renderGame(){
       <button id="next" ${h===17?"disabled":""}>&rarr;</button>
     </span></div>`;
 
-  /* Off for the real thing. Random scores and Reset sat on every card, one
-     tap from wiping a live game. Left on the 2v2v2v2 only, so its new points
-     scoring can be tried before Thursday's round \u2014 reset it before the
-     first tee. Remove this line entirely once that's done. */
-  if (!isArchive() && g.type === "SCRAMBLE2X4") out += `<div class="testbar">
-    <span class="testbar-t">Test</span>
-    <button class="btn ghost" id="randhole">Random scores</button>
-    <button class="btn ghost" id="reset">Reset game</button>
-  </div>`;
+  /* No Test bar. Random scores and Reset game sat on every card, one tap from
+     wiping a live game; they were cut to the 2v2v2v2 so its points scoring could
+     be tried before Thursday's round, and removed outright once it had been
+     (R146). */
 
   out += strokesHereLine(g, h);
   if (usesHcp(g)){
@@ -5125,60 +5114,6 @@ function renderGame(){
 
 
   app.innerHTML = out;
-}
-
-/* Testing helper: plausible scores for the current hole. Not part of play —
-   it exists so the 40ball budget can be exercised quickly. */
-function randomHole(g, h){
-  const par = courseOf(g).holes[h].par;
-  const roll = () => Math.max(2, par + [-1,0,0,0,1,1,2][Math.floor(Math.random()*7)]);
-  const hole = g.holes[h];
-  hole.conceded = null;
-
-  if (isScramble(g)){
-    sides(g).forEach(t => {
-      hole.teamScore[t] = Math.max(2, roll() - 1);
-      pushHole(g, h, `teamScore.${t}`, hole.teamScore[t]);
-    });
-    return;
-  }
-
-  /* Wolf before the two-sided path below: there is no teams[1] to iterate. */
-  if (isWolf(g)){
-    const roster = rosterOf(g);
-    roster.forEach(id => {
-      hole.scores[id] = roll();
-      pushHole(g, h, `scores.${id}`, hole.scores[id]);
-    });
-    if (!wolfPack(g, h)){
-      hole.lone = false;
-      hole.pack = roster.filter(id => id !== wolfOn(g, h)).slice(0, 2);
-      pushHole(g, h, "lone", false);
-      pushHole(g, h, "pack", hole.pack);
-    }
-    return;
-  }
-
-  [0,1].forEach(t => {
-    if (g.type === "FORTYBALL" && hole.locked[t]) return;
-    g.teams[t].forEach(id => {
-      hole.scores[id] = roll();
-      pushHole(g, h, `scores.${id}`, hole.scores[id]);
-    });
-  });
-
-  if (g.type === "FORTYBALL"){
-    [0,1].forEach(t => {
-      if (hole.locked[t]) return;
-      const b = fbBudget(g, t, h);
-      const ranked = g.teams[t].slice().sort((a,c) => netOf(a,g,h) - netOf(c,g,h));
-      const take = Math.max(b.min, Math.min(b.max, 2));
-      hole.selected[t] = ranked.slice(0, take);
-      hole.locked[t] = true;
-      pushHole(g, h, `selected.${t}`, hole.selected[t]);
-      pushHole(g, h, `locked.${t}`, true);
-    });
-  }
 }
 
 /* score bug: sibling games in the same round; long lines scroll like a ticker */
@@ -6572,15 +6507,7 @@ function handleClick(el){
     render(); return;
   }
 
-  if (el.id === "randhole"){
-    randomHole(g, h);
-    render(); toast("Hole " + (h+1) + " filled");
-    return;
-  }
   if (el.id === "togglestrokes"){ showStrokes = !showStrokes; render(); return; }
-  if (el.id === "reset"){
-    if (SYNC.on && !isAdmin){ toast("Admin only"); return; }
-    g.holes = blankHoles(); pushGame(g); view.hole = 0; render(); toast("Game reset"); return; }
 }
 
 /* text inputs: update the model in place so focus and the keyboard survive */

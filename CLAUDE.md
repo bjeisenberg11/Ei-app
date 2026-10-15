@@ -574,10 +574,10 @@ about, because they fail for reasons that aren't about the code you just wrote:
     one game and score another. Handicap mode and "this round is casual" are
     read off the round, not written in.
 
-- **The Test bar** (Random scores / Reset game) shows on the **2v2v2v2 only**,
-  so its points scoring could be tried before Thursday's round; every other
-  card lost it, one tap from wiping a live game (R146). Reset the 2v2v2v2
-  before the first tee, then remove the bar entirely.
+- **There is no Test bar** (Random scores / Reset game). It sat on every card,
+  one tap from wiping a live game; it was cut to the 2v2v2v2 so points could be
+  tried before Thursday's round, then removed outright with `randomHole` once
+  that round was under way. R146 fails if it comes back on any format.
 
 ## UI decisions that look odd and aren't
 
