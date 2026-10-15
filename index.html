@@ -1505,14 +1505,21 @@ const wolfOn = (g, h) => {
   return (g.holes[h] || {}).wolf || r[h % (r.length || 1)] || null;
 };
 /* Who tees off when on hole h. Derived, never stored, so it can be added to a
-   game already under way without a write. The order rotates one place a hole
-   with the wolf last: hole 1 is roster 2,3,4,5,1, hole 2 is 3,4,5,1,2. If the
-   wolf was changed on a hole he still tees last, and the other four keep their
-   places in the rotation around him. */
+   game already under way without a write.
+
+   Everybody moves down one place a hole and the wolf, last, comes round to
+   tee off first on the next: Blake Jake Daniel Dan Jason on hole 1 is Jason
+   Blake Jake Daniel Dan on hole 2. The roster is the wolves in turn
+   (wolfOn reads roster[h % 5]), so a hole's tee order is the roster read
+   backwards ending on that hole's wolf — roster 5,4,3,2,1 on hole 1. (The
+   first build had it moving up a place instead; the group plays it down.)
+
+   If the wolf was changed on a hole he still tees last, and the other four
+   keep their places in the rotation around him. */
 const wolfTeeOrder = (g, h) => {
   const r = rosterOf(g), n = r.length;
   if (!n) return [];
-  const turn = r.map((_, i) => r[(h + 1 + i) % n]);
+  const turn = r.map((_, i) => r[(h + n - 1 - i) % n]);
   const w = wolfOn(g, h);
   return turn.includes(w) ? [...turn.filter(id => id !== w), w] : turn;
 };
@@ -2048,7 +2055,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.0900";
+const BUILD = "2026-10-15.0905";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4870,7 +4877,7 @@ function gameRules(g){
   const pu = "PU means picked up: finished the hole, no score to count.";
 
   if (isWolf(g)) return `<h3>5-man Wolf</h3>` + li([
-    "Tee order rotates every hole. The wolf is the <b>last</b> man to tee off.",
+    "Tee order rotates every hole: everyone moves down one, and the wolf tees off first on the next. The wolf is the <b>last</b> man to tee off.",
     "After each drive the wolf takes that player or passes — no going back. He needs "
       + "<b>two</b> partners (3 v 2), or he goes alone. Pass on the first three and he's alone.",
     "Each side's <b>best net ball</b> wins the hole. A tie pays nothing, and nothing carries.",
@@ -6452,14 +6459,16 @@ function handleClick(el){
     if (picks.length < r.length){ teeSet.picks = picks; render(); return; }
     const nm = id => (P(id) || {}).name || "?";
     if (!confirm("Hole 1 tee order: " + picks.map(nm).join(", ") + "\n\n"
-        + nm(picks[picks.length - 1]) + " is wolf on hole 1, and it rotates from there. "
+        + nm(picks[picks.length - 1]) + " is wolf on hole 1. Each hole everyone moves "
+        + "down one, so " + nm(picks[picks.length - 2]) + " is wolf on hole 2. "
         + "Holes where the wolf was changed by hand keep that wolf.")){
       teeSet = null; render(); return;
     }
-    /* The stored roster puts hole 1's wolf first (wolfOn reads roster[h % 5])
-       and hole 1's tee order then runs from roster[1] — so the last man to hit
-       moves to the front and the rest keep their order. */
-    gg.teams[0] = [picks[picks.length - 1], ...picks.slice(0, -1)];
+    /* The stored roster is the wolves in turn (wolfOn reads roster[h % 5]).
+       With everyone moving down a place a hole, hole 2's wolf is the man who
+       hit fourth on hole 1, hole 3's the man who hit third — the hole-1 order
+       backwards. */
+    gg.teams[0] = picks.slice().reverse();
     gg.drawn = true;
     teeSet = null;
     pushWolfOrder(gg);

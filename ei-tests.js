@@ -3099,7 +3099,7 @@ t("R135 the draw sets tee order, and with it who starts as wolf", () => isolate(
 /* Asked for with a wolf game already under way, so the order is worked out
    from the roster and never written: drawing the card must leave the game
    exactly as it was and queue nothing. */
-t("R147 each wolf hole shows its tee order, wolf last, without a write", () => isolate(() => {
+t("R147 each wolf hole shows its tee order — down one a hole, wolf last — without a write", () => isolate(() => {
   const w = dom.window;
   const out = JSON.parse(w.eval(`(function(){
     GAMES.length = 0;
@@ -3126,13 +3126,13 @@ t("R147 each wolf hole shows its tee order, wolf last, without a write", () => i
       names: ["p1","p2","p3","p4","p5"].map(id => P(id).name) });
   })()`));
   const [n1, n2, n3, n4, n5] = out.names;
-  eq(out.calc[0], "p2,p3,p4,p5,p1", "hole 1 rotates from the second man, wolf (first drawn) last:");
-  eq(out.calc[1], "p3,p4,p5,p1,p2", "hole 2 moves round one place:");
-  eq(out.calc[2], "p4,p5,p2,p3,p1", "a changed wolf still tees last, the rest keep the rotation:");
-  eq(out.calc[3], "p2,p3,p4,p5,p1", "and it cycles — hole 16 is hole 1 again:");
-  eq(out.shown[0], [n2, n3, n4, n5, n1 + "*"].join(","), "the card lists that order, wolf marked:");
-  eq(out.shown[2], [n4, n5, n2, n3, n1 + "*"].join(","), "including on a hole where the wolf was changed:");
-  eq(out.takes[1], "p3,p4,p5,p1", "the men he can take run in the order they hit:");
+  eq(out.calc[0], "p5,p4,p3,p2,p1", "hole 1 is the roster backwards, the first drawn (its wolf) last:");
+  eq(out.calc[1], "p1,p5,p4,p3,p2", "hole 2: everyone down one, hole 1's wolf tees first:");
+  eq(out.calc[2], "p2,p5,p4,p3,p1", "a changed wolf still tees last, the rest keep the rotation:");
+  eq(out.calc[3], "p5,p4,p3,p2,p1", "and it cycles — hole 16 is hole 1 again:");
+  eq(out.shown[0], [n5, n4, n3, n2, n1 + "*"].join(","), "the card lists that order, wolf marked:");
+  eq(out.shown[2], [n2, n5, n4, n3, n1 + "*"].join(","), "including on a hole where the wolf was changed:");
+  eq(out.takes[1], "p1,p5,p4,p3", "the men he can take run in the order they hit:");
   ok(out.untouched, "drawing the card leaves the game exactly as it was:");
   ok(out.noQueue, "and queues no write:");
   w.eval("view.gameId = null; view.tab = 'home'; render();");
@@ -3173,7 +3173,7 @@ t("R148 a wolf tee order set by hand mid-round writes the order and nothing else
     const res = JSON.stringify({ offeredMidRound, heldOnNo,
       roster: g.teams[0].join(","),
       h1: wolfTeeOrder(g, 0).join(","), h2: wolfTeeOrder(g, 1).join(","),
-      wolf1: wolfOn(g, 0),
+      wolf1: wolfOn(g, 0), wolf2: wolfOn(g, 1),
       holesSame: JSON.stringify(g.holes) === holesBefore,
       updates: updates.map(u => Object.keys(u.d).sort().join(",")),
       ref: (updates[0] || {}).ref, sets,
@@ -3185,7 +3185,8 @@ t("R148 a wolf tee order set by hand mid-round writes the order and nothing else
   ok(out.heldOnNo, "a no at the confirm leaves the order alone and writes nothing:");
   eq(out.h1, "p3,p1,p4,p2,p5", "hole 1 tees off exactly as tapped, the fifth filled in:");
   eq(out.wolf1, "p5", "the last man on hole 1 is its wolf:");
-  eq(out.h2, "p1,p4,p2,p5,p3", "and hole 2 rotates on from there:");
+  eq(out.h2, "p5,p3,p1,p4,p2", "hole 2: everyone down one, so hole 1's wolf tees first:");
+  eq(out.wolf2, "p2", "and the man who hit fourth on hole 1 is wolf on hole 2:");
   ok(out.holesSame, "no score or pick on any hole changed:");
   eq(out.updates.join("|"), "drawn,teams.0", "one write, of the order and the drawn flag only:");
   ok(/games\/gw$/.test(out.ref || ""), "to that game's document:");
