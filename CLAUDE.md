@@ -147,15 +147,19 @@ The app covers:
       listing the current one), and the button reads "Redraw order". `g.drawn`
       is stored on the game so every phone asks, not just the one that drew;
       absent means never drawn, so no `SCHEMA` bump.
-    - **Tee order is shown on every hole** (`wolfTeeOrder`, R147): the roster
-      rotated one place a hole, wolf last — hole 1 is roster 2,3,4,5,1. It is
+    - **Tee order is shown on every hole** (`wolfTeeOrder`, R147): everyone
+      moves **down** one place a hole and the wolf tees first on the next
+      (Blake Jake Daniel Dan Jason → Jason Blake Jake Daniel Dan). The roster
+      is the wolves in turn, so a hole's order is the roster read backwards
+      ending on its wolf — hole 1 is roster 5,4,3,2,1. The first build moved
+      it up a place; the group plays it down. It is
       **derived, never stored**, so it was added mid-round without a write. A
       changed wolf still tees last and the other four keep their rotation
       places. The "Takes" chips run in the same order, since he decides on each
       man as that man hits.
     - **"Change" sets the order by hand** (`teeSet`, R148): tap the five as
       they teed off on hole 1 (four taps; the fifth fills in), confirm, and the
-      roster becomes `[last, ...first four]` so `wolfOn` and `wolfTeeOrder`
+      roster becomes the hole-1 order **reversed** so `wolfOn` and `wolfTeeOrder`
       agree with the tee. Unlike the draw it stays **available mid-round** —
       it records what happened rather than rolling something new. It writes
       through `pushWolfOrder`, an `updateDoc` of **`teams.0` and `drawn`
