@@ -143,6 +143,10 @@ The app covers:
       picks who starts as wolf — one button for both. It's a roster change, so
       it goes through `pushGame`, and it disappears the moment anything has been
       entered: by then the order is a fact about holes already played off it.
+      The **first draw is one tap; a redraw asks** ("Redraw the tee order?",
+      listing the current one), and the button reads "Redraw order". `g.drawn`
+      is stored on the game so every phone asks, not just the one that drew;
+      absent means never drawn, so no `SCHEMA` bump.
     - CSV: `WOLF` / `WOLF5` / `5-man Wolf`. A **one-sided** game's names are read
       and written **straight across** every name cell in the row, because five
       men don't fit one side's four columns. Both `parseCSV` and `scheduleToCSV`

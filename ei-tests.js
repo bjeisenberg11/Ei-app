@@ -3056,6 +3056,17 @@ t("R135 the draw sets tee order, and with it who starts as wolf", () => isolate(
     isAdmin = true; SYNC.on = false;
     view.tab = "home"; view.gameId = g.id; view.hole = 0; render();
     const offered = /data-wolfdraw="gw"/.test(document.getElementById("app").innerHTML);
+    /* A redraw asks first. Say no once and nothing may move; then say yes to
+       the rest so the shuffle itself can be checked. */
+    const realConfirm = window.confirm;
+    handleClick({ dataset:{ wolfdraw:"gw" } });
+    const afterFirst = g.teams[0].join(","), labelled = /Redraw order/.test(
+      (render(), document.getElementById("app").innerHTML));
+    let asked = 0;
+    window.confirm = () => { asked++; return false; };
+    handleClick({ dataset:{ wolfdraw:"gw" } });
+    const heldOnNo = g.teams[0].join(",") === afterFirst && asked === 1;
+    window.confirm = () => true;
     /* Twenty draws: the order has to actually move, and it must stay the same
        five men every time. A sort() with a random comparator passes neither. */
     const seen = {}; let sameFive = true;
@@ -3064,14 +3075,17 @@ t("R135 the draw sets tee order, and with it who starts as wolf", () => isolate(
       seen[g.teams[0].join(",")] = 1;
       if (g.teams[0].slice().sort().join(",") !== "p1,p2,p3,p4,p5") sameFive = false;
     }
+    window.confirm = realConfirm;
     const first = wolfOn(g, 0), second = wolfOn(g, 1);
     g.holes[0].scores[g.teams[0][0]] = 4;
     view.hole = 0; render();
-    return JSON.stringify({ offered, orders: Object.keys(seen).length, sameFive,
+    return JSON.stringify({ offered, labelled, heldOnNo, orders: Object.keys(seen).length, sameFive,
       first, second, firstIsOrder: first === g.teams[0][0],
       stillOffered: /data-wolfdraw="gw"/.test(document.getElementById("app").innerHTML) });
   })()`));
   ok(out.offered, "the draw is on the card before anything is played:");
+  ok(out.labelled, "once drawn, the button says Redraw:");
+  ok(out.heldOnNo, "and a redraw asks first — a no leaves the order exactly as it was:");
   ok(out.orders > 1, "and it actually moves the order: " + out.orders + " of 20 distinct");
   ok(out.sameFive, "always the same five men, nobody dropped or duplicated:");
   ok(out.firstIsOrder, "the man drawn first is the wolf on hole 1:");

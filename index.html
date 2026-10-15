@@ -2027,7 +2027,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.0720";
+const BUILD = "2026-10-15.0735";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -5402,7 +5402,7 @@ function renderWolf(g, h){
     <p class="note">Last man to tee off. Rotates by tee order — change it here if
       the order moved.</p>
     ${touched || ro ? "" : `<div class="wolfrow" style="margin-top:9px">
-      <button class="chip" data-wolfdraw="${g.id}">Draw for order</button></div>
+      <button class="chip" data-wolfdraw="${g.id}">${g.drawn ? "Redraw order" : "Draw for order"}</button></div>
       <p class="note">Tee order is the rotation, so drawing it picks who starts
         as wolf.</p>`}
   </div>`;
@@ -6378,6 +6378,14 @@ function handleClick(el){
   if (el.dataset.wolfdraw){
     const gg = GAMES.find(x => x.id === el.dataset.wolfdraw);
     if (!gg) return;
+    /* The first draw is one tap. After that the order is something people
+       have been told and may already be teeing off in, so a stray tap mustn't
+       quietly change it: a redraw asks first. drawn is stored on the game so
+       the question is asked on every phone, not only the one that drew. */
+    if (gg.drawn && !confirm("Redraw the tee order?\n\nThis changes who's wolf on "
+        + "every hole. The current order: " + (gg.teams[0] || [])
+          .map((id, i) => (i + 1) + " " + ((P(id) || {}).name || "?")).join(", "))) return;
+    gg.drawn = true;
     /* The draw settles tee order, and the rotation is the tee order, so this
        is also the draw for who starts as wolf. Fisher-Yates rather than a
        sort(() => Math.random() - 0.5), which isn't a shuffle and visibly
