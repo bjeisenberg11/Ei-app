@@ -3096,6 +3096,48 @@ t("R135 the draw sets tee order, and with it who starts as wolf", () => isolate(
   w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
+/* Asked for with a wolf game already under way, so the order is worked out
+   from the roster and never written: drawing the card must leave the game
+   exactly as it was and queue nothing. */
+t("R147 each wolf hole shows its tee order, wolf last, without a write", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    GAMES.length = 0;
+    const g = { id:"gw", roundId: ROUNDS()[0].id, type:"WOLF5",
+                teams:{0:["p1","p2","p3","p4","p5"]}, holes: blankHoles(), drawn:true };
+    g.holes[0].scores.p1 = 4;
+    g.holes[2].wolf = "p1";            /* the wolf was changed on hole 3 */
+    GAMES.push(g);
+    isAdmin = true; SYNC.on = false;
+    const before = JSON.stringify(g), queued = JSON.stringify(loadQueue());
+    const shown = {}, takes = {};
+    view.tab = "home"; view.gameId = g.id;
+    [0, 1, 2, 15].forEach(h => {
+      view.hole = h; render();
+      const app = document.getElementById("app");
+      shown[h] = [...app.querySelectorAll(".teeord li")].map(li =>
+        li.textContent + (li.classList.contains("is-wolf") ? "*" : "")).join(",");
+      takes[h] = [...app.querySelectorAll("[data-pack]")].map(b => b.dataset.pack.split(":")[1]).join(",");
+    });
+    return JSON.stringify({ shown, takes,
+      calc: [0,1,2,15].map(h => wolfTeeOrder(g, h).join(",")),
+      untouched: JSON.stringify(g) === before,
+      noQueue: JSON.stringify(loadQueue()) === queued,
+      names: ["p1","p2","p3","p4","p5"].map(id => P(id).name) });
+  })()`));
+  const [n1, n2, n3, n4, n5] = out.names;
+  eq(out.calc[0], "p2,p3,p4,p5,p1", "hole 1 rotates from the second man, wolf (first drawn) last:");
+  eq(out.calc[1], "p3,p4,p5,p1,p2", "hole 2 moves round one place:");
+  eq(out.calc[2], "p4,p5,p2,p3,p1", "a changed wolf still tees last, the rest keep the rotation:");
+  eq(out.calc[3], "p2,p3,p4,p5,p1", "and it cycles — hole 16 is hole 1 again:");
+  eq(out.shown[0], [n2, n3, n4, n5, n1 + "*"].join(","), "the card lists that order, wolf marked:");
+  eq(out.shown[2], [n4, n5, n2, n3, n1 + "*"].join(","), "including on a hole where the wolf was changed:");
+  eq(out.takes[1], "p3,p4,p5,p1", "the men he can take run in the order they hit:");
+  ok(out.untouched, "drawing the card leaves the game exactly as it was:");
+  ok(out.noQueue, "and queues no write:");
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
 t("R136 a split pair carries its two boxes on the game, not on the Field tab",
   () => isolate(() => {
   const w = dom.window;

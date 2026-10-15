@@ -428,6 +428,13 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 /* Aim at thirds so five names wrap 3 and 2. Left to grow freely the odd one
    out stretched the width of the card and read as a different control. */
 .wolfrow .chip{flex:1 1 calc(33.333% - 4px)}
+/* Tee order: five numbered names on one or two lines, the wolf (last) in bold. */
+.teeord{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 14px;
+  counter-reset:tee;font-size:15px}
+.teeord li{counter-increment:tee;white-space:nowrap}
+.teeord li::before{content:counter(tee);font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;font-size:12px;color:var(--ink-faint);margin-right:5px}
+.teeord li.is-wolf{font-weight:700}
 /* Who is on which side of the hole, once the wolf has decided. A tint rather
    than a label: the rows are already named and five more words would push the
    stepper off a phone. */
@@ -1495,6 +1502,18 @@ const wolfOn = (g, h) => {
   const r = rosterOf(g);
   return (g.holes[h] || {}).wolf || r[h % (r.length || 1)] || null;
 };
+/* Who tees off when on hole h. Derived, never stored, so it can be added to a
+   game already under way without a write. The order rotates one place a hole
+   with the wolf last: hole 1 is roster 2,3,4,5,1, hole 2 is 3,4,5,1,2. If the
+   wolf was changed on a hole he still tees last, and the other four keep their
+   places in the rotation around him. */
+const wolfTeeOrder = (g, h) => {
+  const r = rosterOf(g), n = r.length;
+  if (!n) return [];
+  const turn = r.map((_, i) => r[(h + 1 + i) % n]);
+  const w = wolfOn(g, h);
+  return turn.includes(w) ? [...turn.filter(id => id !== w), w] : turn;
+};
 const wolfPack = (g, h) => {
   const hole = g.holes[h] || {};
   if (hole.lone) return [];
@@ -2027,7 +2046,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.0735";
+const BUILD = "2026-10-15.0845";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -5393,7 +5412,13 @@ function renderWolf(g, h){
   const touched = holeList(g).some(hl =>
     Object.keys(hl.scores || {}).length || hl.wolf || hl.lone || (hl.pack || []).length);
 
+  const order = wolfTeeOrder(g, h);
   let out = `<div class="wolfpick">
+    <div class="wolfhead"><span class="wolflab">Tee order</span></div>
+    <ol class="teeord">${order.map(id =>
+      `<li${id === w ? ` class="is-wolf"` : ""}>${nm(id)}</li>`).join("")}</ol>
+  </div>
+  <div class="wolfpick">
     <div class="wolfhead"><span class="wolflab">Wolf</span>
       <span class="wolfname">${w ? nm(w) : "—"}</span></div>
     <div class="wolfrow">${roster.map(id =>
@@ -5407,7 +5432,9 @@ function renderWolf(g, h){
         as wolf.</p>`}
   </div>`;
 
-  const others = roster.filter(id => id !== w);
+  /* In tee order: he decides on each man as that man hits, so the names run
+     in the order the question comes up. */
+  const others = order.filter(id => id !== w);
   const takes = lone ? "Lone wolf — 8 points, or 2 to everyone else"
     : picked.length === 2 ? picked.map(nm).join(" & ")
     : `pick ${2 - picked.length} more, or go alone`;
