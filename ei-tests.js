@@ -1658,7 +1658,7 @@ t("R100 stroke play is read on to par, not on the gross", () => isolate(() => {
     GAMES.push(g); view.tab = "home"; editEvent = null;
     view.gameId = "gflip"; view.hole = 0; render();`);
 
-  const tots = [...document.querySelectorAll(".hg-tot")].slice(1);   // skip the heading
+  const tots = [...document.querySelectorAll(".hg-row[data-side] .hg-tot")];   // the sides, not the heading or par rows
   eq(tots.length, 4, "a total cell per side:");
   ok(tots[0].querySelector(".hg-v").textContent.trim(), "the gross total should be there");
   ok(/^[+\-E]/.test(tots[0].querySelector(".hg-rel").textContent.trim()),
@@ -2739,7 +2739,7 @@ t("R126 nothing on a grid is labelled with a truncated name", () => isolate(() =
       teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes: blankHoles() });
     view.tab="home"; view.gameId="g4v4"; view.hole=0; render();
   })()`);
-  const labs = [...document.querySelectorAll(".hg-lab")].slice(1).map(x => x.textContent.trim());
+  const labs = [...document.querySelectorAll(".hg-row[data-side] .hg-lab")].map(x => x.textContent.trim());
   eq(labs.length, 2, "a 4v4 gets a row per side:");
   const sideNames = JSON.parse(w.eval(`JSON.stringify([0,1].map(t =>
     GAMES[0].teams[t].map(id => P(id).name)))`));
@@ -3754,6 +3754,39 @@ t("R146 no card carries the Test bar, one tap from wiping a live game", () => is
   ok(/const BUILD = "\d{4}-\d{2}-\d{2}\.\d{4}";/.test(html),
      "and the build stamp is a plain value the update check can read");
   w.eval(`view.gameId = null; view.tab = "home"; render();`);
+}));
+
+/* Asked for mid-tournament: the scramble card showed scores coloured against
+   par but never the par itself, so an unscored hole said nothing about what
+   it was. One row of pars under the hole numbers, the course total in Tot. */
+t("R149 the scramble grid carries a par row under the hole numbers", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    const r = ROUNDS()[0].id; GAMES.length = 0;
+    const res = {};
+    [["g3","SCRAMBLE3",{0:["p1","p2","p3"],1:["p4","p5","p6"]}],
+     ["g4","SCRAMBLE2X4",{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}]].forEach(([id, type, teams]) => {
+      const g = { id, roundId:r, type, teams, holes: blankHoles(), points: type === "SCRAMBLE2X4" };
+      GAMES.push(g);
+      view.tab = "home"; view.gameId = id; view.hole = 0; render();
+      const rows = [...document.querySelectorAll(".hgwrap .hg-row")];
+      const parRow = document.querySelector(".hgwrap .hg-par");
+      const cells = parRow ? [...parRow.querySelectorAll(".hg-p:not(.hg-tot)")].map(c => +c.textContent) : [];
+      const want = courseOf(g).holes.slice(0, 18).map(x => x.par);
+      res[type] = { second: rows[1] === parRow, cells: cells.join(","), want: want.join(","),
+        tot: parRow ? +parRow.querySelector(".hg-tot").textContent : null,
+        wantTot: want.reduce((a, b) => a + b, 0),
+        notSide: !parRow || !parRow.hasAttribute("data-side") };
+    });
+    return JSON.stringify(res);
+  })()`));
+  Object.entries(out).forEach(([type, o]) => {
+    ok(o.second, type + ": the par row sits straight under the hole numbers");
+    eq(o.cells, o.want, type + ": one par per hole, from the course:");
+    eq(o.tot, o.wantTot, type + ": and the course par in Tot:");
+    ok(o.notSide, type + ": and it isn't a side, so it never joins the leaderboard shuffle");
+  });
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
 t("R69 no test left the tournament in a different shape than it found it", () => {

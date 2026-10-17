@@ -191,6 +191,13 @@ table.lb tr:first-child td{border-top:1px solid var(--rule)}
 .hg-tot{width:42px;flex:none;position:sticky;right:0;z-index:2;background:var(--paper-3);
   font-weight:700;cursor:default;border-left:1px solid var(--rule)}
 .hg-lab.hg-corner{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
+/* The par line: smaller and quieter than the scores, on the same tint as the
+   total column so it reads as part of the card's frame rather than a team. */
+.hg-par{background:var(--paper-3)}
+.hg-par .hg-lab{padding-top:2px;padding-bottom:2px;background:var(--paper-3)}
+.hg-c.hg-p{font-size:10px;font-weight:600;color:var(--ink-soft);cursor:default;
+  padding:3px 0;display:flex;align-items:center;justify-content:center}
+.hg.skins .hg-par .hg-c{padding:3px 0}
 /* A side of three or four, two names a line — see gridName. */
 .hg-nm{display:flex;flex-direction:column;line-height:1.15;min-width:0}
 /* What the hole was worth, under what was scored on it. Small on purpose: the
@@ -2049,7 +2056,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-15.1250";
+const BUILD = "2026-10-17.1040";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -4758,6 +4765,14 @@ function holeGrid(g){
     o += `<button class="hg-c hg-n${i === view.hole ? " cur" : ""}" data-hole="${i}">${
       i + 1}</button>`;
   o += `<span class="hg-c hg-n hg-tot">Tot</span></div>`;
+  /* Par under the hole numbers, as on a printed card, so a 4 can be read as a
+     birdie or a bogey without knowing the course. The colours already say it;
+     this says it for the hole nobody has scored yet. Spans, not buttons — the
+     number above is the thing to tap. */
+  const pars = course.holes.slice(0, 18).map(x => x.par);
+  o += `<div class="hg-row hg-par"><span class="hg-lab hg-corner">Par</span>` +
+    pars.map((p, i) => `<span class="hg-c hg-p${i === view.hole ? " cur" : ""}">${p}</span>`).join("") +
+    `<span class="hg-c hg-p hg-tot">${pars.reduce((a, b) => a + b, 0)}</span></div>`;
   order.forEach(t => {
     o += `<div class="hg-row" data-side="${t}" data-key="${esc(g.id)}:${t}">`;
     o += `<span class="hg-lab">${anyPlay

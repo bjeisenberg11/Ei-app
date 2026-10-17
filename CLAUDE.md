@@ -449,7 +449,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **187 passed, 0 failed**. The suite is
+Current status against `index.html`: **188 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -478,7 +478,11 @@ about, because they fail for reasons that aren't about the code you just wrote:
   on hole 1 all afternoon. In a skins game each cell carries what the hole was
   worth under what was scored on it (`.hg-sk`), and the Tot column carries the
   skins total under the gross in that same small type — so a side's whole
-  afternoon is one row. Match play and 40ball keep the plain 1–18 `.hstrip`,
+  afternoon is one row. A **Par row** (`.hg-par`, R149) sits under the hole
+  numbers with the course par in Tot, so an unscored hole still says what it
+  is. It has no `data-side`, so it never joins the shuffle — and tests that
+  want the sides select `.hg-row[data-side]` rather than every row past the
+  heading. Match play and 40ball keep the plain 1–18 `.hstrip`,
   because neither has a single number per team per hole.
 - **The leaderboard box only appears for a result.** While a game is live the
   card already carries every side's totals, so the box was the same numbers
