@@ -442,6 +442,15 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .teeord li::before{content:counter(tee);font-family:'Barlow Condensed',sans-serif;
   font-weight:700;font-size:12px;color:var(--ink-faint);margin-right:5px}
 .teeord li.is-wolf{font-weight:700}
+/* Field: adding players, and the saved lists in the pickers */
+.addlab{display:block;margin:14px 0 6px}
+.newp{display:flex;gap:6px;align-items:stretch}
+.newp #newpname{flex:1 1 auto;min-width:0}
+.newp #newpidx{flex:0 0 70px;min-width:0}
+.newp .btn{flex:0 0 auto}
+.sellist-h{padding-left:14px !important}
+.sellist-h,.rost-h{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.1em;font-size:11px;color:var(--ink-faint);margin:10px 0 4px;padding:6px 0 0}
 /* Events */
 .evbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
 .evbar .chip{margin-left:auto}
@@ -2181,7 +2190,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.1840";
+const BUILD = "2026-10-18.1910";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2214,6 +2223,73 @@ const eventKind = () => isEI() ? "ei" : (eventInfo(activeYear).kind || "trip");
 /* Only a past EI year is frozen. A trip or a game stays editable: there's no
    later edition of it to make it history. */
 const isArchive = () => !!(isEI() && liveYear && activeYear && activeYear !== liveYear);
+
+/* Saved players and courses, shared by every event. Each event keeps its own
+   field — the players and courses actually in it, which is what its handicaps,
+   tees and Board read — and this is the list a new trip or game picks from.
+   Anything added to or edited in any event's field lands here too, so a
+   player or course entered once is there for every event after.
+
+   Stored at tournaments/_library as two maps keyed by id, not arrays: a merge
+   write of { players: { p9: … } } then touches that one entry and nothing
+   else, so two phones adding different people at once can't lose either. */
+const LIB = { players:{}, courses:{}, loaded:false };
+const libPlayers = () => Object.values(LIB.players).filter(p => p && p.id && p.name)
+  .sort((a, b) => a.name.localeCompare(b.name));
+const libCourses = () => Object.values(LIB.courses).filter(c => c && c.id && c.name)
+  .sort((a, b) => a.name.localeCompare(b.name));
+const clone = o => JSON.parse(JSON.stringify(o));
+/* Put this event's field into the library. onlyMissing on load: an old event
+   being looked at must not push a stale handicap over a newer one. A real edit
+   (pushConfig) sends what changed. Never before the library has been read —
+   until then everything looks missing. Never from an archived year. */
+function libAbsorb(onlyMissing){
+  if (isArchive()) return;
+  if (SYNC.on && !LIB.loaded) return;
+  const add = { players:{}, courses:{} };
+  let n = 0;
+  PLAYERS.forEach(p => {
+    if (!p || !p.id || !p.name) return;
+    const cur = LIB.players[p.id];
+    if (cur && (onlyMissing || JSON.stringify(cur) === JSON.stringify(p))) return;
+    add.players[p.id] = clone(p); LIB.players[p.id] = clone(p); n++;
+  });
+  COURSES.forEach(c => {
+    if (!c || !c.id || !c.name) return;
+    const cur = LIB.courses[c.id];
+    if (cur && (onlyMissing || JSON.stringify(cur) === JSON.stringify(c))) return;
+    add.courses[c.id] = clone(c); LIB.courses[c.id] = clone(c); n++;
+  });
+  if (!n || staleDevice || !SYNC.on || !SYNC.api) return;
+  const { doc, setDoc } = SYNC.api;
+  setDoc(doc(SYNC.db, "tournaments", "_library"), add, { merge: true }).catch(() => {});
+}
+/* Bring a saved player or course into this event's field. */
+function fieldAddPlayer(id){
+  if (P(id) || !LIB.players[id]) return !!P(id);
+  PLAYERS.push(clone(LIB.players[id])); queueConfig(); return true;
+}
+/* A single game's date: "2026-10-18" from the date picker, and the day label
+   the schedule groups by — the weekday is in it, which is what todayDay()
+   looks for. Noon, so no timezone can tip it into the day before. */
+const isoDate = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0")
+  + "-" + String(d.getDate()).padStart(2, "0");
+const dayLabel = iso => new Date(iso + "T12:00:00")
+  .toLocaleDateString(undefined, { weekday:"long", month:"short", day:"numeric" });
+/* The single game's date, from the picker. Like the time, no render while the
+   wheel is open; the round, the day it's filed under and the one-day list of
+   days all move together, since the schedule groups by day name. */
+function setGameDate(v){
+  const e = EV(editEvent);
+  if (!e || !/^\d{4}-\d{2}-\d{2}$/.test(v || "")) return;
+  e.date = v; e.day = dayLabel(v);
+  DAYS.length = 0; DAYS.push(e.day);
+  queueConfig();
+}
+function fieldAddCourse(id){
+  if (COURSES.some(c => c.id === id) || !LIB.courses[id]) return COURSES.some(c => c.id === id);
+  COURSES.push(clone(LIB.courses[id])); queueConfig(); return true;
+}
 const TID_DEFAULT = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2512,6 +2588,15 @@ async function connectWith(i){
       if (!document.querySelector("input:focus")) render();
     }, () => {}));
 
+    /* the saved players and courses — see LIB */
+    unsubs.push(fsMod.onSnapshot(fsMod.doc(db, "tournaments", "_library"), d => {
+      if (myGen !== gen) return;
+      const v = d.data() || {};
+      LIB.players = v.players || {}; LIB.courses = v.courses || {};
+      const first = !LIB.loaded; LIB.loaded = true;
+      if (first) libAbsorb(true);             // whatever this event has that the list doesn't
+    }, () => {}));
+
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
       if (myGen !== gen) return;
       const v = d.data(); if (!v) return;
@@ -2526,6 +2611,7 @@ async function connectWith(i){
       if (v.days && v.days.length) { DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
       EVENT_META = { kind: v.kind || (isEI() ? "ei" : "trip"), name: v.name || "" };
       migrateLoaded();
+      libAbsorb(true);
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
     }, e => reportListenerError(myGen, e)));
@@ -2756,7 +2842,8 @@ async function startYear(y){
    and the date. The date is the day it was started, off the registry. */
 function gameAutoParts(){
   const ev = EVENTS.find(e => e.id === activeYear) || {};
-  const date = new Date(ev.at || Date.now())
+  const r = ROUNDS()[0];
+  const date = new Date(r && r.date ? r.date + "T12:00:00" : (ev.at || Date.now()))
     .toLocaleDateString(undefined, { month:"short", day:"numeric" });
   const g = GAMES[0];
   if (!g) return { format:"Single game", date, who:"", name:"Single game \u00b7 " + date };
@@ -2797,25 +2884,27 @@ function startNextEI(){
     .catch(e => toast((e.code||e.message||"failed")));
 }
 
-/* A golf trip or a single game. It starts from the players and courses on
-   screen — usually the EI's, which is usually who's going — and they're
-   edited on its own Field tab without touching the EI's. A trip gets the same
-   days to start from; a single game is today and one round, with the round
-   editor opened on it so the next taps are course, format and players. */
+/* A golf trip or a single game. Each has its own field, and it starts empty:
+   the players and courses come from the saved list (LIB) as they're picked —
+   on the trip's Field tab, or straight from the roster and course pickers —
+   and anyone or anywhere new added along the way is saved for next time. A
+   trip gets the same days to start from; a single game is today and one
+   round, with the round editor opened on it so the next taps are course,
+   format and players. */
 async function startEvent(kind, name){
+  libAbsorb(true);                  // make sure what's on screen is in the saved list
   const id = "x-" + Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 6);
-  const today = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
   const label = (name || "").trim() || (kind === "game"
     ? "Single game \u00b7 " + new Date().toLocaleDateString(undefined, { month:"short", day:"numeric" })
     : "Golf trip");
+  const iso = isoDate(new Date());
   const round = kind === "game" ? { id: "r" + Math.random().toString(36).slice(2, 8), type:"ROUND",
-    day: today, time: null, courseId: (COURSES[0] || {}).id || null, mode: "RELATIVE", notes: "" } : null;
+    date: iso, day: dayLabel(iso), time: null, courseId: null, mode: "RELATIVE", notes: "" } : null;
   const cfg = {
     schema: SCHEMA, appBuild: BUILD, kind, name: label,
-    players: PLAYERS.map(p => ({ ...p })),
-    courses: COURSES.map(c => JSON.parse(JSON.stringify(c))),
+    players: [], courses: [],
     schedule: round ? [round] : [],
-    days: kind === "game" ? [today] : DAYS.slice()
+    days: kind === "game" ? [round.day] : DAYS.slice()
   };
   const entry = { id, kind, name: label, at: Date.now() };
   if (SYNC.on && SYNC.api){
@@ -3177,6 +3266,7 @@ async function resetTournament(){
 let cfgRetry = false;
 function pushConfig(){
   if (staleDevice || isArchive()){ cfgDirty = false; return; }      // never write from an old build
+  libAbsorb(false);                  // an edit here is an edit to the saved list too
   if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", tidFor(activeYear)),
@@ -3688,7 +3778,8 @@ function renderSchedule(){
          </div><p class="impmsg" id="amsg"></p>`
       : `<div class="lockmini"><span>View only</span>
            <button class="chip" id="ashow">Admin</button></div>`)
-    : `<div class="lockmini open"><span>Editing unlocked</span>
+    /* Outside the EI there's no code and nothing to lock, so no bar at all. */
+    : !isEI() ? "" : `<div class="lockmini open"><span>Editing unlocked</span>
          <button class="chip" id="alock">Lock</button></div>`;
 
   if (editEvent) return renderEventEditor(h, editEvent);
@@ -4547,9 +4638,13 @@ function renderEventEditor(h, id){
   const isRound = e.type === "ROUND";
   const travelOnly = SYNC.on && !canSetup();   // a player editing their own flight
 
+  /* A single game is one round and nothing else: no meals or flights to file,
+     no Type to choose, a calendar date rather than a weekend's day names, and
+     nothing to count toward. */
+  const single = eventKind() === "game" && isRound;
   h += `<h2 class="sec">${isRound ? "Round" : "Event"}</h2>
   <div class="imp">
-    ${travelOnly ? "" : `
+    ${travelOnly || single ? "" : `
     <label>Type</label>
     <div class="acts cwrap">
       ${["ROUND","MEAL","TRAVEL","OTHER"].map(t =>
@@ -4560,10 +4655,12 @@ function renderEventEditor(h, id){
     <label for="evtitle">${e.type==="TRAVEL" ? "Flight / how they're getting here" : "Title"}</label>
     <input id="evtitle" data-evf="title" value="${esc(e.title||"")}">`}
 
-    <label>Day</label>
+    ${single ? `<label for="evdate">Date</label>
+    <input type="date" class="timein" id="evdate" value="${esc(e.date || isoDate(new Date()))}">`
+    : `<label>Day</label>
     <div class="acts cwrap">
       ${DAYS.map(d => `<button class="btn ${e.day===d?"":"ghost"}" data-evday="${esc(d)}">${esc(d.slice(0,3))}</button>`).join("")}
-    </div>
+    </div>`}
 
     <label>Time</label>
     ${timePicker(e)}
@@ -4595,17 +4692,17 @@ function renderEventEditor(h, id){
     const known = COURSES.some(c => c.id === e.courseId);
     h += `<label>Course${known ? " \u2014 " + esc(C(e.courseId).name)
       : " \u2014 this also names the round"}</label>
-    ${COURSES.length ? coursePicker("ev", known ? e.courseId : null, "Choose a course")
+    ${COURSES.length || (!isEI() && libCourses().length) ? coursePicker("ev", known ? e.courseId : null, "Choose a course")
       + (known ? "" : `<p class="hint">Until this is set the round has no name,
         and handicaps can't be worked out.</p>`)
     : `<p class="note warn">No courses yet \u2014 add one on the Field tab and it'll
-        appear here.</p>`}
+        appear here, and be saved for next time.</p>`}
     <label>Handicaps</label>
     <div class="acts">
       <button class="btn ${e.mode!=="FULL"?"":"ghost"}" data-evmode="RELATIVE">Relative</button>
       <button class="btn ${e.mode==="FULL"?"":"ghost"}" data-evmode="FULL">Full</button>
     </div>
-    <label>Counts toward ${isEI() ? "the EI" : "the standings"}</label>
+    ${single ? "" : `<label>Counts toward ${isEI() ? "the EI" : "the standings"}</label>
     <div class="acts">
       <button class="btn ${roundCounts(e)?"":"ghost"}" data-evcounts="1">Sanctioned</button>
       <button class="btn ${roundCounts(e)?"ghost":""}" data-evcounts="0">Casual</button>
@@ -4613,7 +4710,7 @@ function renderEventEditor(h, id){
     <p class="hint">${roundCounts(e)
       ? "Results here go into the standings and the pairings matrix."
       : "Scored and shown like any other round, but kept out of the standings and "
-        + "the pairings matrix — for an extra 18 that isn't part of the tournament."}</p>`;
+        + "the pairings matrix — for an extra 18 that isn't part of the tournament."}</p>`}`;
   }
 
   h += `</div>`;
@@ -4680,7 +4777,17 @@ function gameEditor(g){
           <td><button class="side ${t===-1?"on out":""}" data-side="${g.id}:${p.id}:-1">Out</button></td>
         </tr>`;
       }).join("")}
+      ${/* Outside the EI, everyone saved can be put on a side from here; doing
+           so adds him to this event's field. The EI's field is set on its own. */
+        isEI() ? "" : (() => {
+          const more = libPlayers().filter(p => !P(p.id));
+          return more.length ? `<tr><td class="rost-h" colspan="${ix.length + 2}">Saved players</td></tr>`
+            + more.map(p => `<tr><td class="rn">${esc(p.name)}</td>
+              ${ix.map(i => `<td><button class="side" data-side="${g.id}:${p.id}:${i}">${SIDE_CODES[i]}</button></td>`).join("")}
+              <td></td></tr>`).join("") : "";
+        })()}
     </tbody></table>
+    ${isEI() ? "" : `<p class="hint">Someone new? Add him on the Field tab and he's saved for next time.</p>`}
     <div class="rost-sum">
       ${ix.map(i => `<span class="${counts[i]===need[i]?"":"bad"}">${SIDE_CODES[i]}: ${
         counts[i]}/${need[i]}</span>`).join("")}
@@ -4726,7 +4833,7 @@ function renderEvents(){
       <input id="newevname" autocomplete="off" placeholder="Name \u2014 e.g. Bandon 2027">
       <div class="acts"><button class="btn" data-createevent="${kind}">Create</button>
         <button class="btn ghost" data-newevent="">Cancel</button></div>
-      <p class="hint">Its own players, courses, schedule and Board, starting from the ones on screen now. Nothing in it touches the EI.</p>
+      <p class="hint">Its own players, courses, schedule and Board. Pick from everyone and everywhere saved, or add new ones \u2014 they're saved for next time. Nothing in it touches the EI.</p>
     </div>` : `<button class="btn ghost" data-newevent="${kind}">+ New golf trip</button>`;
 
   let h = `<h2 class="sec">Events</h2>`;
@@ -4906,6 +5013,10 @@ let pickOpen = null;            // "crs" (Field tab) | "ev" (round editor) | nul
 function coursePicker(which, currentId, emptyLabel){
   const open = pickOpen === which;
   const cur = COURSES.find(c => c.id === currentId);
+  /* Outside the EI the list goes on into the saved courses: picking one brings
+     it into this event (fieldAddCourse), cards and tees and all. The EI keeps
+     to its own, which are set up once and left alone. */
+  const more = isEI() ? [] : libCourses().filter(c => !COURSES.some(x => x.id === c.id));
   let h = `<button class="selbtn${open ? " on" : ""}" data-pick="${which}">
     <span class="selbtn-v${cur ? "" : " none"}">${esc(cur ? cur.name : emptyLabel)}</span>
     <span class="selbtn-x">${open ? "close" : "change"}</span>
@@ -4913,6 +5024,8 @@ function coursePicker(which, currentId, emptyLabel){
   if (open) h += `<div class="sellist">
     ${COURSES.map(c => `<button class="${c.id === currentId ? "on" : ""}"
       data-pickset="${which}:${c.id}">${esc(c.name)}</button>`).join("")}
+    ${more.length ? `<p class="sellist-h">Saved courses</p>` + more.map(c =>
+      `<button data-pickset="${which}:${c.id}">${esc(c.name)}</button>`).join("") : ""}
   </div>`;
   return h;
 }
@@ -6018,30 +6131,51 @@ function renderPlayers(){
          <button class="btn" id="aunlock">Unlock</button>
        </div>
        <p class="impmsg" id="amsg"></p>`
-    : `<div class="lockbar open">
+    : !isEI() ? "" : `<div class="lockbar open">
          <span class="lockbar-t">Editing unlocked</span>
          <button class="btn ghost" id="alock">Lock</button>
        </div>`;
   /* Indexes first: the thing most often changed. */
-  let idxTbl = `<table class="lb ftbl"><thead><tr><th>Player</th><th>Index</th></tr></thead><tbody>`;
+  /* Outside the EI a player can be taken off this event's field — only while
+     he's in no game, since a game naming someone who isn't here can't score
+     him. He stays in the saved list either way. */
+  const inAGame = id => GAMES.some(g => rosterOf(g).includes(id));
+  const canDrop = !ro && !isEI();
+  let idxTbl = `<table class="lb ftbl"><thead><tr><th>Player</th><th>Index</th>${canDrop ? "<th></th>" : ""}</tr></thead><tbody>`;
   PLAYERS.forEach(p => {
     idxTbl += `<tr>
       <td>${esc(p.name)}${p.admin?' <span class="hcp">admin</span>':""}</td>
       <td><input class="idx cc-like" inputmode="decimal" maxlength="4" data-index="${p.id}"
-        value="${p.index.toFixed(1)}"${dis}></td>
+        value="${(+p.index || 0).toFixed(1)}"${dis}></td>
+      ${canDrop ? `<td>${inAGame(p.id) ? "" : `<button class="chip del" data-dropplayer="${p.id}">Remove</button>`}</td>` : ""}
     </tr>`;
   });
   idxTbl += `</tbody></table>
   <p class="note">An index belongs to the player and is the same at every course.
     Everything else here is per course.</p>`;
-  h += panel("f:hcp", "Handicap indexes", idxTbl, PLAYERS.length + " players");
+  /* Adding: anyone already saved is one tap; someone new is a name and an
+     index, and is saved for every event after this one. */
+  if (!ro){
+    const saved = libPlayers().filter(p => !P(p.id));
+    if (saved.length) idxTbl += `<label class="addlab">Saved players</label>
+      <div class="acts cwrap">${saved.map(p =>
+        `<button class="btn ghost" data-addsaved="${p.id}">+ ${esc(p.name)}</button>`).join("")}</div>`;
+    idxTbl += `<label class="addlab" for="newpname">New player</label>
+      <div class="newp">
+        <input id="newpname" autocomplete="off" placeholder="Name">
+        <input id="newpidx" inputmode="decimal" maxlength="4" placeholder="Index">
+        <button class="btn" id="addplayer">Add</button>
+      </div>
+      <p class="hint">Saved for every event after this one, and on the list for trips and games.</p>`;
+  }
+  h += panel("f:hcp", isEI() ? "Handicap indexes" : "Players", idxTbl, PLAYERS.length + " players");
 
   /* The course picker sits outside the sections: everything below is scoped to
      it, so it has to stay visible whichever section is open. */
   /* The name in the heading too: if the select ever renders oddly again, what
      the rest of this screen is about is still readable. */
-  h += `<h2 class="sec">Course \u2014 ${esc(co.name)}</h2>
-  ${COURSES.length ? coursePicker("crs", co.id, "Choose a course")
+  h += `<h2 class="sec">Course${COURSES.length ? " \u2014 " + esc(co.name) : ""}</h2>
+  ${COURSES.length || (!isEI() && libCourses().length) ? coursePicker("crs", COURSES.length ? co.id : null, "Choose a saved course")
     : `<p class="note warn">No courses yet \u2014 add one below and it'll
     appear here and in the round editor.</p>`}
   <p class="note">${rounds.length
@@ -6061,7 +6195,7 @@ function renderPlayers(){
   teeTbl += `</tbody></table>
   <p class="note">Rating and slope come off the card or the tee marker. Slope runs 55–155;
     113 is neutral.</p>`;
-  h += panel("f:tees", "Tee sets", teeTbl, co.tees.length + " tees");
+  if (COURSES.length) h += panel("f:tees", "Tee sets", teeTbl, co.tees.length + " tees");
 
   let whoTbl = `<table class="lb ftbl"><thead><tr>
     <th>Player</th><th>Tee</th><th>CH</th></tr></thead><tbody>`;
@@ -6078,9 +6212,9 @@ function renderPlayers(){
   <p class="note"><b>CH</b> is the course handicap that player's index is worth off that tee:
     <span class="mono">index × slope ÷ 113 + (rating − par)</span>.
     Scrambles ignore it and play gross.</p>`;
-  h += panel("f:who", "Who plays which tee", whoTbl, esc(co.name));
+  if (COURSES.length) h += panel("f:who", "Who plays which tee", whoTbl, esc(co.name));
 
-  h += panel("f:card", "Par and stroke index", `
+  if (COURSES.length) h += panel("f:card", "Par and stroke index", `
     <div class="imp">
       <label for="cname">Course name</label>
       <input id="cname" value="${esc(co.name)}" data-cname${dis}>
@@ -6104,7 +6238,7 @@ function renderPlayers(){
         <button class="btn" id="crscheck"${dis}>Check it</button>
       </div>
       <div id="crsout"></div>
-    </div>`, COURSES.length + " saved");
+    </div>`, COURSES.length + (isEI() ? " saved" : " here"));
 
   if (!ro) h += panel("f:danger", "Danger zone", `
   <div class="imp">
@@ -6127,7 +6261,8 @@ function renderPlayers(){
 
   h += `
   <div class="footnote">Handicaps and courses persist across app updates.
-  Scoring is open to everyone; setup is admin-only.<br>Build ${BUILD} \u00b7 schema ${SCHEMA}</div>`;
+  Scoring is open to everyone; ${isEI() ? "setup is admin-only"
+    : "anyone can set up a trip or a game, and the players and courses added are saved for next time"}.<br>Build ${BUILD} \u00b7 schema ${SCHEMA}</div>`;
   app.innerHTML = h;
   updateCardMsg();
 }
@@ -6618,10 +6753,43 @@ function handleClick(el){
     if (!confirm("Remove this game and its scores?")) return;
     removeGame(el.dataset.delgame); render(); return;
   }
+  if (el.dataset.addsaved){
+    if (SYNC.on && !canSetup()){ toast("Admin only"); return; }
+    fieldAddPlayer(el.dataset.addsaved); render(); return;
+  }
+  if (el.id === "addplayer"){
+    if (SYNC.on && !canSetup()){ toast("Admin only"); return; }
+    const nameBox = document.getElementById("newpname"), idxBox = document.getElementById("newpidx");
+    const name = (nameBox && nameBox.value || "").trim();
+    const raw = (idxBox && idxBox.value || "").trim();
+    if (!name){ toast("Type a name"); return; }
+    const index = raw === "" ? 0 : parseFloat(raw.replace("+", "-"));
+    if (!isFinite(index) || index < -10 || index > 54){ toast("Index looks wrong"); return; }
+    /* Someone already saved under that name is the same man — bring him in
+       rather than making a second Dan with a different id. */
+    const known = libPlayers().find(p => p.name.toLowerCase() === name.toLowerCase())
+      || PLAYERS.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (known){
+      if (P(known.id)){ toast(known.name + " is already here"); return; }
+      fieldAddPlayer(known.id); toast(known.name + " added from saved players"); render(); return;
+    }
+    PLAYERS.push({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 4),
+                   name, index: Math.round(index * 10) / 10, tees: {} });
+    queueConfig(); toast(name + " added"); render(); return;
+  }
+  if (el.dataset.dropplayer){
+    if (isEI()) return;
+    const id = el.dataset.dropplayer;
+    if (GAMES.some(g => rosterOf(g).includes(id))){ toast("He's in a game here — take him out of it first"); return; }
+    const i = PLAYERS.findIndex(p => p.id === id);
+    if (i >= 0){ PLAYERS.splice(i, 1); queueConfig(); }
+    render(); return;
+  }
   if (el.dataset.side){
     const [gid, pid, tRaw] = el.dataset.side.split(":");
     const g = GAMES.find(x => x.id === gid);
     const t = +tRaw;
+    if (t >= 0) fieldAddPlayer(pid);     // a saved player joins this event when he's picked
     /* Clear them off every side first — with four teams, moving someone from C
        to A has to take them out of C, not just add them to A. */
     sides(g).forEach(i => {
@@ -6672,6 +6840,7 @@ function handleClick(el){
   if (el.dataset.pickset){
     const [which, cid] = el.dataset.pickset.split(":");
     pickOpen = null;
+    fieldAddCourse(cid);                 // a saved course joins this event when it's picked
     if (which === "crs") editCourseId = cid;
     else if (editEvent){ EV(editEvent).courseId = cid; queueConfig(); }
     render(); return;
@@ -7040,6 +7209,7 @@ document.addEventListener("input", e => {
     queueConfig();
     return;
   }
+  if (t.id === "evdate" && editEvent) return setGameDate(t.value);
 
   /* the past-year form — kept in memory as it's typed, so a re-render for any
      other reason doesn't wipe what's been entered */
@@ -7186,6 +7356,7 @@ document.addEventListener("change", e => {
     queueConfig();
     return;
   }
+  if (t.id === "evdate" && editEvent) return setGameDate(t.value);
   if (t.dataset && t.dataset.gametee){
     const [gid, side] = t.dataset.gametee.split(":");
     const g = GAMES.find(x => x.id === gid);
@@ -7218,6 +7389,10 @@ document.addEventListener("focusin", e => {
 });
 
 migrateLoaded();
+/* Seed the saved list from what's in memory; once connected, the server's
+   list replaces it wholesale (the _library listener), so this only matters
+   on a phone with no connection, and in the tests. */
+libAbsorb(true);
 applyQueueLocally();
 render();
 paintSync();

@@ -4053,7 +4053,19 @@ ta("R152 events are written beside the EI's years, never over them", async () =>
     const cfg = w1.find(x => x.ref === "tournaments/" + trip);
     const reg = w1.find(x => x.ref === "tournaments/_index");
     ok(cfg && cfg.data.kind === "trip" && cfg.data.name === "Pinehurst", "the trip gets its own document:");
-    ok(cfg && cfg.data.players.length > 0, "starting from the players on screen:");
+    ok(cfg && cfg.data.players.length === 0 && cfg.data.courses.length === 0,
+       "with a field of its own, starting empty — players and courses come from the saved list:");
+
+    /* a player added to the trip goes into the saved list as one merged key */
+    w.eval(`(function(){
+      LIB.loaded = true; __w.sets.length = 0;
+      PLAYERS.push({ id:"pzed", name:"Zed", index: 12.4, tees:{} });
+      pushConfig();
+    })()`);
+    const lib = JSON.parse(w.eval("JSON.stringify(__w.sets.find(x => x.ref === 'tournaments/_library') || null)"));
+    ok(lib && lib.merge, "a new player is written to the saved list with a merge:");
+    ok(lib && Object.keys(lib.data.players || {}).join() === "pzed",
+       "as that one entry, so another phone's additions can't be lost: " + JSON.stringify(lib && lib.data));
     ok(reg && reg.merge, "the registry is merged into, never replaced:");
     ok(reg && reg.data.events && reg.data.events.union && reg.data.events.union.id === trip,
        "with the trip added to its events, not written over them:");
@@ -4089,6 +4101,94 @@ ta("R152 events are written beside the EI's years, never over them", async () =>
       SYNC.on = ${JSON.parse(saved).on};
       queue = queue.filter(x => x.gid !== "gtrip"); saveQueue();
     })()`);
+    restoreEvents(w, snap);
+  }
+});
+
+/* Asked for straight after events: every event has its own field, and the
+   players and courses in any of them are saved once for all of them. A new
+   trip or game starts empty and is filled from the saved list or with new
+   ones, which are then saved too. A single game has no Meal/Travel/Other and
+   takes a calendar date. */
+ta("R153 saved players and courses are shared; each event has its own field", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  const lib0 = w.eval("JSON.stringify({ p: LIB.players, c: LIB.courses })");
+  try {
+    w.eval(`YEARS = ["2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; isAdmin = false; render();`);
+    const nEI = w.eval("PLAYERS.length"), firstCourse = w.eval("COURSES[0].id");
+    ok(w.eval("libPlayers().length") >= nEI, "the EI's players are in the saved list:");
+
+    await w.startEvent("trip", "Kiawah");
+    eq(w.eval("PLAYERS.length + COURSES.length"), 0, "a new trip's field starts empty:");
+
+    w.eval(`view.tab = "players"; openPanel.f = "hcp"; render();`);
+    let html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(/data-addsaved="p1"/.test(html), "everyone saved is one tap away on its Field tab:");
+    ok(/id="addplayer"/.test(html), "and so is adding someone new, with no admin code outside the EI:");
+    w.eval(`handleClick({ dataset:{ addsaved:"p1" } })`);
+    eq(w.eval("PLAYERS.map(p => p.id).join()"), "p1", "a saved player joins the trip:");
+
+    /* someone new: added here, saved for everyone after */
+    w.eval(`document.getElementById("newpname").value = "Zed"; document.getElementById("newpidx").value = "12.4";
+            handleClick({ id:"addplayer", dataset:{} }); pushConfig();`);
+    const zed = JSON.parse(w.eval(`JSON.stringify(PLAYERS.find(p => p.name === "Zed") || null)`));
+    ok(zed && zed.index === 12.4, "a new player is added with his index:");
+    ok(w.eval(`!!LIB.players[${JSON.stringify(zed.id)}]`), "and saved for next time:");
+    /* the same name again brings the saved man back rather than a second one */
+    w.eval(`handleClick({ dataset:{ dropplayer: ${JSON.stringify(zed.id)} } })`);
+    ok(w.eval(`!P(${JSON.stringify(zed.id)})`), "he can be taken off the trip while he's in no game:");
+    w.eval(`openPanel.f = "hcp"; render(); document.getElementById("newpname").value = "zed";
+            handleClick({ id:"addplayer", dataset:{} });`);
+    eq(w.eval(`PLAYERS.filter(p => p.name.toLowerCase() === "zed").map(p => p.id).join()`), zed.id,
+       "and typing his name again brings back the saved Zed, not a second one:");
+
+    /* a saved course is picked straight into the trip */
+    w.eval(`pickOpen = "crs"; render();`);
+    html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(new RegExp('data-pickset="crs:' + firstCourse + '"').test(html), "saved courses are in the course picker:");
+    w.eval(`handleClick({ dataset:{ pickset: "crs:${firstCourse}" } })`);
+    eq(w.eval("COURSES.map(c => c.id).join()"), firstCourse, "and picking one brings it into the trip:");
+
+    /* an edit in the trip reaches the saved list; a look at an old copy doesn't */
+    w.eval(`P(${JSON.stringify(zed.id)}).index = 10.1; pushConfig();`);
+    eq(w.eval(`LIB.players[${JSON.stringify(zed.id)}].index`), 10.1, "an edited index is saved:");
+    w.eval(`P(${JSON.stringify(zed.id)}).index = 30; libAbsorb(true);`);
+    eq(w.eval(`LIB.players[${JSON.stringify(zed.id)}].index`), 10.1,
+       "but only an edit writes over the saved one — loading an event never does:");
+
+    /* a single game: the roster offers everyone saved, no type chips, a real date */
+    await w.startEvent("game", "");
+    eq(w.eval("PLAYERS.length + COURSES.length"), 0, "a single game starts with an empty field too:");
+    html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(!/data-evtype=/.test(html), "and no Meal / Travel / Other:");
+    ok(/type="date"[^>]*id="evdate"/.test(html), "with a date picker:");
+    ok(!/data-evcounts=/.test(html), "and nothing to count toward:");
+    ok(/data-pick="ev"/.test(html) && !/No courses yet/.test(html),
+       "and the course picker is there with nothing in its field yet — the saved ones are in it:");
+    ok(!/id="alock"/.test(html), "with no admin lock bar outside the EI:");
+    w.eval(`setGameDate("2026-11-02"); render();`);
+    const d = JSON.parse(w.eval(`JSON.stringify({ date: SCHEDULE[0].date, day: SCHEDULE[0].day, days: DAYS.slice() })`));
+    eq(d.date, "2026-11-02", "the date is kept:");
+    ok(/Monday/.test(d.day) && d.days.length === 1 && d.days[0] === d.day, "and filed under its day: " + d.day);
+    w.eval(`handleClick({ dataset:{ addgame: SCHEDULE[0].id + ":BESTBALL" } }); render();`);
+    html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(/Saved players/.test(html) && /data-side="[^"]+:p2:0"/.test(html), "the roster offers every saved player:");
+    w.eval(`handleClick({ dataset:{ side: GAMES[0].id + ":p2:0" } })`);
+    ok(w.eval(`!!P("p2") && GAMES[0].teams[0].includes("p2")`), "and putting one on a side adds him to the game's field:");
+    ok(/ Nov 2 /.test(" " + w.eval("EVENT_META.name") + " ") || /Nov 2/.test(w.eval("gameAutoParts().date")),
+       "the game's name follows the date picked: " + w.eval("gameAutoParts().date"));
+
+    /* the EI is untouched: its roster editor lists its own field only */
+    await w.switchYear("2026");
+    eq(w.eval("isEI()"), true, "back in the EI:");
+    ok(w.eval(`(pickOpen = "ev", !coursePicker("ev", null, "x").includes("Saved courses"))`),
+       "the EI's course picker keeps to its own courses:");
+    ok(w.eval(`(function(){ const g = { id:"gx", roundId:"r", type:"BESTBALL", teams:{0:[],1:[]}, holes: blankHoles() };
+      return !gameEditor(g).includes("Saved players"); })()`),
+       "and its roster editor to its own field:");
+  } finally {
+    w.eval(`(function(){ const o = JSON.parse(${JSON.stringify(lib0)}); LIB.players = o.p; LIB.courses = o.c; pickOpen = null; })()`);
     restoreEvents(w, snap);
   }
 });

@@ -293,6 +293,28 @@ The app covers:
   the registry so the Events list agrees with the header. The header shows the
   format big and "date · players" under it. Every format works in all three, and `WOLF5` is now in the
   "+ game" buttons.
+  - **Saved players and courses** (`LIB`, R153) live at `tournaments/_library`
+    as two **maps keyed by id** (`{ players:{p1:…}, courses:{pine:…} }`), so a
+    merge write of one entry can't lose another phone's. Every event keeps its
+    **own field** (`PLAYERS`/`COURSES`, which handicaps, tees and the Board
+    read); the library is what a new one picks from. `libAbsorb(onlyMissing)`
+    puts the field into it: missing-only on load (an old event must never push
+    a stale index over a newer one), changed entries on `pushConfig` (a real
+    edit). It waits for the library snapshot (`LIB.loaded`) before writing,
+    and never runs from an archive.
+  - **New trips and games start with an empty field.** Outside the EI the
+    course picker and the roster editor list saved courses and players after
+    the event's own; picking one brings it in (`fieldAddCourse`,
+    `fieldAddPlayer`). The Field tab adds saved players in one tap, adds a
+    **New player** (name + index; a name already saved brings that man back
+    rather than a duplicate), and can remove someone who's in no game. The EI's
+    pickers keep to its own field.
+  - A **single game's round editor** has no Type chips and no "counts toward",
+    and takes a calendar date (`<input type="date" id="evdate">`, no redraw
+    while the wheel is open, like the time): `setGameDate` sets `round.date`,
+    `round.day` (`dayLabel`, weekday in it for `todayDay`) and `DAYS = [day]`.
+    The auto name's date comes from `round.date`.
+  - Outside the EI there's **no admin lock bar** on the Schedule or Field tab.
   - `activeYear` keeps its name but holds an **event key**: an EI year
     (`"2026"`) or an id (`"x-k3f9a2"`). `isEIKey`, `isEI()`, `eventKind()`,
     `tidFor(k)` (`ei-2026` or the id itself). `YEARS` is EI years only, which
@@ -392,6 +414,7 @@ tournaments/_index                 { years: ["2025","2026"], live: "2026", open?
                                    — always written with merge: a wholesale { years, live } loses the events
 tournaments/x-{id}                 a trip or single game: same shape as a year's config plus { kind, name },
                                    with its own games subcollection
+tournaments/_library               { players:{ id:{…} }, courses:{ id:{…} } }  saved for every event — merge writes only
 tournaments/_history               { years: { "2021": { rows:[{name,w,l,t,gp}] }, ... } }  pre-app records
 tournaments/ei-{YEAR}              config: { schema, appBuild, players, courses, schedule, days }
 tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
@@ -504,7 +527,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **191 passed, 0 failed**. The suite is
+Current status against `index.html`: **192 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
