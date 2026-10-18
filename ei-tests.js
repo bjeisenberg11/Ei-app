@@ -4193,6 +4193,80 @@ ta("R153 saved players and courses are shared; each event has its own field", as
   }
 });
 
+/* Reported from the phone: a "Sync error — failed-precondition" after
+   switching to a single game, and no way to delete one. Switching events
+   reconnects on the same Firebase app, and Firestore refuses a second
+   initializeFirestore there; now each app's instance is made once and reused.
+   And a trip or game can be deleted, with a tombstone so no phone that had
+   seen it puts it back. */
+ta("R154 switching events reuses the database connection; trips and games can be deleted", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  try {
+    /* 1. one Firestore per app, however many times we connect */
+    const reuse = JSON.parse(w.eval(`(function(){
+      const real = SYNC.api; let made = 0;
+      SYNC.api = Object.assign({}, real || {}, { initializeFirestore: (app, o) => {
+        made++; if (made > 1) { const e = new Error("initializeFirestore() has already been called");
+          e.code = "failed-precondition"; throw e; } return { app }; } });
+      const a = firestoreFor(97, "app", () => ({})), b = firestoreFor(97, "app", () => ({}));
+      delete firestores[97]; SYNC.api = real;
+      return JSON.stringify({ same: a === b, made });
+    })()`));
+    ok(reuse.same && reuse.made === 1, "a reconnect reuses the database instead of initializing it again:");
+    ok(!/fsMod\.initializeFirestore\(/.test(html), "and connectWith never initializes it directly:");
+
+    /* 2. delete, locally */
+    w.eval(`YEARS = ["2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; isAdmin = false; render();`);
+    const trip = await w.startEvent("trip", "Doomed");
+    w.eval(`view.tab = "events"; render();`);
+    ok(new RegExp('data-delevent="' + trip + '"').test(w.eval(`document.getElementById("app").innerHTML`)),
+       "a trip offers Delete:");
+    await w.deleteEvent(trip);
+    eq(w.eval("activeYear"), "2026", "deleting the event you're in takes you back to the EI:");
+    ok(w.eval(`!knownKeys().includes(${JSON.stringify(trip)})`), "and it's gone from the list:");
+    w.eval(`view.tab = "events"; render();`);
+    ok(!/data-delevent=/.test(w.eval(`document.getElementById("app").innerHTML`)), "the EI offers no Delete:");
+    w.eval(`(function(){ EVENTS.push({ id:"x-ghost", kind:"trip", name:"Ghost", at:1 });
+      readEvents({ events: [], deleted: ["x-ghost"] }); })()`);
+    ok(w.eval(`!EVENTS.some(e => e.id === "x-ghost")`),
+       "a phone that still knows a deleted event drops it when the registry says so:");
+
+    /* 3. what reaches the database */
+    w.eval(`(function(){
+      window.__d = { sets: [], dels: [] };
+      window.__realConnect2 = connectWith; connectWith = async () => {};
+      window.__realApi2 = { api: SYNC.api, db: SYNC.db, on: SYNC.on };
+      SYNC.on = true; SYNC.db = {};
+      SYNC.api = {
+        doc: (...a) => a.slice(1).join("/"), collection: (...a) => a.slice(1).join("/"),
+        setDoc: (ref, data, o) => { __d.sets.push({ ref, data: JSON.parse(JSON.stringify(data)), merge: !!(o && o.merge) }); return Promise.resolve(); },
+        deleteDoc: ref => { __d.dels.push(ref); return Promise.resolve(); },
+        getDocs: ref => Promise.resolve({ forEach: f => ["g1","g2"].forEach(id => f({ id })) }),
+        getDoc: () => Promise.resolve({ exists: () => false }),
+        arrayUnion: x => ({ union: x })
+      };
+    })()`);
+    const t2 = await w.startEvent("game", "");
+    w.eval(`__d.sets.length = 0;`);
+    await w.deleteEvent(t2);
+    const d = JSON.parse(w.eval("JSON.stringify(__d)"));
+    const reg = d.sets.find(x => x.ref === "tournaments/_index");
+    ok(reg && reg.merge && reg.data.deleted && reg.data.deleted.union === t2,
+       "the registry records the deletion, merged in:");
+    ok(reg && !(reg.data.events || []).some(e => e.id === t2), "and drops it from the events:");
+    ok(d.dels.includes("tournaments/" + t2 + "/games/g1") && d.dels.includes("tournaments/" + t2 + "/games/g2"),
+       "its games are deleted:");
+    ok(d.dels.includes("tournaments/" + t2), "and then the event itself:");
+    ok(!d.dels.some(r => /_library|ei-/.test(r)), "and nothing else — not the EI, not the saved list:");
+  } finally {
+    w.eval(`(function(){ if (window.__realConnect2){ connectWith = window.__realConnect2;
+      SYNC.api = window.__realApi2.api; SYNC.db = window.__realApi2.db; SYNC.on = window.__realApi2.on; }
+      DELETED = new Set(); })()`);
+    restoreEvents(w, snap);
+  }
+});
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

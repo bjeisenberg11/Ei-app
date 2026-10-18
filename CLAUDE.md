@@ -315,6 +315,20 @@ The app covers:
     `round.day` (`dayLabel`, weekday in it for `todayDay`) and `DAYS = [day]`.
     The auto name's date comes from `round.date`.
   - Outside the EI there's **no admin lock bar** on the Schedule or Field tab.
+  - **Deleting** a trip or game (`deleteEvent`, R154; a quiet link on the
+    Events screen, confirmed, never offered for an EI year) deletes its games,
+    then its config, drops it from `events` and adds its id to the registry's
+    **`deleted`** list (arrayUnion). `readEvents` filters on that list —
+    without it every phone that had seen the event would put it back, since
+    phones keep events a cached registry doesn't list yet. A phone sitting in
+    an event deleted elsewhere is moved back to the live EI. Saved players and
+    courses stay.
+  - **One Firestore per app** (`firestoreFor`, R154). Switching events calls
+    `connectWith` again on the same app, and a second `initializeFirestore`
+    there throws `failed-precondition` (its options carry a fresh cache object,
+    so they never compare equal). That showed as "Sync error" after the second
+    switch, with nothing loading or saving. Never call
+    `fsMod.initializeFirestore` directly in `connectWith`.
   - `activeYear` keeps its name but holds an **event key**: an EI year
     (`"2026"`) or an id (`"x-k3f9a2"`). `isEIKey`, `isEI()`, `eventKind()`,
     `tidFor(k)` (`ei-2026` or the id itself). `YEARS` is EI years only, which
@@ -409,7 +423,7 @@ private group with no personal data. Don't present the admin code as security.
 ### Data shape
 
 ```
-tournaments/_index                 { years: ["2025","2026"], live: "2026", open?: key,
+tournaments/_index                 { years: ["2025","2026"], live: "2026", open?: key, deleted?: [ids],
                                      events?: [{ id:"x-…", kind:"trip"|"game", name, at }] }
                                    — always written with merge: a wholesale { years, live } loses the events
 tournaments/x-{id}                 a trip or single game: same shape as a year's config plus { kind, name },
@@ -527,7 +541,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **192 passed, 0 failed**. The suite is
+Current status against `index.html`: **193 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

@@ -2190,7 +2190,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.1910";
+const BUILD = "2026-10-18.1945";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2212,6 +2212,11 @@ let activeYear = null;
    or collide with _index and _history. */
 let EVENTS = [];              // [{ id, kind:"trip"|"game", name, at }]
 let openKey = null;           // the event every phone lands on (registry `open`)
+/* Ids of deleted trips and games, from the registry's `deleted`. readEvents
+   keeps events this phone knows even when a cached registry doesn't list
+   them yet, so without this a deletion would be undone by every phone that
+   had ever seen the event. */
+let DELETED = new Set();
 let EVENT_META = { kind:"ei", name:"" };   // read off the active event's config
 const isEIKey = k => /^\d{4}$/.test(String(k || ""));
 const tidFor = k => isEIKey(k) ? "ei-" + k : String(k);
@@ -2423,10 +2428,11 @@ async function loadRegistry(fsMod, db){
    knows are kept even if a cached registry doesn't list them yet — one just
    created offline would otherwise vanish and throw the phone back to the EI. */
 function readEvents(v){
+  if (Array.isArray(v.deleted)) v.deleted.forEach(id => DELETED.add(id));
   const fromDb = Array.isArray(v.events) ? v.events.filter(e => e && e.id) : [];
   const ids = new Set(fromDb.map(e => e.id));
-  EVENTS = fromDb.concat(EVENTS.filter(e => !ids.has(e.id)));
-  openKey = v.open || null;
+  EVENTS = fromDb.concat(EVENTS.filter(e => !ids.has(e.id))).filter(e => !DELETED.has(e.id));
+  openKey = v.open && !DELETED.has(v.open) ? v.open : null;
 }
 /* Which event a phone opens on. A shared link (?e=) wins. Then the event
    set as the one everyone opens — but only the first time a phone sees it
@@ -2547,6 +2553,19 @@ async function saveRecordedYear(year, rows){
   await loadHistory(true);
 }
 
+/* One Firestore per app, made once and reused. Switching events reconnects
+   on the same app, and initializeFirestore a second time on it is refused with
+   failed-precondition — its settings carry a fresh cache object each call, so
+   they never compare equal to the first. That was the "Sync error" after
+   switching to a trip or a game: the first switch fell through to the next
+   strategy's app, the second had nowhere left to go, and nothing loaded or
+   saved from then on (R154). */
+const firestores = {};
+function firestoreFor(i, app, makeOpts){
+  if (!firestores[i]) firestores[i] = SYNC.api.initializeFirestore(app, makeOpts());
+  return firestores[i];
+}
+
 async function connectWith(i){
   const fsMod = SYNC.api, appMod = SYNC.appMod;
   const st = STRATEGIES[i];
@@ -2562,13 +2581,15 @@ async function connectWith(i){
     let app;
     try { app = appMod.getApp("app-" + i); }
     catch(e){ app = appMod.initializeApp(FIREBASE_CONFIG, "app-" + i); }
-    const opts = st.force ? { experimentalForceLongPolling: true }
-                          : { experimentalAutoDetectLongPolling: true };
-    opts.localCache =
-      st.persist === "multi"  ? fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() }) :
-      st.persist === "single" ? fsMod.persistentLocalCache({}) :
-                                fsMod.memoryLocalCache();
-    const db = fsMod.initializeFirestore(app, opts);
+    const db = firestoreFor(i, app, () => {
+      const opts = st.force ? { experimentalForceLongPolling: true }
+                            : { experimentalAutoDetectLongPolling: true };
+      opts.localCache =
+        st.persist === "multi"  ? fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() }) :
+        st.persist === "single" ? fsMod.persistentLocalCache({}) :
+                                  fsMod.memoryLocalCache();
+      return opts;
+    });
     SYNC.db = db; SYNC.on = true;
 
     await loadRegistry(fsMod, db);
@@ -2585,6 +2606,11 @@ async function connectWith(i){
       if (Array.isArray(v.years)) YEARS = v.years.slice().sort();
       if (v.live) liveYear = v.live;
       readEvents(v);
+      /* Deleted on another phone while this one was in it: back to the EI. */
+      if (activeYear && !knownKeys().includes(activeYear) && liveYear){
+        switchYear(liveYear).then(() => { view.tab = "home"; render(); toast("That event was deleted"); });
+        return;
+      }
       if (!document.querySelector("input:focus")) render();
     }, () => {}));
 
@@ -2918,6 +2944,30 @@ async function startEvent(kind, name){
   /* Games in this round open, not folded: adding the game is the next step. */
   if (round){ view.tab = "sched"; openEvent(round.id, false); openPanel.e = "games"; render(); }
   return id;
+}
+
+/* Delete a trip or a single game: its games, its config, and its place in the
+   registry. Never an EI year — those are the record. The saved players and
+   courses stay; they belong to every event. The id goes on the registry's
+   `deleted` list so no phone puts it back (see DELETED). */
+async function deleteEvent(id){
+  if (!id || isEIKey(id)) return;
+  if (activeYear === id) await switchYear(liveYear || YEARS[YEARS.length - 1]);
+  DELETED.add(id);
+  EVENTS = EVENTS.filter(e => e.id !== id);
+  if (openKey === id) openKey = null;
+  queue = queue.filter(it => it.ev !== id); saveQueue();
+  if (!SYNC.on || !SYNC.api) return;
+  const { doc, setDoc, deleteDoc, collection, getDocs, arrayUnion } = SYNC.api;
+  const reg = { events: EVENTS, deleted: arrayUnion ? arrayUnion(id) : [...DELETED] };
+  if (openKey === null) reg.open = liveYear;
+  await setDoc(doc(SYNC.db, "tournaments", "_index"), reg, { merge: true });
+  try {
+    const gs = await getDocs(collection(SYNC.db, "tournaments", id, "games"));
+    const ids = []; gs.forEach(d => ids.push(d.id));
+    for (const gid of ids) await deleteDoc(doc(SYNC.db, "tournaments", id, "games", gid));
+  } catch(e){}
+  try { await deleteDoc(doc(SYNC.db, "tournaments", id)); } catch(e){}
 }
 
 /* The event every phone opens on next time. Admin-only, since it moves
@@ -4842,7 +4892,12 @@ function renderEvents(){
     <div class="acts cwrap">
       <button class="btn ghost" data-sharelink="${esc(here || "")}">Share a link to this</button>
       ${isAdmin && (openKey || liveYear) !== here ? `<button class="btn ghost" data-openforall="${esc(here || "")}">Make this the one everyone opens</button>` : ""}
-    </div></div>`;
+    </div>
+    ${/* Quiet, on its own line: it asks before doing anything, and a red block
+         beside Share was the loudest thing on the screen. */
+      isEI() ? "" : `<div class="endrow" style="margin-top:10px"><button class="lnk" data-delevent="${esc(here || "")}">Delete this ${
+        eventKind() === "game" ? "game" : "trip"}</button></div>`}
+    </div>`;
 
   const eiYears = YEARS.slice().sort().reverse();
   h += `<h3 class="evsec">${KIND_WORD.ei}</h3>
@@ -6420,6 +6475,16 @@ function handleClick(el){
     if (kind === "trip" && !name){ toast("Give the trip a name"); return; }
     newEv = null;
     startEvent(kind, name).then(() => toast((kind === "game" ? "Game" : "Trip") + " started"))
+      .catch(e => toast((e && (e.code || e.message)) || "failed"));
+    return;
+  }
+  if (el.dataset.delevent){
+    const id = el.dataset.delevent;
+    if (isEIKey(id)) return;
+    const what = eventKind() === "game" ? "game" : "trip";
+    if (!confirm(`Delete ${EVENT_META.name || "this " + what}?\n\nIts games and scores go with it, `
+      + `on every phone, and it can't be undone. Saved players and courses stay.`)) return;
+    deleteEvent(id).then(() => { view.tab = "events"; render(); toast("Deleted"); })
       .catch(e => toast((e && (e.code || e.message)) || "failed"));
     return;
   }
