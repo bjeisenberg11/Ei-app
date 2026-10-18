@@ -444,8 +444,7 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .teeord li.is-wolf{font-weight:700}
 /* Events */
 .evbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
-.evbar-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
-  letter-spacing:.1em;font-size:11px;color:var(--ink-faint)}
+.evbar .chip{margin-left:auto}
 .evbar .chip{font-size:11px;padding:4px 10px}
 .evsec{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.08em;font-size:14px;margin:22px 0 8px;color:var(--ink-soft)}
@@ -2182,7 +2181,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.1830";
+const BUILD = "2026-10-18.1835";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3415,10 +3414,10 @@ function renderHome(){
   /* One quiet line saying what's on screen and the way to everything else.
      The header already names it; this says what kind of thing it is, because
      a trip and the EI look identical otherwise. */
-  let h = `<div class="evbar"><span class="evbar-t">${
-    isEI() ? "The EI"
-    : eventKind() === "game" ? "Single game" : "Golf trip"}</span>
-    <button class="chip" data-tab="events">Events</button></div>`;
+  /* The way to every other event. Just the button: the header already says
+     which event this is and what kind ("Golf trip" under its name), and a
+     label here only said it again in smaller type. */
+  let h = `<div class="evbar"><button class="chip" data-tab="events">Events</button></div>`;
   if (isArchive()){
     h += `<div class="archivebar">
       <span class="archivebar-y">${esc(activeYear)}</span>

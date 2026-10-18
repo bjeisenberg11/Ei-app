@@ -301,7 +301,7 @@ The app covers:
   - **Admin**: `canSetup()` = `isAdmin || !isEI()`. The code guards the EI from
     mis-taps; a trip or game needs no code to set up. History stays `isAdmin`.
   - The **Events screen** (`view.tab = "events"`, `renderEvents`) is reached
-    from the `.evbar` at the top of the Games tab. It lists each kind, starts
+    from the `.evbar` at the top of the Games tab — just an Events button, no label, since the header already names the event and its kind. It lists each kind, starts
     new ones (`startEvent(kind, name)`, `startNextEI()`), shares a link
     (`?e=<key>`, via the share sheet) and, for an admin, sets the event every
     phone opens (`setOpenEvent` → registry `open`).

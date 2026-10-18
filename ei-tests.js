@@ -3928,14 +3928,14 @@ ta("R151 a golf trip and a single game are events of their own, apart from the E
       setup: canSetup(), archive: isArchive(), ttl: document.getElementById("ttl").textContent,
       sub: document.getElementById("tsub").textContent, inYears: YEARS.includes(activeYear),
       listed: EVENTS.some(e => e.id === activeYear && e.kind === "trip" && e.name === "Bandon 2027"),
-      bar: (document.querySelector(".evbar-t") || {}).textContent })`));
+      bar: !!document.querySelector(".evbar-t") })`));
     eq(t.active, trip, "creating a trip opens it:");
     ok(/^x-/.test(trip), "with an id that can't be mistaken for a year: " + trip);
     eq(t.ei, false, "it isn't the EI:");
     eq(t.kind, "trip", "it's a trip:");
     eq(t.ttl, "Bandon 2027", "the header names it:");
     eq(t.sub, "Golf trip", "and says what it is:");
-    eq(t.bar, "Golf trip", "so does the Games tab:");
+    eq(t.bar, false, "and the Games tab doesn't repeat it:");
     ok(t.setup, "setup in a trip doesn't need the EI's admin code:");
     ok(!t.archive, "and a trip is never a frozen archive:");
     ok(!t.inYears && t.listed, "it's listed as an event, never as an EI year — History reads years only:");
@@ -3980,6 +3980,9 @@ ta("R151 a golf trip and a single game are events of their own, apart from the E
     await w.switchYear("2026");
     eq(w.eval("isEI() && !canSetup() && eventKind() === 'ei'"), true, "back in the EI, it's the EI again:");
     ok(/Eisenberg Invitational/.test(w.eval(`document.getElementById("ttl").textContent`)), "by name too:");
+    w.eval(`view.tab = "home"; render();`);
+    ok(w.eval(`!document.querySelector(".evbar-t") && !!document.querySelector('.evbar [data-tab="events"]')`),
+       "and the Games tab doesn't repeat it — just the Events button:");
 
     /* landing: the event set for everyone, once; then wherever this phone was */
     /* jsdom gives this page no localStorage, so lend it a plain one */
