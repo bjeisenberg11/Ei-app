@@ -315,8 +315,14 @@ The app covers:
     `round.day` (`dayLabel`, weekday in it for `todayDay`) and `DAYS = [day]`.
     The auto name's date comes from `round.date`.
   - Outside the EI there's **no admin lock bar** on the Schedule or Field tab.
-  - **Deleting** a trip or game (`deleteEvent`, R154; a quiet link on the
-    Events screen, confirmed, never offered for an EI year) deletes its games,
+  - **A single game has no Schedule tab** (R155): `render()` hides the tab
+    and sends a closed round editor back to Games. Its round is opened from
+    **Set up the game / Edit game** (`data-editround`) under it on the Games
+    tab; its round editor has no Delete (that would leave an empty game), and
+    the Games tab has no All days / Just today bar.
+  - **Deleting** a trip or game (`deleteEvent`, R154, R155; a Delete beside
+    each trip and game row on the Events screen, so nothing has to be opened
+    first; confirmed, never offered for an EI year) deletes its games,
     then its config, drops it from `events` and adds its id to the registry's
     **`deleted`** list (arrayUnion). `readEvents` filters on that list —
     without it every phone that had seen the event would put it back, since
@@ -541,7 +547,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **193 passed, 0 failed**. The suite is
+Current status against `index.html`: **194 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

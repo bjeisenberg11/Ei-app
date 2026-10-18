@@ -457,6 +457,11 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .evbar .chip{font-size:11px;padding:4px 10px}
 .evsec{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.08em;font-size:14px;margin:22px 0 8px;color:var(--ink-soft)}
+.evline{display:flex;gap:6px;align-items:stretch;margin:0 0 6px}
+.evline .evrow{margin:0;flex:1 1 auto;min-width:0}
+.evdel{flex:0 0 auto;background:none;border:1px solid var(--rule);padding:0 12px;font:inherit;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  font-size:11px;color:var(--pencil);cursor:pointer}
 .evrow{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;width:100%;text-align:left;
   background:var(--paper-2);border:1px solid var(--rule);padding:11px 12px;margin:0 0 6px;
   font:inherit;color:var(--ink);cursor:pointer}
@@ -2190,7 +2195,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.1945";
+const BUILD = "2026-10-18.2030";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3566,6 +3571,14 @@ function render(){
       if (auto) syncGameName(auto.name);
     }
   }
+  /* A single game has no schedule: one round, set up from the Games tab
+     (Edit game opens its round). The round editor still lives under the
+     "sched" view, so leaving it lands back on Games rather than a schedule
+     screen that isn't meant to exist here. */
+  const single = eventKind() === "game";
+  const schedTab = document.querySelector('.tabs [data-tab="sched"]');
+  if (schedTab) schedTab.style.display = single ? "none" : "";
+  if (single && view.tab === "sched" && !editEvent) view.tab = "home";
   document.querySelectorAll(".tabs button").forEach(b =>
     b.classList.toggle("on", !inGame && b.dataset.tab === view.tab));
 
@@ -3667,7 +3680,8 @@ function renderHome(){
      — two rounds on Thursday in one place, one in the other. A tee time is
      worth seeing whether or not anyone's competing in it. */
   const anyGames = GAMES.some(g => rounds.some(r => r.id === g.roundId));
-  if (!anyGames)
+  const single = eventKind() === "game";
+  if (!anyGames && !single)
     h += `<p class="note" style="margin-top:20px">No games set up yet \u2014 add them on the
       Schedule tab.</p>`;
 
@@ -3676,7 +3690,9 @@ function renderHome(){
   const showAll = homeShowAll || !today || !daysWithGames.includes(today);
   const shown = showAll ? rounds : rounds.filter(r => r.day === today);
 
-  if (!showAll && daysWithGames.length > 1)
+  /* One day, one round: a single game has nothing to narrow. */
+  if (single){}
+  else if (!showAll && daysWithGames.length > 1)
     h += `<div class="todaybar">
       <span class="todaybar-t">Today \u00b7 ${esc(today)}</span>
       <button class="chip" id="showalldays">Show all days</button>
@@ -3698,7 +3714,7 @@ function renderHome(){
     h += `<p class="roundwhen">${esc(eventName(r))}${r.time ? " \u00b7 " + fmtTime(r.time) : ""}${
       roundCounts(r) ? "" : ` <span class="casual">casual</span>`}</p>`;
     const inRound = GAMES.filter(g => g.roundId === r.id);
-    if (!inRound.length)
+    if (!inRound.length && !single)
       h += `<p class="note" style="text-align:left;margin:0 0 4px">No games set${
         canSetup() || !SYNC.on ? " \u2014 add them on the Schedule tab" : ""}.</p>`;
     inRound.forEach(g => {
@@ -3719,6 +3735,11 @@ function renderHome(){
         <div class="gmeta">${meta}</div>
       </button>`;
     });
+    /* With no Schedule tab, this is the way back into course, date and who's
+       playing — and, before anything is set, the way in at all. */
+    if (single) h += `<div class="acts" style="margin-top:8px">
+      <button class="btn ${inRound.length ? "ghost" : ""}" data-editround="${esc(r.id)}">${
+        inRound.length ? "Edit game" : "Set up the game"}</button></div>`;
   });
   h += `<div class="acts cwrap" style="margin-top:22px">
     <button class="btn ghost" id="updcheck">Check for update</button>
@@ -4785,7 +4806,7 @@ function renderEventEditor(h, id){
   h += `<div class="acts cwrap stick">
     <button class="btn" id="evdone">Done</button>
     <button class="btn ghost" id="evcancel">${editIsNew ? "Discard" : "Cancel"}</button>
-    ${editIsNew ? "" : `<button class="btn red" data-delev="${e.id}">Delete</button>`}
+    ${editIsNew || single ? "" : `<button class="btn red" data-delev="${e.id}">Delete</button>`}
   </div>
   <p class="hint" style="margin-top:7px">${editIsNew
     ? "Discard removes this one again — nothing is kept."
@@ -4868,8 +4889,12 @@ function gameEditor(g){
 const KIND_WORD = { ei:"The EI", trip:"Golf trips", game:"Single games" };
 function renderEvents(){
   const here = activeYear;
-  const row = (k, name, tags) => `<button class="evrow${k === here ? " on" : ""}" data-year="${esc(k)}">
-      <span class="evrow-n">${esc(name)}</span>${tags.map(t => `<i>${esc(t)}</i>`).join("")}</button>`;
+  /* A trip or a game can be deleted from its row, without opening it first —
+     opening one only to come back here to delete it was the long way round.
+     The EI's years never get the button. */
+  const row = (k, name, tags) => `<div class="evline"><button class="evrow${k === here ? " on" : ""}" data-year="${esc(k)}">
+      <span class="evrow-n">${esc(name)}</span>${tags.map(t => `<i>${esc(t)}</i>`).join("")}</button>${
+      isEIKey(k) ? "" : `<button class="evdel" data-delevent="${esc(k)}" aria-label="Delete ${esc(name)}">Delete</button>`}</div>`;
   const tagsOf = k => [k === liveYear ? "live" : "", (openKey || liveYear) === k ? "everyone opens" : "",
                        k === here ? "you're here" : ""].filter(Boolean);
   /* A single game asks nothing: it's named after what it turns out to be
@@ -4893,10 +4918,6 @@ function renderEvents(){
       <button class="btn ghost" data-sharelink="${esc(here || "")}">Share a link to this</button>
       ${isAdmin && (openKey || liveYear) !== here ? `<button class="btn ghost" data-openforall="${esc(here || "")}">Make this the one everyone opens</button>` : ""}
     </div>
-    ${/* Quiet, on its own line: it asks before doing anything, and a red block
-         beside Share was the loudest thing on the screen. */
-      isEI() ? "" : `<div class="endrow" style="margin-top:10px"><button class="lnk" data-delevent="${esc(here || "")}">Delete this ${
-        eventKind() === "game" ? "game" : "trip"}</button></div>`}
     </div>`;
 
   const eiYears = YEARS.slice().sort().reverse();
@@ -6478,11 +6499,17 @@ function handleClick(el){
       .catch(e => toast((e && (e.code || e.message)) || "failed"));
     return;
   }
+  if (el.dataset.editround){
+    view.tab = "sched"; view.gameId = null;
+    openEvent(el.dataset.editround, false); openPanel.e = "games";
+    render(); return;
+  }
   if (el.dataset.delevent){
     const id = el.dataset.delevent;
     if (isEIKey(id)) return;
-    const what = eventKind() === "game" ? "game" : "trip";
-    if (!confirm(`Delete ${EVENT_META.name || "this " + what}?\n\nIts games and scores go with it, `
+    const info = eventInfo(id);
+    const what = info.kind === "game" ? "game" : "trip";
+    if (!confirm(`Delete ${info.name || "this " + what}?\n\nIts games and scores go with it, `
       + `on every phone, and it can't be undone. Saved players and courses stay.`)) return;
     deleteEvent(id).then(() => { view.tab = "events"; render(); toast("Deleted"); })
       .catch(e => toast((e && (e.code || e.message)) || "failed"));

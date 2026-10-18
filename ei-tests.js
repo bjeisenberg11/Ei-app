@@ -4267,6 +4267,52 @@ ta("R154 switching events reuses the database connection; trips and games can be
   }
 });
 
+/* "A really cumbersome delete": opening a game only to go back to Events to
+   delete it. Now each trip and game row on the Events screen has its own
+   Delete. And a single game has no Schedule tab — Edit game on the Games tab
+   opens its round, and leaving the editor lands back on Games. */
+ta("R155 delete straight from the Events list; a single game has no Schedule tab", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  const realConfirm = w.confirm;
+  try {
+    w.eval(`YEARS = ["2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; isAdmin = false; render();`);
+    const trip = await w.startEvent("trip", "Gone soon");
+    await w.switchYear("2026");
+    w.eval(`view.tab = "events"; render();`);
+    const html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(new RegExp('data-delevent="' + trip + '"').test(html), "a trip's row has its own Delete, from anywhere:");
+    ok(!/data-delevent="2026"/.test(html), "the EI's years don't:");
+    w.confirm = () => true;
+    w.eval(`handleClick({ dataset:{ delevent: ${JSON.stringify(trip)} } })`);
+    await new Promise(r => setTimeout(r, 0));
+    ok(w.eval(`!knownKeys().includes(${JSON.stringify(trip)})`), "and it's deleted without opening it:");
+    eq(w.eval("activeYear"), "2026", "leaving you where you were:");
+
+    await w.startEvent("game", "");
+    const g = JSON.parse(w.eval(`(function(){
+      const delInEditor = /data-delev=/.test(document.getElementById("app").innerHTML);
+      closeEvent(true);
+      const tab = view.tab, schedShown = document.querySelector('.tabs [data-tab="sched"]').style.display !== "none";
+      const home = document.getElementById("app").innerHTML;
+      return JSON.stringify({ delInEditor, tab, schedShown, edit: /data-editround=/.test(home) });
+    })()`));
+    eq(g.schedShown, false, "a single game has no Schedule tab:");
+    eq(g.tab, "home", "leaving its round editor lands on Games:");
+    ok(g.edit, "where Set up / Edit game opens it again:");
+    ok(w.eval(`!document.querySelector(".todaybar")`), "with no All days / Just today bar for one round:");
+    ok(!g.delInEditor, "and its round can't be deleted out from under it:");
+    w.eval(`handleClick({ dataset:{ editround: SCHEDULE[0].id } })`);
+    eq(w.eval("editEvent"), w.eval("SCHEDULE[0].id"), "Edit game opens the round:");
+    await w.switchYear("2026");
+    ok(w.eval(`document.querySelector('.tabs [data-tab="sched"]').style.display !== "none"`),
+       "and the EI has its Schedule tab back:");
+  } finally {
+    w.confirm = realConfirm;
+    restoreEvents(w, snap);
+  }
+});
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
