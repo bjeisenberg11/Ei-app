@@ -287,7 +287,11 @@ The app covers:
   trip**, and a **single game**. Only the EI's years reach the EI record and
   History; a trip has its own players, courses, schedule and Board; a single
   game is one round today and the round editor, opened with "Games in this
-  round" unfolded. Every format works in all three, and `WOLF5` is now in the
+  round" unfolded. A single game is **never asked for a name**: it's named after
+  its first game — format, the day it was started and who's playing
+  (`gameAutoParts`) — and `syncGameName` writes that back to its config and
+  the registry so the Events list agrees with the header. The header shows the
+  format big and "date · players" under it. Every format works in all three, and `WOLF5` is now in the
   "+ game" buttons.
   - `activeYear` keeps its name but holds an **event key**: an EI year
     (`"2026"`) or an id (`"x-k3f9a2"`). `isEIKey`, `isEI()`, `eventKind()`,

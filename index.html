@@ -2181,7 +2181,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.1835";
+const BUILD = "2026-10-18.1840";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2750,6 +2750,42 @@ async function startYear(y){
   await switchYear(y);
 }
 
+/* A single game is named after what it is: the format, the day and who's
+   playing — "5-man Wolf · Oct 18 · Blake, Dan, Daniel, Jason & Jake". Nobody
+   is asked for a name. Until a game has been added it's just "Single game"
+   and the date. The date is the day it was started, off the registry. */
+function gameAutoParts(){
+  const ev = EVENTS.find(e => e.id === activeYear) || {};
+  const date = new Date(ev.at || Date.now())
+    .toLocaleDateString(undefined, { month:"short", day:"numeric" });
+  const g = GAMES[0];
+  if (!g) return { format:"Single game", date, who:"", name:"Single game \u00b7 " + date };
+  const ix = sides(g).filter(i => (g.teams[i] || []).length);
+  const who = ix.length > 1 ? ix.map(i => teamLabel(g, i)).join(" v ")
+    : ix.length ? teamLabel(g, ix[0]) : "";
+  const format = LABEL[g.type] || "Game";
+  return { format, date, who, name: [format, date, who].filter(Boolean).join(" \u00b7 ") };
+}
+/* Keep the stored name in step with what the game has become, so the Events
+   list — which only has the registry to go on, not every event's games — says
+   the same thing as the header. Written once things settle, by whichever phone
+   notices; every phone works out the same name, so it doesn't matter which. */
+let gameNameTimer = null;
+function syncGameName(name){
+  if (!name || EVENT_META.name === name) return;
+  const id = activeYear;
+  EVENT_META = { ...EVENT_META, name };
+  EVENTS = EVENTS.map(e => e.id === id ? { ...e, name } : e);
+  if (!SYNC.on || !SYNC.api || staleDevice) return;
+  clearTimeout(gameNameTimer);
+  gameNameTimer = setTimeout(() => {
+    if (activeYear !== id) return;
+    const { doc, setDoc } = SYNC.api;
+    setDoc(doc(SYNC.db, "tournaments", id), { name }, { merge: true }).catch(() => {});
+    setDoc(doc(SYNC.db, "tournaments", "_index"), { events: EVENTS }, { merge: true }).catch(() => {});
+  }, 1500);
+}
+
 /* The next EI, from the Field tab's Danger zone or the Events screen. */
 function startNextEI(){
   if (!isAdmin){ toast("Admin only"); return; }
@@ -2770,7 +2806,7 @@ async function startEvent(kind, name){
   const id = "x-" + Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 6);
   const today = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
   const label = (name || "").trim() || (kind === "game"
-    ? "Game \u00b7 " + new Date().toLocaleDateString(undefined, { month:"short", day:"numeric" })
+    ? "Single game \u00b7 " + new Date().toLocaleDateString(undefined, { month:"short", day:"numeric" })
     : "Golf trip");
   const round = kind === "game" ? { id: "r" + Math.random().toString(36).slice(2, 8), type:"ROUND",
     day: today, time: null, courseId: (COURSES[0] || {}).id || null, mode: "RELATIVE", notes: "" } : null;
@@ -3380,8 +3416,14 @@ function render(){
       $("#ttl").textContent = (activeYear ? activeYear + " " : "") + "Eisenberg Invitational";
       $("#tsub").textContent = activeYear ? activeYear + (isArchive() ? " \u00b7 archive" : "") : "";
     } else {
-      $("#ttl").textContent = EVENT_META.name || eventInfo(activeYear).name || "Golf";
-      $("#tsub").textContent = eventKind() === "game" ? "Single game" : "Golf trip";
+      const auto = eventKind() === "game" ? gameAutoParts() : null;
+      /* A single game: the format big, then the date and who's playing — the
+         three things it's named after, without one long title wrapping. */
+      $("#ttl").textContent = auto ? auto.format
+        : (EVENT_META.name || eventInfo(activeYear).name || "Golf");
+      $("#tsub").textContent = auto ? [auto.date, auto.who].filter(Boolean).join(" \u00b7 ")
+        : eventKind() === "game" ? "Single game" : "Golf trip";
+      if (auto) syncGameName(auto.name);
     }
   }
   document.querySelectorAll(".tabs button").forEach(b =>
@@ -4673,15 +4715,19 @@ function renderEvents(){
       <span class="evrow-n">${esc(name)}</span>${tags.map(t => `<i>${esc(t)}</i>`).join("")}</button>`;
   const tagsOf = k => [k === liveYear ? "live" : "", (openKey || liveYear) === k ? "everyone opens" : "",
                        k === here ? "you're here" : ""].filter(Boolean);
-  const newForm = kind => newEv === kind ? `<div class="evnew">
-      <input id="newevname" autocomplete="off" placeholder="${kind === "game"
-        ? "Name (optional) \u2014 e.g. Sunday skins" : "Name \u2014 e.g. Bandon 2027"}">
+  /* A single game asks nothing: it's named after what it turns out to be
+     (gameAutoName), so the button goes straight to setting it up. A trip
+     needs a name — there's nothing else to call it by. */
+  const newForm = kind => kind === "game"
+    ? `<button class="btn ghost" data-createevent="game">+ New single game</button>
+       <p class="hint">One round today. You go straight to the course, the format and who's playing,
+         and it's named after those.</p>`
+    : newEv === kind ? `<div class="evnew">
+      <input id="newevname" autocomplete="off" placeholder="Name \u2014 e.g. Bandon 2027">
       <div class="acts"><button class="btn" data-createevent="${kind}">Create</button>
         <button class="btn ghost" data-newevent="">Cancel</button></div>
-      <p class="hint">${kind === "game"
-        ? "One round today. You'll go straight to picking the course, the format and who's playing."
-        : "Its own players, courses, schedule and Board, starting from the ones on screen now. Nothing in it touches the EI."}</p>
-    </div>` : `<button class="btn ghost" data-newevent="${kind}">+ New ${kind === "game" ? "single game" : "golf trip"}</button>`;
+      <p class="hint">Its own players, courses, schedule and Board, starting from the ones on screen now. Nothing in it touches the EI.</p>
+    </div>` : `<button class="btn ghost" data-newevent="${kind}">+ New golf trip</button>`;
 
   let h = `<h2 class="sec">Events</h2>`;
   h += `<div class="evcur"><div class="evcur-t">${esc(isEI() ? (here || "") + " EI"
@@ -6234,7 +6280,7 @@ function handleClick(el){
   }
   if (el.dataset.createevent){
     const kind = el.dataset.createevent;
-    const box = document.getElementById("newevname");
+    const box = kind === "game" ? null : document.getElementById("newevname");
     const name = box ? box.value.trim() : "";
     if (kind === "trip" && !name){ toast("Give the trip a name"); return; }
     newEv = null;

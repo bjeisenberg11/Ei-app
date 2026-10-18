@@ -3956,17 +3956,35 @@ ta("R151 a golf trip and a single game are events of their own, apart from the E
     eq(gm.rounds, 1, "with one round:");
     eq(gm.days.length, 1, "on one day:");
     eq(gm.round.day, gm.days[0], "today:");
-    ok(/^Game · /.test(gm.name), "named for the date when no name is given: " + gm.name);
+    ok(/^Single game · /.test(gm.name), "before it has a game it's just a single game on a date: " + gm.name);
     eq(gm.tab, "sched", "and goes straight to the round editor:");
     eq(gm.edit, gm.round.id, "on that round:");
     ok(/data-addgame="[^"]+:WOLF5"/.test(gm.html), "every format can be added, Wolf included:");
+
+    /* nobody names a single game: it's named after the format, the day and who's playing */
+    const named = JSON.parse(w.eval(`(function(){
+      handleClick({ dataset:{ addgame: SCHEDULE[0].id + ":WOLF5" } });
+      const g = GAMES[0];
+      ["p1","p2","p3","p4","p5"].forEach(id => handleClick({ dataset:{ side: g.id + ":" + id + ":0" } }));
+      render();
+      const names = ["p1","p2","p3","p4","p5"].map(id => P(id).name);
+      return JSON.stringify({ name: EVENT_META.name, listed: (EVENTS.find(e => e.id === activeYear) || {}).name,
+        ttl: document.getElementById("ttl").textContent, sub: document.getElementById("tsub").textContent,
+        want: names.slice(0, -1).join(", ") + " & " + names[4] });
+    })()`));
+    ok(named.name.startsWith("5-man Wolf · ") && named.name.endsWith(" · " + named.want),
+       "named after the format, the date and the players: " + named.name);
+    eq(named.listed, named.name, "and the Events list says the same:");
+    eq(named.ttl, "5-man Wolf", "the header leads with the format:");
+    ok(named.sub.endsWith(named.want), "with the date and players under it: " + named.sub);
 
     w.eval(`view.tab = "events"; editEvent = null; render();`);
     const ev = w.eval(`document.getElementById("app").innerHTML`);
     ok(new RegExp('data-year="' + trip + '"').test(ev) && new RegExp('data-year="' + game + '"').test(ev),
        "the Events screen lists both:");
     ok(/data-year="2026"/.test(ev) && /data-year="2025"/.test(ev), "and the EI's years:");
-    ok(/data-newevent="trip"/.test(ev) && /data-newevent="game"/.test(ev), "with a way to start each kind:");
+    ok(/data-newevent="trip"/.test(ev) && /data-createevent="game"/.test(ev), "with a way to start each kind:");
+    ok(!/Sunday skins/.test(ev), "and no name to type for a single game:");
     ok(!/data-newevent="ei"/.test(ev), "but not the next EI without the admin code:");
 
     /* a trip needs a name; nothing is created without one */
