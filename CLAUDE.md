@@ -346,11 +346,40 @@ The app covers:
     courses from the **live EI**, not from whatever event is on screen.
   - **Admin**: `canSetup()` = `isAdmin || !isEI()`. The code guards the EI from
     mis-taps; a trip or game needs no code to set up. History stays `isAdmin`.
-  - The **Events screen** (`view.tab = "events"`, `renderEvents`) is reached
-    from the `.evbar` at the top of the Games tab — just an Events button, no label, since the header already names the event and its kind. It lists each kind, starts
-    new ones (`startEvent(kind, name)`, `startNextEI()`), shares a link
-    (`?e=<key>`, via the share sheet) and, for an admin, sets the event every
-    phone opens (`setOpenEvent` → registry `open`).
+  - **The Clubhouse** (`view.tab = "club"`, `renderClub`, R156; `"events"` is
+    an alias) is the screen above every event and where the app opens. The live
+    EI is one big card (its "Now: … thru N" line only when the live EI is the
+    event loaded — other events' games aren't in memory), past years and
+    History beside it, then golf trips and single games (each with Delete), then
+    **+ Single game / + Golf trip**. Inside an event the tabs are Games /
+    Schedule / Board / Field; **Back reads "‹ Clubhouse"** at an event's top
+    level, and the EI square (`#toclub`) goes home too. On the Clubhouse and
+    settings `body.clubmode` hides the event tabs. Share a link and (admin)
+    "Make this the one everyone opens" sit at the foot of an event's Games tab.
+  - **Where it opens** (`maybeLandInEvent`, once, on the first games to
+    arrive): into the event if it came from a `?e=` link, if one of its games
+    is under way, or if it's a single game dated today — never on day names
+    alone (an EI's days are "Thursday"…"Sunday", half of every week), and never
+    once the user has tapped (`userMoved`).
+  - **You & settings** (`view.tab = "settings"`, `renderSettings`): who this
+    phone is (`meId()`, `localStorage["ei-me"]`, checked against the saved
+    list), **your handicap index** with Save (`libSavePlayer`), the saved
+    players and courses, EI admin unlock, Check for update and the build line
+    (moved off the Games tab).
+  - **Indexes lock per game** (`g.idx`, `freezeIndexes`, R156): a handicap
+    game's players' indexes are copied onto it at its **first score** (in
+    `pushHole`), and `courseHcp(pid, course, g)` reads them from there
+    (`indexIn`). So an index change reaches games not yet started and never
+    rescores one already played. `freezePlayed()` locks games scored before
+    this existed on load — the 2026 EI as played. Absent means unlocked: no
+    `SCHEMA` bump.
+  - **The saved list and an event's field stay in step by timestamp**: an edit
+    in an event is an entry that differs from `fieldBase` (the field as loaded
+    or last sent); `libPushEdits` (from `pushConfig`) stamps those with `upd`
+    and sends only them, so an old copy can't overwrite a newer one; `libPull`
+    takes any saved entry with a newer `upd` into a non-archived event (after
+    `freezePlayed`, and not while `cfgDirty`). `startYear` carries the newer
+    of the live EI's copy and the saved one.
   - **Landing** (`landingKey`): a `?e=` link wins; then the registry's `open`
     event, but only the first time this phone sees it change
     (`localStorage["ei-open-seen"]`); otherwise wherever this phone last was.
@@ -547,7 +576,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **194 passed, 0 failed**. The suite is
+Current status against `index.html`: **195 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

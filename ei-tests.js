@@ -3997,10 +3997,10 @@ ta("R151 a golf trip and a single game are events of their own, apart from the E
     /* back to the EI: everything reads as the EI again */
     await w.switchYear("2026");
     eq(w.eval("isEI() && !canSetup() && eventKind() === 'ei'"), true, "back in the EI, it's the EI again:");
-    ok(/Eisenberg Invitational/.test(w.eval(`document.getElementById("ttl").textContent`)), "by name too:");
     w.eval(`view.tab = "home"; render();`);
-    ok(w.eval(`!document.querySelector(".evbar-t") && !!document.querySelector('.evbar [data-tab="events"]')`),
-       "and the Games tab doesn't repeat it — just the Events button:");
+    ok(/Eisenberg Invitational/.test(w.eval(`document.getElementById("ttl").textContent`)), "by name too:");
+    ok(w.eval(`!document.querySelector(".evbar") && document.getElementById("back").textContent.includes("Clubhouse")`),
+       "and the way to the other events is \u2039 Clubhouse in the header, not a bar on the Games tab:");
 
     /* landing: the event set for everyone, once; then wherever this phone was */
     /* jsdom gives this page no localStorage, so lend it a plain one */
@@ -4043,7 +4043,7 @@ ta("R152 events are written beside the EI's years, never over them", async () =>
         setDoc: (ref, data, opts) => { __w.sets.push({ ref, data: JSON.parse(JSON.stringify(data)), merge: !!(opts && opts.merge) }); return Promise.resolve(); },
         updateDoc: (ref, d) => { __w.updates.push({ ref, d }); return Promise.resolve(); },
         getDoc: ref => Promise.resolve({ exists: () => ref === "tournaments/ei-2026",
-          data: () => ({ players: [{ id:"p1", name:"EI Man", index: 5, tees:{} }], courses: COURSES, days: ["Thursday"] }) }),
+          data: () => ({ players: [{ id:"p1", name:"EI Man", index: 5, tees:{}, upd: 9e15 }], courses: COURSES, days: ["Thursday"] }) }),
         arrayUnion: x => ({ union: x })
       };
       YEARS = ["2025","2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; isAdmin = true;
@@ -4309,6 +4309,118 @@ ta("R155 delete straight from the Events list; a single game has no Schedule tab
        "and the EI has its Schedule tab back:");
   } finally {
     w.confirm = realConfirm;
+    restoreEvents(w, snap);
+  }
+});
+
+/* The Clubhouse, and an index you keep yourself. Asked for together: a home
+   screen above every event, and "when you put in your name you also put in
+   your handicap index, and a spot to edit it" that flows through to games.
+   It flows to games not yet started; a game locks its indexes at its first
+   score, so a change never rescores one already played — the 2026 EI
+   included, which is locked as played the first time it loads. */
+ta("R156 Clubhouse home; your index flows to new games and never rescores a played one", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  const lib0 = w.eval("JSON.stringify({ p: LIB.players, c: LIB.courses })");
+  try {
+    w.eval(`(function(){ const m = {}; window.__ls = { getItem: k => k in m ? m[k] : null,
+      setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } };
+      Object.defineProperty(window, "localStorage", { value: __ls, configurable: true }); })()`);
+    w.eval(`YEARS = ["2025","2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; isAdmin = false;`);
+
+    /* 1. a game's indexes lock at its first score */
+    const lock = JSON.parse(w.eval(`(function(){
+      const r = ROUNDS()[0]; r.mode = "FULL";
+      const played = { id:"gl1", roundId:r.id, type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles() };
+      const fresh  = { id:"gl2", roundId:r.id, type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles() };
+      GAMES.push(played, fresh);
+      const was = P("p1").index;
+      played.holes[0].scores.p1 = 5; pushHole(played, 0, "scores.p1", 5);
+      const before = playingHcp("p1", played), freshBefore = playingHcp("p1", fresh);
+      P("p1").index = was + 9;
+      const out = { locked: !!played.idx && played.idx.p1 === was,
+        same: playingHcp("p1", played) === before, moved: playingHcp("p1", fresh) !== freshBefore };
+      P("p1").index = was;
+      /* a game scored before locking existed is locked on load, as it stands */
+      const old = { id:"gl3", roundId:r.id, type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles() };
+      old.holes[0].scores.p2 = 4; GAMES.push(old); freezePlayed();
+      out.oldLocked = !!old.idx && old.idx.p2 === P("p2").index;
+      GAMES = GAMES.filter(g => !/^gl/.test(g.id));
+      return JSON.stringify(out);
+    })()`));
+    ok(lock.locked, "the first score locks the game's indexes:");
+    ok(lock.same, "a later index change doesn't rescore it:");
+    ok(lock.moved, "but does reach a game not yet started:");
+    ok(lock.oldLocked, "and a game already scored is locked as it stands when it loads:");
+
+    /* 2. the saved list comes down only where it's newer; a stale copy never goes up */
+    const sync = JSON.parse(w.eval(`(function(){
+      snapField();
+      LIB.players.p2 = Object.assign(clone(P("p2")), { index: 3.3, upd: Date.now() + 1000 });
+      LIB.players.p3 = Object.assign(clone(P("p3")), { index: 1.1, upd: 1 });
+      const p3was = P("p3").index;
+      libPull();
+      const pulled = P("p2").index, keptOwn = P("p3").index === p3was;
+      /* an unrelated save doesn't send this phone's old copy of p4 back over a newer one */
+      LIB.players.p4 = Object.assign(clone(P("p4")), { index: 0.5, upd: Date.now() + 5000 });
+      P("p4").upd = 0; snapField();
+      DAYS.push("Extra day"); pushConfig(); DAYS.pop();
+      return JSON.stringify({ pulled, keptOwn, p4: LIB.players.p4.index });
+    })()`));
+    eq(sync.pulled, 3.3, "a newer saved index comes into the event:");
+    ok(sync.keptOwn, "an older one doesn't:");
+    eq(sync.p4, 0.5, "and an unrelated save never sends a stale copy back over the saved one:");
+
+    /* 3. You: pick your name, then your index — it flows to the field */
+    w.eval(`view.tab = "settings"; render();`);
+    let html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(/data-setme="p1"/.test(html), "You & settings asks who you are:");
+    w.eval(`handleClick({ dataset:{ setme:"p1" } })`);
+    html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(/id="myidx"/.test(html), "then shows your index to check:");
+    w.eval(`document.getElementById("myidx").value = "7.3"; handleClick({ dataset:{ saveidx:"1" } });`);
+    eq(w.eval(`LIB.players.p1.index`), 7.3, "saving it updates the saved list:");
+    eq(w.eval(`P("p1").index`), 7.3, "and this event's field:");
+    w.eval(`document.getElementById("myidx").value = "99"; handleClick({ dataset:{ saveidx:"1" } });`);
+    eq(w.eval(`LIB.players.p1.index`), 7.3, "a nonsense index is refused:");
+
+    /* 4. the Clubhouse */
+    w.eval(`view.tab = "club"; render();`);
+    html = w.eval(`document.getElementById("app").innerHTML`);
+    ok(w.eval(`document.body.classList.contains("clubmode")`), "the Clubhouse has no event tabs:");
+    eq(w.eval(`document.getElementById("back").style.display`), "none", "and no Back:");
+    ok(/class="eicard" data-year="2026"/.test(html), "the live EI is the big card:");
+    ok(/data-year="2025"/.test(html) && /data-history=/.test(html), "with past years and History beside it:");
+    ok(/Scoring as <b>/.test(html) && /index 7\.3/.test(html), "and who you are, with your index:");
+    ok(/data-createevent="game"/.test(html) && /data-newevent="trip"/.test(html), "and the two ways to start something:");
+    w.eval(`handleClick({ dataset:{ year:"2026" } })`);
+    await new Promise(r => setTimeout(r, 0));
+    eq(w.eval("view.tab"), "home", "tapping the EI opens its Games tab:");
+    ok(w.eval(`!document.body.classList.contains("clubmode") && document.getElementById("back").textContent.includes("Clubhouse")`),
+       "with its tabs, and ‹ Clubhouse to come back:");
+    w.eval(`handleClick({ id:"toclub", dataset:{} })`);
+    eq(w.eval("view.tab"), "club", "the EI square goes back to the Clubhouse too:");
+
+    /* 5. landing: into the event only when something's under way */
+    const land = JSON.parse(w.eval(`(function(){
+      const r = ROUNDS()[0];
+      landed = false; userMoved = false; view.tab = "club";
+      const keep = GAMES; GAMES = [];
+      maybeLandInEvent(); const idle = view.tab;
+      const g = { id:"gland", roundId:r.id, type:"SCRAMBLE4", teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes: blankHoles() };
+      g.holes[0].teamScore = {0:4, 1:5}; GAMES = [g];
+      landed = false; view.tab = "club"; maybeLandInEvent(); const busy = view.tab;
+      landed = false; userMoved = true; view.tab = "club"; maybeLandInEvent(); const touched = view.tab;
+      GAMES = keep; userMoved = false; landed = true;
+      return JSON.stringify({ idle, busy, touched });
+    })()`));
+    eq(land.idle, "club", "nothing under way: the app opens on the Clubhouse:");
+    eq(land.busy, "home", "a game under way: straight into the event:");
+    eq(land.touched, "club", "but never once you've tapped somewhere yourself:");
+  } finally {
+    try { w.eval(`delete window.localStorage`); } catch(e){}
+    w.eval(`(function(){ const o = JSON.parse(${JSON.stringify(lib0)}); LIB.players = o.p; LIB.courses = o.c; })()`);
     restoreEvents(w, snap);
   }
 });

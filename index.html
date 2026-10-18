@@ -74,7 +74,10 @@ button{font-family:inherit;color:inherit}
   text-transform:uppercase;letter-spacing:.03em;font-size:19px;line-height:1}
 .top .sub{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.12em;font-size:11px;font-weight:600;color:var(--ink-soft);margin-top:2px}
-.topright{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
+/* Stacked, sync pill over the button: side by side, "‹ Clubhouse" and a
+   "Sync error" pill pushed the header past the width of a phone. */
+.topright{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+.top-in > div:nth-child(2){min-width:0}
 .syncdot{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.1em;font-size:9.5px;font-weight:700;padding:3px 7px;white-space:nowrap;
   border:1px solid var(--rule);color:var(--ink-soft);background:var(--paper-2)}
@@ -451,6 +454,31 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .sellist-h{padding-left:14px !important}
 .sellist-h,.rost-h{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.1em;font-size:11px;color:var(--ink-faint);margin:10px 0 4px;padding:6px 0 0}
+/* The Clubhouse: no event tabs above every event */
+body.clubmode nav.tabs{display:none}
+button.monogram{cursor:pointer;padding:0}
+.clubme{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;
+  font-size:14px;color:var(--ink-soft)}
+.clubme .chip{flex:none}
+.eicard{display:block;width:100%;text-align:left;background:var(--ink);color:var(--paper-2);
+  border:none;padding:16px 16px 14px;font:inherit;cursor:pointer}
+.eicard-k{display:block;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;
+  letter-spacing:.12em;text-transform:uppercase;color:#E2C98A}
+.eicard-k i{font-style:normal;color:#C9D3CB;letter-spacing:.04em;text-transform:none;font-family:'Barlow',sans-serif;font-weight:500;margin-left:6px}
+.eicard-t{display:block;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:30px;
+  line-height:1.05;margin-top:6px}
+.eicard-f{display:flex;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--ink-soft);font-size:14px}
+.eipast{display:flex;align-items:center;gap:14px;font-size:14px;color:var(--ink-soft);margin:6px 2px 0}
+.eipast .lnk,.mehead .lnk{background:none;border:none;padding:4px 0;font:inherit;color:var(--ink-soft);
+  text-decoration:underline;cursor:pointer}
+.evrow-n small{display:block;font-weight:400;font-size:13px;color:var(--ink-faint)}
+.evline .evrow{flex-wrap:nowrap}
+.evline .evrow-n{flex:1 1 auto;min-width:0}
+.evrow-x{flex:none;font-size:20px;color:var(--ink-faint)}
+.clubnew{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.clubnew .btn{min-height:50px}
+.mehead{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:18px;margin-bottom:8px}
 /* Events */
 .evbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
 .evbar .chip{margin-left:auto}
@@ -865,7 +893,7 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 <body>
 
 <header class="top"><div class="wrap"><div class="top-in">
-  <div class="monogram">EI</div>
+  <button class="monogram" id="toclub" aria-label="Clubhouse">EI</button>
   <div>
     <h1 id="ttl">Eisenberg Invitational</h1>
     <div class="sub" id="tsub"></div>
@@ -1170,10 +1198,16 @@ const teeTag = (g, pid, course) =>
 function teeOf(pid, course){
   return course.tees.find(t => t.name === teeNameFor(pid, course)) || course.tees[0];
 }
-function courseHcp(pid, course){
+/* A game's handicaps are locked at its first score (g.idx, see freezeIndexes):
+   an index changed later — on the Field tab, or by a player updating his own —
+   reaches games not yet started and never rescores one already played. With
+   no game, or a player not in the lock, it's his index as it stands. */
+const indexIn = (g, pid) => (g && g.idx && g.idx[pid] != null) ? +g.idx[pid] : +((P(pid) || {}).index || 0);
+function courseHcp(pid, course, g){
   const t = teeOf(pid, course);
-  if (!t) return Math.round(P(pid).index);
-  return Math.round(P(pid).index * (t.slope / 113) + (t.rating - t.par));
+  const idx = indexIn(g, pid);
+  if (!t) return Math.round(idx);
+  return Math.round(idx * (t.slope / 113) + (t.rating - t.par));
 }
 /* Everyone in the game, whatever shape its sides are. Three helpers used to
    write [...g.teams[0], ...g.teams[1]] instead, which was harmless only
@@ -1184,11 +1218,11 @@ function baseline(g){
   const course = courseOf(g);
   const all = rosterOf(g);
   if (!all.length) return 0;
-  return Math.min(...all.map(id => courseHcp(id, course)));
+  return Math.min(...all.map(id => courseHcp(id, course, g)));
 }
 function playingHcp(pid, g){
   if (!usesHcp(g)) return 0;
-  const ch = courseHcp(pid, courseOf(g));
+  const ch = courseHcp(pid, courseOf(g), g);
   return modeOf(g) === "FULL" ? ch : ch - baseline(g);
 }
 function strokesOn(pid, g, h){
@@ -2195,7 +2229,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.2030";
+const BUILD = "2026-10-18.2130";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2274,6 +2308,65 @@ function libAbsorb(onlyMissing){
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", "_library"), add, { merge: true }).catch(() => {});
 }
+/* Which of this event's players and courses were edited HERE, rather than
+   arriving from the saved list: fieldBase is the field as it stood when it was
+   loaded or last sent. Only those go up to the list (libPushEdits), stamped
+   with when (upd); and the list only comes down over an entry it has a newer
+   stamp for (libPull). Without that, a phone holding an old copy of a player
+   would send it back over a newer one with any unrelated save. */
+let fieldBase = {};
+function snapField(){
+  fieldBase = {};
+  PLAYERS.forEach(p => { if (p && p.id) fieldBase["p:" + p.id] = JSON.stringify(p); });
+  COURSES.forEach(c => { if (c && c.id) fieldBase["c:" + c.id] = JSON.stringify(c); });
+}
+function libPushEdits(){
+  if (isArchive() || staleDevice) return;
+  const add = { players:{}, courses:{} }; let n = 0;
+  const now = Date.now();
+  PLAYERS.forEach(p => {
+    if (!p || !p.id || !p.name || fieldBase["p:" + p.id] === JSON.stringify(p)) return;
+    p.upd = now; add.players[p.id] = clone(p); LIB.players[p.id] = clone(p); n++;
+  });
+  COURSES.forEach(c => {
+    if (!c || !c.id || !c.name || fieldBase["c:" + c.id] === JSON.stringify(c)) return;
+    c.upd = now; add.courses[c.id] = clone(c); LIB.courses[c.id] = clone(c); n++;
+  });
+  snapField();
+  if (!n || !SYNC.on || !SYNC.api) return;
+  SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"), add, { merge: true }).catch(() => {});
+}
+/* The saved list into this event: any player or course it has a newer copy
+   of. Not into an archived year — that's the record — and not while a local
+   edit is waiting to go up, which is newer still. Games are unaffected:
+   their indexes are locked (freezeIndexes). */
+function libPull(){
+  if (isArchive() || cfgDirty) return;
+  if (SYNC.on && (!LIB.loaded || !SYNC.seen.games)) return;
+  let n = 0;
+  PLAYERS.forEach((p, i) => {
+    const l = LIB.players[p && p.id];
+    if (l && (+l.upd || 0) > (+p.upd || 0)){ PLAYERS[i] = clone(l); n++; }
+  });
+  COURSES.forEach((c, i) => {
+    const l = LIB.courses[c && c.id];
+    if (l && (+l.upd || 0) > (+c.upd || 0)){ COURSES[i] = clone(l); n++; }
+  });
+  snapField();
+  if (n){ queueConfig(); if (!document.querySelector("input:focus")) render(); }
+}
+/* One saved player, written to the list (and into this event, if he's in it
+   and it isn't archived). The "You" screen's index uses this. */
+function libSavePlayer(p){
+  p = clone(p); p.upd = Date.now();
+  LIB.players[p.id] = p;
+  if (SYNC.on && SYNC.api && !staleDevice)
+    SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"),
+                    { players: { [p.id]: p } }, { merge: true }).catch(() => {});
+  const here = PLAYERS.findIndex(x => x.id === p.id);
+  if (here >= 0 && !isArchive()){ PLAYERS[here] = clone(p); snapField(); queueConfig(); }
+}
+
 /* Bring a saved player or course into this event's field. */
 function fieldAddPlayer(id){
   if (P(id) || !LIB.players[id]) return !!P(id);
@@ -2626,6 +2719,7 @@ async function connectWith(i){
       LIB.players = v.players || {}; LIB.courses = v.courses || {};
       const first = !LIB.loaded; LIB.loaded = true;
       if (first) libAbsorb(true);             // whatever this event has that the list doesn't
+      libPull();
     }, () => {}));
 
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
@@ -2642,7 +2736,9 @@ async function connectWith(i){
       if (v.days && v.days.length) { DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
       EVENT_META = { kind: v.kind || (isEI() ? "ei" : "trip"), name: v.name || "" };
       migrateLoaded();
+      snapField();
       libAbsorb(true);
+      libPull();
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
     }, e => reportListenerError(myGen, e)));
@@ -2666,7 +2762,10 @@ async function connectWith(i){
       deadGames.forEach((t, id) => { if (!present.has(id)) deadGames.delete(id); });
       GAMES = fresh;
       applyQueueLocally();
+      freezePlayed();
       touchSync("games", qs);
+      libPull();
+      maybeLandInEvent();
       if (!document.querySelector("input:focus")) render();
     }, e => reportListenerError(myGen, e)));
 
@@ -2753,7 +2852,9 @@ async function kickGames(myGen, gamesRef){
     applyQueueLocally();
     SYNC.cache.games = false;
     SYNC.seen.games = true;
+    freezePlayed();
     migrateLoaded();
+    libPull();
     if (!document.querySelector("input:focus")) render();
     return true;
   } catch (e){ return false; }
@@ -2853,7 +2954,9 @@ async function startYear(y){
   }
   await setDoc(doc(SYNC.db, "tournaments", tid), {
     schema: SCHEMA, appBuild: BUILD, kind: "ei",
-    players: (src.players || []).map(p => ({ ...p })),
+    /* the saved list's copy where it's newer — an index changed since */
+    players: (src.players || []).map(p => clone(LIB.players[p.id] && (+LIB.players[p.id].upd || 0) > (+p.upd || 0)
+                                                ? LIB.players[p.id] : p)),
     courses: (src.courses || []).map(c => JSON.parse(JSON.stringify(c))),
     schedule: [], days: (src.days || DAYS).slice()
   });
@@ -2990,6 +3093,7 @@ function loadConfigLocally(v){
   if (v.courses){ COURSES.length = 0; v.courses.forEach(x => COURSES.push(JSON.parse(JSON.stringify(x)))); }
   if (v.schedule){ SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push({ ...x })); }
   if (v.days && v.days.length){ DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
+  snapField();
 }
 
 function touchSync(which, snapOrQs){
@@ -3218,8 +3322,24 @@ window.addEventListener("online", flushQueue);
 /* write a single field on a single hole — the merge-safe unit */
 /* Sync must never block the interface. If any of this throws, the local state
    and the screen are already correct — only the send is affected. */
+/* Lock a handicap game's indexes as they stand, once. Called on its first
+   score, and on load for any game that was scored before locking existed —
+   the 2026 EI was played on the indexes it has now, so that's what it keeps. */
+function freezeIndexes(g){
+  if (!g || g.idx || !usesHcp(g) || isArchive() || staleDevice) return false;
+  const idx = {};
+  rosterOf(g).forEach(id => { const p = P(id); if (p) idx[id] = +p.index || 0; });
+  if (!Object.keys(idx).length) return false;
+  g.idx = idx;
+  pushGameFields(g, { idx });
+  return true;
+}
+const scoredAny = g => holeList(g).some(hl => Object.keys(hl.scores || {}).length);
+function freezePlayed(){ GAMES.forEach(g => { if (scoredAny(g)) freezeIndexes(g); }); }
+
 function pushHole(g, h, path, value){
   if (staleDevice || isArchive()) return;
+  if (/^scores\./.test(path)) freezeIndexes(g);
   if (!SYNC.on) return;
   try { enqueue(g.id, h, path, value); flushQueue(); }
   catch (e){ console.error("pushHole", e); }
@@ -3321,7 +3441,7 @@ async function resetTournament(){
 let cfgRetry = false;
 function pushConfig(){
   if (staleDevice || isArchive()){ cfgDirty = false; return; }      // never write from an old build
-  libAbsorb(false);                  // an edit here is an edit to the saved list too
+  libPushEdits();                    // an edit here is an edit to the saved list too
   if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
   const { doc, setDoc } = SYNC.api;
   setDoc(doc(SYNC.db, "tournaments", tidFor(activeYear)),
@@ -3343,7 +3463,27 @@ function pushConfig(){
 /* ============================================================
    VIEW STATE
    ============================================================ */
-let view = { tab:"home", gameId:null, hole:0 };
+/* The app opens on the Clubhouse; maybeLandInEvent takes it straight into
+   the event when that's plainly where you're going. */
+let view = { tab:"club", gameId:null, hole:0 };
+let userMoved = false, landed = false;
+/* Once, on the first games to arrive: into the event if it was opened from a
+   shared link, if one of its games is under way, or if it's a single game
+   set for today. Not on the day names alone — an EI's days are just
+   "Thursday" to "Sunday", and that's half of every week. Never once someone
+   has tapped somewhere. */
+function maybeLandInEvent(){
+  if (landed) return;
+  landed = true;
+  if (userMoved || view.tab !== "club") return;
+  let fromUrl = null;
+  try { fromUrl = new URLSearchParams(location.search).get("e"); } catch(e){}
+  const today = isoDate(new Date());
+  const on = (fromUrl && fromUrl === activeYear)
+    || GAMES.some(g => holesPlayed(g) > 0 && !gameResult(g))
+    || (eventKind() === "game" && ROUNDS().some(r => r.date === today));
+  if (on){ view.tab = "home"; render(); }
+}
 let showStrokes = false;
 let editCourseId = (COURSES[0] || NO_COURSE).id;
 let editEvent = null;
@@ -3529,10 +3669,15 @@ async function applyUpdate(){
 function render(){
   captureRows();            // before the DOM goes
   const inGame = !!view.gameId;
-  /* Back is for anywhere that isn't a top-level tab — a game, or an editor.
-     Without it the only way out of an editor was the button at the bottom of
-     a long form. */
-  $("#back").style.display = (inGame || editEvent) ? "block" : "none";
+  /* The Clubhouse and its settings sit above every event: no event tabs
+     there. Anywhere inside an event, Back is either "Back" (out of a game or
+     an editor) or, at an event's top level, "‹ Clubhouse". */
+  const inClub = !inGame && !editEvent && (view.tab === "club" || view.tab === "events");
+  const inSettings = !inGame && !editEvent && view.tab === "settings";
+  document.body.classList.toggle("clubmode", inClub || inSettings);
+  const back = $("#back");
+  back.style.display = inClub ? "none" : "block";
+  back.textContent = inGame || editEvent ? "Back" : "\u2039 Clubhouse";
   if (inGame){
     const g = GAMES.find(x => x.id === view.gameId);
     /* Someone else can delete this game while it's open. Without this the
@@ -3557,7 +3702,10 @@ function render(){
     const when = r ? [r.day, r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ") : "";
     $("#tsub").textContent = [courseOf(g).name, when].filter(Boolean).join(" · ");
   } else {
-    if (isEI()){
+    if (inClub || inSettings){
+      $("#ttl").textContent = inClub ? "Clubhouse" : "You & settings";
+      $("#tsub").textContent = inClub ? "The EI, trips and games" : "";
+    } else if (isEI()){
       $("#ttl").textContent = (activeYear ? activeYear + " " : "") + "Eisenberg Invitational";
       $("#tsub").textContent = activeYear ? activeYear + (isArchive() ? " \u00b7 archive" : "") : "";
     } else {
@@ -3584,7 +3732,8 @@ function render(){
 
   if (inGame){ renderGame(); syncHoleStrip(); animateRows(); return; }
   if (view.tab === "board") return renderBoard();
-  if (view.tab === "events") return renderEvents();
+  if (view.tab === "events" || view.tab === "club") return renderClub();
+  if (view.tab === "settings") return renderSettings();
   if (view.tab === "sched") return renderSchedule();
   if (view.tab === "players") return renderPlayers();
   renderHome();
@@ -3612,7 +3761,7 @@ function renderHome(){
   /* The way to every other event. Just the button: the header already says
      which event this is and what kind ("Golf trip" under its name), and a
      label here only said it again in smaller type. */
-  let h = `<div class="evbar"><button class="chip" data-tab="events">Events</button></div>`;
+  let h = "";
   if (isArchive()){
     h += `<div class="archivebar">
       <span class="archivebar-y">${esc(activeYear)}</span>
@@ -3741,14 +3890,13 @@ function renderHome(){
       <button class="btn ${inRound.length ? "ghost" : ""}" data-editround="${esc(r.id)}">${
         inRound.length ? "Edit game" : "Set up the game"}</button></div>`;
   });
+  /* The update check and build line moved to You & settings; what's left at
+     the foot is about this event: sending it to someone, and (admin) making it
+     the one every phone opens on. */
   h += `<div class="acts cwrap" style="margin-top:22px">
-    <button class="btn ghost" id="updcheck">Check for update</button>
+    <button class="btn ghost" data-sharelink="${esc(activeYear || "")}">Share a link to this</button>
+    ${isAdmin && (openKey || liveYear) !== activeYear ? `<button class="btn ghost" data-openforall="${esc(activeYear || "")}">Make this the one everyone opens</button>` : ""}
   </div>`;
-  h += `<div class="footnote">Scores and setup are shared live across every phone and survive
-    a reload. Players, courses and the schedule are still placeholder data.<br>
-    This phone is on build <b>${esc(BUILD)}</b>${
-      latestBuild && !updateReady ? " — the latest" : ""}. Everyone needs the same build
-    before play, or an older phone's scores get ignored.</div>`;
   app.innerHTML = h;
 }
 
@@ -4887,53 +5035,127 @@ function gameEditor(g){
    Only the EI's years feed the History — the other two kinds are kept apart on
    purpose, so a trip's results can never move the EI record. */
 const KIND_WORD = { ei:"The EI", trip:"Golf trips", game:"Single games" };
-function renderEvents(){
-  const here = activeYear;
-  /* A trip or a game can be deleted from its row, without opening it first —
-     opening one only to come back here to delete it was the long way round.
-     The EI's years never get the button. */
-  const row = (k, name, tags) => `<div class="evline"><button class="evrow${k === here ? " on" : ""}" data-year="${esc(k)}">
-      <span class="evrow-n">${esc(name)}</span>${tags.map(t => `<i>${esc(t)}</i>`).join("")}</button>${
+/* The Clubhouse: the screen above every event, and where the app opens unless
+   an event is on today. The live EI as one big card, then trips and single
+   games, then the two ways to start something. Each event opens into its own
+   Games / Schedule / Board, with "‹ Clubhouse" (the Back button) to come
+   back. It replaced an Events screen that hung off a button on the Games tab,
+   which was easy to miss and made the three kinds of event look like settings.
+   Who this phone is, with his index, is one line at the top — the index is
+   his to keep current, and it reaches every game not yet started. */
+function meId(){
+  let v = null;
+  try { v = localStorage.getItem("ei-me"); } catch(e){}
+  return v && (LIB.players[v] || P(v)) ? v : null;
+}
+const mePlayer = () => { const id = meId(); return id ? (LIB.players[id] || P(id)) : null; };
+
+function liveEiLine(){
+  /* Only when the live EI is the event loaded — the others' games aren't in
+     memory, and a guess is worse than nothing. */
+  if (activeYear !== liveYear || !GAMES.length) return null;
+  const going = GAMES.find(g => holesPlayed(g) > 0 && !gameResult(g));
+  if (going) return { live: true, text: `${LABEL[going.type]} · thru ${holesPlayed(going)}`, gid: going.id };
+  if (GAMES.every(g => gameResult(g))) return { live: false, text: "Final" };
+  return null;
+}
+function renderClub(){
+  const me = mePlayer();
+  const row = (k, name, sub) => `<div class="evline"><button class="evrow" data-year="${esc(k)}">
+      <span class="evrow-n">${esc(name)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>
+      <span class="evrow-x" aria-hidden="true">›</span></button>${
       isEIKey(k) ? "" : `<button class="evdel" data-delevent="${esc(k)}" aria-label="Delete ${esc(name)}">Delete</button>`}</div>`;
-  const tagsOf = k => [k === liveYear ? "live" : "", (openKey || liveYear) === k ? "everyone opens" : "",
-                       k === here ? "you're here" : ""].filter(Boolean);
-  /* A single game asks nothing: it's named after what it turns out to be
-     (gameAutoName), so the button goes straight to setting it up. A trip
-     needs a name — there's nothing else to call it by. */
-  const newForm = kind => kind === "game"
-    ? `<button class="btn ghost" data-createevent="game">+ New single game</button>
-       <p class="hint">One round today. You go straight to the course, the format and who's playing,
-         and it's named after those.</p>`
-    : newEv === kind ? `<div class="evnew">
-      <input id="newevname" autocomplete="off" placeholder="Name \u2014 e.g. Bandon 2027">
-      <div class="acts"><button class="btn" data-createevent="${kind}">Create</button>
-        <button class="btn ghost" data-newevent="">Cancel</button></div>
-      <p class="hint">Its own players, courses, schedule and Board. Pick from everyone and everywhere saved, or add new ones \u2014 they're saved for next time. Nothing in it touches the EI.</p>
-    </div>` : `<button class="btn ghost" data-newevent="${kind}">+ New golf trip</button>`;
 
-  let h = `<h2 class="sec">Events</h2>`;
-  h += `<div class="evcur"><div class="evcur-t">${esc(isEI() ? (here || "") + " EI"
-      : EVENT_META.name || eventInfo(here).name)}</div>
-    <div class="acts cwrap">
-      <button class="btn ghost" data-sharelink="${esc(here || "")}">Share a link to this</button>
-      ${isAdmin && (openKey || liveYear) !== here ? `<button class="btn ghost" data-openforall="${esc(here || "")}">Make this the one everyone opens</button>` : ""}
-    </div>
-    </div>`;
+  let h = `<div class="clubme">${me
+      ? `<span>Scoring as <b>${esc(me.name)}</b> · index ${(+me.index || 0).toFixed(1)}</span>`
+      : `<span>Who are you? Pick your name and index once.</span>`}
+    <button class="chip" data-tab="settings">${me ? "You & settings" : "Set up"}</button></div>`;
 
-  const eiYears = YEARS.slice().sort().reverse();
-  h += `<h3 class="evsec">${KIND_WORD.ei}</h3>
-    ${eiYears.map(y => row(y, y + " EI", tagsOf(y))).join("")}
-    ${isAdmin ? `<button class="btn ghost" data-newevent="ei">Start the ${esc(String(+(liveYear || YEAR_NOW) + 1))} EI</button>`
-      : `<p class="hint">Starting the next EI needs the admin code \u2014 unlock it on the Schedule tab.</p>`}`;
+  /* the EI */
+  const ln = liveEiLine();
+  const days = activeYear === liveYear && DAYS.length ? DAYS[0] + " – " + DAYS[DAYS.length - 1] : "";
+  h += `<h3 class="evsec">The EI</h3>`;
+  if (liveYear) h += `<button class="eicard" data-year="${esc(liveYear)}">
+      <span class="eicard-k">${ln && ln.live ? "Live" : "The " + esc(liveYear) + " EI"}${days ? ` <i>${esc(days)}</i>` : ""}</span>
+      <span class="eicard-t">${esc(liveYear)} Eisenberg Invitational</span>
+      <span class="eicard-f"><span>${ln ? (ln.live ? "Now: <b>" + esc(ln.text) + "</b>" : esc(ln.text)) : "Games, schedule and standings"}</span><span>Open ›</span></span>
+    </button>`;
+  const past = YEARS.filter(y => y !== liveYear).sort().reverse();
+  h += `<div class="eipast">${past.length ? `<span>Past:</span>${past.map(y =>
+      `<button class="lnk" data-year="${esc(y)}">${esc(y)}</button>`).join("")}` : ""}
+      <span style="flex:1"></span><button class="lnk" data-history="1">History</button></div>`;
+  if (isAdmin) h += `<div class="eipast"><span style="flex:1"></span><button class="lnk" data-newevent="ei">Start the ${
+      esc(String(+(liveYear || YEAR_NOW) + 1))} EI</button></div>`;
+
+  /* trips and games */
   ["trip", "game"].forEach(kind => {
     const list = EVENTS.filter(e => e.kind === kind).sort((a, b) => (b.at || 0) - (a.at || 0));
-    h += `<h3 class="evsec">${KIND_WORD[kind]}</h3>
-      ${list.length ? list.map(e => row(e.id, e.name, tagsOf(e.id))).join("")
-        : `<p class="hint">None yet.</p>`}
-      ${newForm(kind)}`;
+    h += `<h3 class="evsec">${KIND_WORD[kind]}</h3>`;
+    h += list.length ? list.map(e => row(e.id, e.name, "")).join("")
+      : `<p class="hint" style="margin:0 0 6px">None yet.</p>`;
   });
-  h += `<div class="footnote">Only the EI goes into the EI record and History. A golf trip keeps
-    its own standings; a single game is just the game. Every format works in all three.</div>`;
+
+  /* start something — a trip needs a name; a game names itself */
+  h += newEv === "trip" ? `<div class="evnew">
+      <input id="newevname" autocomplete="off" placeholder="Trip name — e.g. Bandon 2027">
+      <div class="acts"><button class="btn" data-createevent="trip">Create</button>
+        <button class="btn ghost" data-newevent="">Cancel</button></div>
+      <p class="hint">Its own schedule and Board, with players and courses from the saved list.
+        Nothing in it touches the EI.</p></div>` : "";
+  h += `<h3 class="evsec">Start something</h3>
+    <div class="clubnew">
+      <button class="btn" data-createevent="game">+ Single game</button>
+      <button class="btn ghost" data-newevent="trip">+ Golf trip</button>
+    </div>
+    <div class="footnote">Only the EI goes into the EI record and History. A golf trip keeps its
+      own standings; a single game is just the game.</div>`;
+  app.innerHTML = h;
+}
+
+/* You, the saved players and courses, and the app's own housekeeping — the
+   things that used to sit at the foot of the Games tab and in the Field tab's
+   Danger zone, none of which anyone needs mid-round. */
+let meEdit = false;
+function renderSettings(){
+  const me = mePlayer();
+  let h = `<h2 class="sec">You</h2><div class="imp">`;
+  if (me && !meEdit){
+    h += `<div class="mehead"><b>${esc(me.name)}</b><button class="lnk" data-meswitch="1">Not you?</button></div>
+      <label for="myidx">Your handicap index</label>
+      <div class="newp"><input id="myidx" inputmode="decimal" maxlength="5" value="${(+me.index || 0).toFixed(1)}">
+        <button class="btn" data-saveidx="1">Save</button></div>
+      <p class="hint">Change it here when it changes. It reaches every game that hasn't started, in every
+        event; a game already under way keeps the index it started with.</p>`;
+  } else {
+    h += `<p class="hint" style="margin:0 0 8px">Pick your name, then check your index.</p>
+      <div class="acts cwrap">${libPlayers().map(p =>
+        `<button class="btn ghost" data-setme="${esc(p.id)}">${esc(p.name)}</button>`).join("")}</div>
+      <label class="addlab" for="mename">Not on the list?</label>
+      <div class="newp"><input id="mename" autocomplete="off" placeholder="Your name">
+        <input id="meidx" inputmode="decimal" maxlength="5" placeholder="Index">
+        <button class="btn" id="mecreate">Add me</button></div>`;
+  }
+  h += `</div>`;
+
+  const ps = libPlayers(), cs = libCourses();
+  h += panel("s:players", "Saved players", `<table class="lb ftbl"><tbody>${ps.map(p =>
+      `<tr><td>${esc(p.name)}</td><td class="mono">${(+p.index || 0).toFixed(1)}</td></tr>`).join("")}</tbody></table>
+    <p class="note">Everyone ever added to an EI, trip or game. Add someone new from an event's Field tab
+      or a game's roster; edit anyone's index on the Field tab.</p>`, ps.length + " saved");
+  h += panel("s:courses", "Saved courses", `<table class="lb ftbl"><tbody>${cs.map(c =>
+      `<tr><td>${esc(c.name)}</td><td class="mono">par ${(c.holes || []).reduce((a, x) => a + (+x.par || 0), 0)}</td></tr>`).join("")}</tbody></table>
+    <p class="note">Add or correct a course's card and tees on an event's Field tab.</p>`, cs.length + " saved");
+
+  h += `<h2 class="sec">App</h2><div class="imp">
+    ${isAdmin
+      ? `<div class="mehead"><span>EI admin is unlocked on this phone.</span><button class="btn ghost" id="alock">Lock</button></div>`
+      : `<label for="acode">EI admin code</label>
+         <div class="newp"><input id="acode" type="password" autocomplete="off" placeholder="admin code">
+           <button class="btn" id="aunlock">Unlock</button></div><p class="impmsg" id="amsg"></p>`}
+    <div class="acts" style="margin-top:12px"><button class="btn ghost" id="updcheck">Check for update</button></div>
+    <p class="hint">This phone is on build <b>${esc(BUILD)}</b>${latestBuild && !updateReady ? " — the latest" : ""}.
+      Everyone needs the same build, or an older phone's scores get ignored.</p>
+  </div>`;
   app.innerHTML = h;
 }
 
@@ -5128,7 +5350,7 @@ function timePicker(e){
    each screen a short list of things you can open, one at a time. Keys are
    prefixed by screen ("f:" for Field) so opening one closes its siblings
    rather than everything everywhere. */
-const openPanel = { f:"hcp", e:null, h:null };
+const openPanel = { f:"hcp", e:null, h:null, s:null };
 
 function panel(key, title, body, meta){
   const [grp, name] = key.split(":");
@@ -5807,7 +6029,7 @@ function renderStrokeGrid(g, h){
   ids.forEach(id => {
     const ph = playingHcp(id, g);
     out += `<tr><th>${esc(P(id).name)}
-      <i>${esc(teeNameFor(id, course))} · ch ${courseHcp(id, course)}${
+      <i>${esc(teeNameFor(id, course))} · ch ${courseHcp(id, course, g)}${
         relative ? ` → ${ph}` : ""}</i></th>`;
     for (let i = 0; i < 18; i++){
       const s = strokesOn(id, g, i);
@@ -6416,6 +6638,7 @@ document.addEventListener("click", e => {
 });
 
 function handleClick(el){
+  userMoved = true;
   const g = view.gameId ? GAMES.find(x => x.id === view.gameId) : null;
   const h = view.hole;
 
@@ -7076,7 +7299,43 @@ function handleClick(el){
       closeEvent(!editIsNew);
       return;
     }
+    view.tab = "club"; render(); return;
+  }
+  if (el.id === "toclub"){
+    if (editEvent && editorDirty() && !confirm("Leave without saving your changes?")) return;
+    if (editEvent) closeEvent(false);
+    view.gameId = null; view.tab = "club"; render(); return;
+  }
+  if (el.dataset.history){
+    const go = () => { view.tab = "board"; boardMode = "history"; loadHistory(false); render(); };
+    if (activeYear !== liveYear && liveYear) switchYear(liveYear).then(go); else go();
+    return;
+  }
+  if (el.dataset.setme){
+    setMe(el.dataset.setme); meEdit = false;
+    toast("You're " + ((LIB.players[el.dataset.setme] || P(el.dataset.setme) || {}).name || "set") + " \u2014 check your index");
     render(); return;
+  }
+  if (el.dataset.meswitch){ meEdit = true; render(); return; }
+  if (el.dataset.saveidx){
+    const me = mePlayer(); if (!me) return;
+    const raw = ((document.getElementById("myidx") || {}).value || "").trim().replace("+", "-");
+    const v = parseFloat(raw);
+    if (!isFinite(v) || v < -10 || v > 54){ toast("Index looks wrong"); return; }
+    libSavePlayer({ ...me, index: Math.round(v * 10) / 10 });
+    toast("Index saved \u2014 " + (Math.round(v * 10) / 10).toFixed(1)); render(); return;
+  }
+  if (el.id === "mecreate"){
+    const name = ((document.getElementById("mename") || {}).value || "").trim();
+    const raw = ((document.getElementById("meidx") || {}).value || "").trim().replace("+", "-");
+    if (!name){ toast("Type your name"); return; }
+    const index = raw === "" ? 0 : parseFloat(raw);
+    if (!isFinite(index) || index < -10 || index > 54){ toast("Index looks wrong"); return; }
+    const known = libPlayers().find(p => p.name.toLowerCase() === name.toLowerCase());
+    const id = known ? known.id : "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
+    libSavePlayer(known ? { ...known, index: Math.round(index * 10) / 10 }
+                        : { id, name, index: Math.round(index * 10) / 10, tees: {} });
+    setMe(id); meEdit = false; toast("You're " + name); render(); return;
   }
   if (el.dataset.game){ view.gameId = el.dataset.game;
     view.hole = el.dataset.jumphole != null ? +el.dataset.jumphole : 0; render(); return; }
