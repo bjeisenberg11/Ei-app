@@ -283,9 +283,35 @@ The app covers:
 - **Admin mode**: unlocked with `ADMIN_CODE` (`"eagle"`, in the page source).
   It guards against mis-taps and is **not** a security boundary. With no
   Firebase config, admin is always unlocked.
-- **Multi-year**: there is one tournament per year. Past years are
-  read-only archives. "Start a new year" copies players and courses forward,
-  and the schedule and scores start empty.
+- **Events** (R151, R152): three kinds — the **EI** (one per year), a **golf
+  trip**, and a **single game**. Only the EI's years reach the EI record and
+  History; a trip has its own players, courses, schedule and Board; a single
+  game is one round today and the round editor, opened with "Games in this
+  round" unfolded. Every format works in all three, and `WOLF5` is now in the
+  "+ game" buttons.
+  - `activeYear` keeps its name but holds an **event key**: an EI year
+    (`"2026"`) or an id (`"x-k3f9a2"`). `isEIKey`, `isEI()`, `eventKind()`,
+    `tidFor(k)` (`ei-2026` or the id itself). `YEARS` is EI years only, which
+    is why History needed no change; `EVENTS` holds the rest, `knownKeys()`
+    both.
+  - EI years still work exactly as before: past years are read-only archives
+    (`isArchive` is EI-only — a trip is never frozen), and "Start the next EI"
+    (Field → Danger zone, or the Events screen, admin) copies players and
+    courses from the **live EI**, not from whatever event is on screen.
+  - **Admin**: `canSetup()` = `isAdmin || !isEI()`. The code guards the EI from
+    mis-taps; a trip or game needs no code to set up. History stays `isAdmin`.
+  - The **Events screen** (`view.tab = "events"`, `renderEvents`) is reached
+    from the `.evbar` at the top of the Games tab. It lists each kind, starts
+    new ones (`startEvent(kind, name)`, `startNextEI()`), shares a link
+    (`?e=<key>`, via the share sheet) and, for an admin, sets the event every
+    phone opens (`setOpenEvent` → registry `open`).
+  - **Landing** (`landingKey`): a `?e=` link wins; then the registry's `open`
+    event, but only the first time this phone sees it change
+    (`localStorage["ei-open-seen"]`); otherwise wherever this phone last was.
+  - **Two cross-event write hazards, both fixed in `switchYear`/the queue**: a
+    setup change still in its 700ms debounce is pushed to the event being left
+    before `activeYear` changes, and queued scores carry `ev` so `flushQueue`
+    sends them to their own event's game even after a switch.
 
 ## Repository layout
 
@@ -357,7 +383,11 @@ private group with no personal data. Don't present the admin code as security.
 ### Data shape
 
 ```
-tournaments/_index                 { years: ["2025","2026"], live: "2026" }   year registry
+tournaments/_index                 { years: ["2025","2026"], live: "2026", open?: key,
+                                     events?: [{ id:"x-…", kind:"trip"|"game", name, at }] }
+                                   — always written with merge: a wholesale { years, live } loses the events
+tournaments/x-{id}                 a trip or single game: same shape as a year's config plus { kind, name },
+                                   with its own games subcollection
 tournaments/_history               { years: { "2021": { rows:[{name,w,l,t,gp}] }, ... } }  pre-app records
 tournaments/ei-{YEAR}              config: { schema, appBuild, players, courses, schedule, days }
 tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
@@ -470,7 +500,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **189 passed, 0 failed**. The suite is
+Current status against `index.html`: **191 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

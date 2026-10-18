@@ -442,6 +442,24 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .teeord li::before{content:counter(tee);font-family:'Barlow Condensed',sans-serif;
   font-weight:700;font-size:12px;color:var(--ink-faint);margin-right:5px}
 .teeord li.is-wolf{font-weight:700}
+/* Events */
+.evbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
+.evbar-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.1em;font-size:11px;color:var(--ink-faint)}
+.evbar .chip{font-size:11px;padding:4px 10px}
+.evsec{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;font-size:14px;margin:22px 0 8px;color:var(--ink-soft)}
+.evrow{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;width:100%;text-align:left;
+  background:var(--paper-2);border:1px solid var(--rule);padding:11px 12px;margin:0 0 6px;
+  font:inherit;color:var(--ink);cursor:pointer}
+.evrow.on{border-color:var(--ink);box-shadow:inset 3px 0 0 var(--ink)}
+.evrow-n{font-weight:600;font-size:15px;margin-right:auto}
+.evrow i{font-style:normal;font-family:'Barlow Condensed',sans-serif;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;font-size:10px;color:var(--ink-faint)}
+.evcur{border:1px solid var(--rule);padding:10px 12px 12px;margin-top:8px}
+.evcur-t{font-weight:700;font-size:17px;margin-bottom:8px}
+.evnew{border:1px solid var(--rule);padding:10px 12px;margin-top:4px}
+.evnew input{width:100%;margin-bottom:8px}
 .endrow{margin-top:18px;text-align:center}
 .endrow .lnk{background:none;border:none;padding:6px;font:inherit;font-size:13px;
   color:var(--ink-faint);text-decoration:underline;cursor:pointer}
@@ -2164,16 +2182,39 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.1700";
+const BUILD = "2026-10-18.1830";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
 const YEAR_NOW = String(new Date().getFullYear());
 let YEARS = [];
-let liveYear = null;          // the year currently being played
-let activeYear = null;        // the year being looked at
-const tidFor = y => "ei-" + y;
-const isArchive = () => !!(liveYear && activeYear && activeYear !== liveYear);
+let liveYear = null;          // the EI year currently being played
+/* The event being looked at. Named for what it held before trips and single
+   games existed: an EI year ("2026") is still exactly that, and any other
+   event is an id ("x-k3f9a2") — see EVENTS below. */
+let activeYear = null;
+
+/* Events. The EI is one event a year, and its years are the only thing that
+   reaches the EI record and the all-time History. A golf trip, or a single
+   game scored with the app's formats, is an event of its own: same screens,
+   same scoring, its own players, courses, schedule and Board — and none of it
+   touches the EI. The registry lists them in `events` beside `years`; each
+   one's data lives at tournaments/{id}, the way a year's lives at
+   tournaments/ei-{year}. Ids start "x-" so they can't be mistaken for a year
+   or collide with _index and _history. */
+let EVENTS = [];              // [{ id, kind:"trip"|"game", name, at }]
+let openKey = null;           // the event every phone lands on (registry `open`)
+let EVENT_META = { kind:"ei", name:"" };   // read off the active event's config
+const isEIKey = k => /^\d{4}$/.test(String(k || ""));
+const tidFor = k => isEIKey(k) ? "ei-" + k : String(k);
+const isEI = () => !activeYear || isEIKey(activeYear);
+const knownKeys = () => YEARS.concat(EVENTS.map(e => e.id));
+const eventInfo = k => isEIKey(k) ? { id:k, kind:"ei", name:k + " EI" }
+  : (EVENTS.find(e => e.id === k) || { id:k, kind:EVENT_META.kind, name:EVENT_META.name });
+const eventKind = () => isEI() ? "ei" : (eventInfo(activeYear).kind || "trip");
+/* Only a past EI year is frozen. A trip or a game stays editable: there's no
+   later edition of it to make it history. */
+const isArchive = () => !!(isEI() && liveYear && activeYear && activeYear !== liveYear);
 const TID_DEFAULT = "ei-2026";
 /* Bump when the stored shape changes. Data seeded under an older schema is
    wiped and rewritten — e.g. `holes` used to be an array, and field-path
@@ -2298,13 +2339,36 @@ async function loadRegistry(fsMod, db){
     const v = snap.data();
     YEARS = (Array.isArray(v.years) && v.years.length ? v.years : [YEAR_NOW]).slice().sort();
     liveYear = v.live || YEARS[YEARS.length - 1];
+    readEvents(v);
   }
 
-  if (!activeYear || !YEARS.includes(activeYear)){
-    let saved = null;
-    try { saved = localStorage.getItem("ei-year"); } catch(e){}
-    activeYear = (saved && YEARS.includes(saved)) ? saved : liveYear;
-  }
+  if (!activeYear || !knownKeys().includes(activeYear)) activeYear = landingKey();
+}
+/* Take the registry's events and landing event. Events this phone already
+   knows are kept even if a cached registry doesn't list them yet — one just
+   created offline would otherwise vanish and throw the phone back to the EI. */
+function readEvents(v){
+  const fromDb = Array.isArray(v.events) ? v.events.filter(e => e && e.id) : [];
+  const ids = new Set(fromDb.map(e => e.id));
+  EVENTS = fromDb.concat(EVENTS.filter(e => !ids.has(e.id)));
+  openKey = v.open || null;
+}
+/* Which event a phone opens on. A shared link (?e=) wins. Then the event
+   set as the one everyone opens — but only the first time a phone sees it
+   change, so somebody who has since gone to look at a trip isn't dragged
+   back on every open. Otherwise wherever this phone was last. */
+function landingKey(){
+  const keys = knownKeys();
+  const open = keys.includes(openKey) ? openKey : liveYear;
+  let saved = null, seen = null, fromUrl = null;
+  try { saved = localStorage.getItem("ei-year"); seen = localStorage.getItem("ei-open-seen"); } catch(e){}
+  try { fromUrl = new URLSearchParams(location.search).get("e"); } catch(e){}
+  let k;
+  if (fromUrl && keys.includes(fromUrl)) k = fromUrl;
+  else if (open && open !== seen) k = open;
+  else k = (saved && keys.includes(saved)) ? saved : open;
+  try { localStorage.setItem("ei-open-seen", open || ""); localStorage.setItem("ei-year", k || ""); } catch(e){}
+  return k || liveYear;
 }
 
 /* Read every year once, on demand. These are one-off reads rather than
@@ -2317,7 +2381,8 @@ async function loadHistory(force){
     /* The other years are out of reach without a connection, but the year in
        front of us is right here — an empty History screen would read as
        broken rather than as offline. */
-    const rows = recordsFor(null, GAMES);
+    /* Only an EI year is history. A trip's games are not a year of the EI. */
+    const rows = isEI() ? recordsFor(null, GAMES) : [];
     HIST.years = rows.length ? { [activeYear || YEAR_NOW]: { source:"played", rows } } : {};
     HIST.err = "Offline — showing this year only.";
     HIST.loadedAt = Date.now();
@@ -2444,6 +2509,7 @@ async function connectWith(i){
       const v = d.data(); if (!v) return;
       if (Array.isArray(v.years)) YEARS = v.years.slice().sort();
       if (v.live) liveYear = v.live;
+      readEvents(v);
       if (!document.querySelector("input:focus")) render();
     }, () => {}));
 
@@ -2459,6 +2525,7 @@ async function connectWith(i){
       if (v.courses)  { COURSES.length = 0; v.courses.forEach(x => COURSES.push(x)); }
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
       if (v.days && v.days.length) { DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
+      EVENT_META = { kind: v.kind || (isEI() ? "ei" : "trip"), name: v.name || "" };
       migrateLoaded();
       touchSync("cfg", d);
       if (!document.querySelector("input:focus")) render();
@@ -2631,12 +2698,24 @@ function reportListenerError(myGen, e){
   setSync("error", { err: code });
 }
 
-async function switchYear(y){
-  if (!YEARS.includes(y) || y === activeYear) return;
+async function switchYear(y, preload){
+  if (!knownKeys().includes(y) || y === activeYear) return;
+  /* A setup change still in its 700ms debounce belongs to the event being
+     left. Send it now, while activeYear still names that event — fired after
+     the switch it would write this event's players into the next one. */
+  /* Then let go of the dirty flag: it's that event's write in flight, and left
+     set it would make this phone ignore the next event's config as it arrives. */
+  if (cfgDirty){ clearTimeout(cfgTimer); pushConfig(); cfgDirty = false; }
   activeYear = y;
   try { localStorage.setItem("ei-year", y); } catch(e){}
   GAMES = []; SCHEDULE = [];
+  /* A brand-new event's config is already in hand, so the screen can show it
+     straight away rather than waiting for the listener to deliver it. */
+  if (preload) loadConfigLocally(preload);
+  EVENT_META = preload ? { kind: preload.kind || "ei", name: preload.name || "" }
+    : { kind: isEIKey(y) ? "ei" : eventInfo(y).kind, name: eventInfo(y).name };
   editEvent = null; view.gameId = null; homeShowAll = true;
+  if (!isEIKey(y) && boardMode === "history") boardMode = "table";
   setSync("connecting");
   render();
   if (SYNC.on) await connectWith(attempt);
@@ -2647,18 +2726,91 @@ async function switchYear(y){
    scores start empty. The old year stays exactly as it was. */
 async function startYear(y){
   if (!SYNC.on || !SYNC.api) return;
-  const { doc, setDoc } = SYNC.api;
+  const { doc, setDoc, getDoc } = SYNC.api;
   const tid = tidFor(y);
+  /* Carried over from the last EI, not from whatever is on screen: started
+     from a trip, this would otherwise hand the EI the trip's players. */
+  let src = { players: PLAYERS, courses: COURSES, days: DAYS };
+  if (activeYear !== liveYear && liveYear){
+    try { const s = await getDoc(doc(SYNC.db, "tournaments", tidFor(liveYear)));
+          if (s.exists()) src = { ...src, ...s.data() }; } catch(e){}
+  }
   await setDoc(doc(SYNC.db, "tournaments", tid), {
-    schema: SCHEMA, appBuild: BUILD,
-    players: PLAYERS.map(p => ({ ...p })),
-    courses: COURSES.map(c => JSON.parse(JSON.stringify(c))),
-    schedule: [], days: DAYS.slice()
+    schema: SCHEMA, appBuild: BUILD, kind: "ei",
+    players: (src.players || []).map(p => ({ ...p })),
+    courses: (src.courses || []).map(c => JSON.parse(JSON.stringify(c))),
+    schedule: [], days: (src.days || DAYS).slice()
   });
   if (!YEARS.includes(y)) YEARS = YEARS.concat(y).sort();
-  liveYear = y;
-  await setDoc(doc(SYNC.db, "tournaments", "_index"), { years: YEARS, live: liveYear });
+  liveYear = y; openKey = y;
+  /* merge, never a wholesale set: the registry also carries the events list,
+     and writing { years, live } over it would lose every trip. */
+  await setDoc(doc(SYNC.db, "tournaments", "_index"), { years: YEARS, live: liveYear, open: y },
+               { merge: true });
+  try { localStorage.setItem("ei-open-seen", y); } catch(e){}
   await switchYear(y);
+}
+
+/* The next EI, from the Field tab's Danger zone or the Events screen. */
+function startNextEI(){
+  if (!isAdmin){ toast("Admin only"); return; }
+  const next = String(+(liveYear || YEAR_NOW) + 1);
+  if (YEARS.includes(next)){ switchYear(next).then(() => { view.tab = "home"; render(); }); return; }
+  if (!confirm(`Start the ${next} EI?\n\n${liveYear} stays exactly as it is and stays `
+    + `readable. Players, courses and tees carry over. Schedule and scores start empty.`)) return;
+  startYear(next).then(() => { view.tab = "home"; render(); toast(next + " started"); })
+    .catch(e => toast((e.code||e.message||"failed")));
+}
+
+/* A golf trip or a single game. It starts from the players and courses on
+   screen — usually the EI's, which is usually who's going — and they're
+   edited on its own Field tab without touching the EI's. A trip gets the same
+   days to start from; a single game is today and one round, with the round
+   editor opened on it so the next taps are course, format and players. */
+async function startEvent(kind, name){
+  const id = "x-" + Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 6);
+  const today = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][new Date().getDay()];
+  const label = (name || "").trim() || (kind === "game"
+    ? "Game \u00b7 " + new Date().toLocaleDateString(undefined, { month:"short", day:"numeric" })
+    : "Golf trip");
+  const round = kind === "game" ? { id: "r" + Math.random().toString(36).slice(2, 8), type:"ROUND",
+    day: today, time: null, courseId: (COURSES[0] || {}).id || null, mode: "RELATIVE", notes: "" } : null;
+  const cfg = {
+    schema: SCHEMA, appBuild: BUILD, kind, name: label,
+    players: PLAYERS.map(p => ({ ...p })),
+    courses: COURSES.map(c => JSON.parse(JSON.stringify(c))),
+    schedule: round ? [round] : [],
+    days: kind === "game" ? [today] : DAYS.slice()
+  };
+  const entry = { id, kind, name: label, at: Date.now() };
+  if (SYNC.on && SYNC.api){
+    const { doc, setDoc, arrayUnion } = SYNC.api;
+    await setDoc(doc(SYNC.db, "tournaments", id), cfg);
+    await setDoc(doc(SYNC.db, "tournaments", "_index"),
+                 { events: arrayUnion ? arrayUnion(entry) : EVENTS.concat(entry) }, { merge: true });
+  }
+  EVENTS = EVENTS.filter(e => e.id !== id).concat(entry);
+  await switchYear(id, cfg);
+  /* Games in this round open, not folded: adding the game is the next step. */
+  if (round){ view.tab = "sched"; openEvent(round.id, false); openPanel.e = "games"; render(); }
+  return id;
+}
+
+/* The event every phone opens on next time. Admin-only, since it moves
+   everybody. */
+async function setOpenEvent(k){
+  openKey = k;
+  try { localStorage.setItem("ei-open-seen", k); } catch(e){}
+  if (SYNC.on && SYNC.api)
+    await SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_index"), { open: k }, { merge: true });
+}
+
+/* Put a config into the in-memory state, as the listener would. */
+function loadConfigLocally(v){
+  if (v.players){ PLAYERS.length = 0; v.players.forEach(x => PLAYERS.push({ ...x })); }
+  if (v.courses){ COURSES.length = 0; v.courses.forEach(x => COURSES.push(JSON.parse(JSON.stringify(x)))); }
+  if (v.schedule){ SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push({ ...x })); }
+  if (v.days && v.days.length){ DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
 }
 
 function touchSync(which, snapOrQs){
@@ -2702,7 +2854,11 @@ function saveQueue(){
   try { localStorage.setItem(QKEY, JSON.stringify(queue.slice(-500))); } catch(e){}
 }
 function enqueue(gid, h, path, val){
-  queue.push({ k: gid + "|" + h + "|" + path, gid, h, path, val, t: Date.now() });
+  /* ev: which event the game belongs to. The queue outlives a switch — a
+     score entered with no signal is still waiting when someone opens a trip —
+     and sent to whatever event was on screen it would miss its game, fall to
+     the not-found branch and be dropped. */
+  queue.push({ k: gid + "|" + h + "|" + path, gid, h, path, val, t: Date.now(), ev: activeYear });
   // keep only the newest write per field — a stepper tapped five times sends one
   const seen = new Set();
   queue = queue.slice().reverse().filter(it => {
@@ -2855,13 +3011,14 @@ async function flushQueue(){
   const { doc, updateDoc, setDoc } = SYNC.api;
   for (const it of queue.slice()){
     try {
-      const ref = doc(SYNC.db, "tournaments", tidFor(activeYear), "games", it.gid);
+      const ev = it.ev || activeYear;           // older queued items carry no event
+      const ref = doc(SYNC.db, "tournaments", tidFor(ev), "games", it.gid);
       await updateDoc(ref, { [`holes.${it.h}.${it.path}`]: it.val });
       dequeue(it);
     } catch (err){
       const code = (err && (err.code || err.message)) || "";
       if (/not-found|invalid-argument/i.test(code)){
-        const g = GAMES.find(x => x.id === it.gid);
+        const g = (it.ev || activeYear) === activeYear ? GAMES.find(x => x.id === it.gid) : null;
         if (g){ try { await setDoc(doc(SYNC.db,"tournaments",tidFor(activeYear),"games",it.gid), g); dequeue(it); continue; } catch(e){} }
         /* The game is gone here AND on the server — deleted on another phone,
            or replaced by an import. Nothing can ever write this score, and the
@@ -3062,6 +3219,9 @@ let homeShowAll = true;
 /* Which game's rules are open, if any. A game id rather than a flag, so moving
    to another game closes it instead of greeting you with a wall of text. */
 let rulesOpen = null;
+/* The New golf trip / New single game form on the Events screen: its kind
+   while it's open, null otherwise. */
+let newEv = null;
 /* A wolf tee order being tapped in by hand: { gid, picks:[ids in order] }.
    Keyed by game id like rulesOpen, so it can't leak onto another game. */
 let teeSet = null;
@@ -3074,6 +3234,11 @@ const flightDraft = { ARRIVAL:{}, DEPARTURE:{} };
 let flightPasteOpen = null;     // which direction's paste box is showing, if either
 let showUnlock = false;        // the admin code field, asked for rather than offered
 let isAdmin = !FIREBASE_CONFIG.apiKey;   // local mode: everything unlocked
+/* Setup is guarded by the admin code in the EI only. The code is there so a
+   stray tap can't rewrite the tournament's schedule; a trip or a game set up
+   by whoever's running it shouldn't need the EI's password to add a round.
+   History stays on isAdmin — it IS the EI. */
+const canSetup = () => isAdmin || !isEI();
 let cfgTimer = null;
 /* True from the moment config changes locally until the write is acknowledged.
    While it's set, incoming server snapshots are ignored for config — ours is
@@ -3212,14 +3377,20 @@ function render(){
     const when = r ? [r.day, r.time ? fmtTime(r.time) : ""].filter(Boolean).join(" · ") : "";
     $("#tsub").textContent = [courseOf(g).name, when].filter(Boolean).join(" · ");
   } else {
-    $("#ttl").textContent = (activeYear ? activeYear + " " : "") + "Eisenberg Invitational";
-    $("#tsub").textContent = activeYear ? activeYear + (isArchive() ? " \u00b7 archive" : "") : "";
+    if (isEI()){
+      $("#ttl").textContent = (activeYear ? activeYear + " " : "") + "Eisenberg Invitational";
+      $("#tsub").textContent = activeYear ? activeYear + (isArchive() ? " \u00b7 archive" : "") : "";
+    } else {
+      $("#ttl").textContent = EVENT_META.name || eventInfo(activeYear).name || "Golf";
+      $("#tsub").textContent = eventKind() === "game" ? "Single game" : "Golf trip";
+    }
   }
   document.querySelectorAll(".tabs button").forEach(b =>
     b.classList.toggle("on", !inGame && b.dataset.tab === view.tab));
 
   if (inGame){ renderGame(); syncHoleStrip(); animateRows(); return; }
   if (view.tab === "board") return renderBoard();
+  if (view.tab === "events") return renderEvents();
   if (view.tab === "sched") return renderSchedule();
   if (view.tab === "players") return renderPlayers();
   renderHome();
@@ -3241,7 +3412,13 @@ function todayDay(){
 function renderHome(){
   const rounds = ROUNDS().slice().sort((a,b) =>
     DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || (a.time||"zz").localeCompare(b.time||"zz"));
-  let h = "";
+  /* One quiet line saying what's on screen and the way to everything else.
+     The header already names it; this says what kind of thing it is, because
+     a trip and the EI look identical otherwise. */
+  let h = `<div class="evbar"><span class="evbar-t">${
+    isEI() ? "The EI"
+    : eventKind() === "game" ? "Single game" : "Golf trip"}</span>
+    <button class="chip" data-tab="events">Events</button></div>`;
   if (isArchive()){
     h += `<div class="archivebar">
       <span class="archivebar-y">${esc(activeYear)}</span>
@@ -3342,7 +3519,7 @@ function renderHome(){
     const inRound = GAMES.filter(g => g.roundId === r.id);
     if (!inRound.length)
       h += `<p class="note" style="text-align:left;margin:0 0 4px">No games set${
-        isAdmin || !SYNC.on ? " \u2014 add them on the Schedule tab" : ""}.</p>`;
+        canSetup() || !SYNC.on ? " \u2014 add them on the Schedule tab" : ""}.</p>`;
     inRound.forEach(g => {
       const stt = gameStatusLabel(g);
       const board = gameBoard(g);
@@ -3381,11 +3558,14 @@ const BOARD_MODES = [
   { id:"history", label:"History"   }
 ];
 const boardChips = () => `<div class="acts cwrap" style="margin-top:12px">
-  ${BOARD_MODES.map(m => `<button class="btn ${m.id===boardMode?"":"ghost"}"
+  ${BOARD_MODES.filter(m => isEI() || m.id !== "history").map(m => `<button class="btn ${m.id===boardMode?"":"ghost"}"
     data-board="${m.id}">${m.label}</button>`).join("")}
 </div>`;
 
 function renderBoard(){
+  /* History is the EI's, year by year. A trip or a game has its own table and
+     nothing else to go back through. */
+  if (boardMode === "history" && !isEI()) boardMode = "table";
   if (boardMode === "pairs")   return renderPairs();
   if (boardMode === "history") return renderHistory();
   const s = standings();
@@ -3416,7 +3596,7 @@ function renderBoard(){
       ? `Casual rounds (${ROUNDS().filter(r => !roundCounts(r)).map(r =>
           esc([r.day, r.time ? fmtTime(r.time) : "", eventName(r)].filter(Boolean).join(" "))
         ).join(", ")}) are left out of this table entirely \u2014 they're on the Games tab and
-         scored normally, they just aren't EI rounds.<br>` : ""}
+         scored normally, they just aren't ${isEI() ? "EI rounds" : "part of the standings"}.<br>` : ""}
   <b>Export</b> copies every score entered so far as plain text \u2014 worth doing at the end of
   each round as a backup.</div>`;
   app.innerHTML = h;
@@ -3451,7 +3631,7 @@ function fmtTime(t){
   return `${h}:${String(m).padStart(2,"0")}${ap}`;
 }
 function renderSchedule(){
-  const ro = SYNC.on && !isAdmin;
+  const ro = SYNC.on && !canSetup();
 
   /* A thin line, not a bar with a password field in it. Almost nobody who
      opens this screen is about to unlock anything — they're looking up a tee
@@ -3741,7 +3921,7 @@ const EVMETA = {
 
 /* Spec decision: players enter their own flights, admin can edit anyone's.
    Everything else on the schedule stays admin-only. */
-const canEdit = e => !SYNC.on || isAdmin || (e && e.type === "TRAVEL");
+const canEdit = e => !SYNC.on || canSetup() || (e && e.type === "TRAVEL");
 
 /* ---------- a flight's live status, one tap away ----------
    Not a tracker built in: live status needs a paid flight-data service, and
@@ -4324,7 +4504,7 @@ function renderEventEditor(h, id){
   if (!e){ editEvent = null; return render(); }
   if (!canEdit(e)){ editEvent = null; return render(); }
   const isRound = e.type === "ROUND";
-  const travelOnly = SYNC.on && !isAdmin;      // a player editing their own flight
+  const travelOnly = SYNC.on && !canSetup();   // a player editing their own flight
 
   h += `<h2 class="sec">${isRound ? "Round" : "Event"}</h2>
   <div class="imp">
@@ -4384,7 +4564,7 @@ function renderEventEditor(h, id){
       <button class="btn ${e.mode!=="FULL"?"":"ghost"}" data-evmode="RELATIVE">Relative</button>
       <button class="btn ${e.mode==="FULL"?"":"ghost"}" data-evmode="FULL">Full</button>
     </div>
-    <label>Counts toward the EI</label>
+    <label>Counts toward ${isEI() ? "the EI" : "the standings"}</label>
     <div class="acts">
       <button class="btn ${roundCounts(e)?"":"ghost"}" data-evcounts="1">Sanctioned</button>
       <button class="btn ${roundCounts(e)?"ghost":""}" data-evcounts="0">Casual</button>
@@ -4407,7 +4587,7 @@ function renderEventEditor(h, id){
       : `<p class="note">No games here, which is fine — the round still appears on the
          schedule. Add one when you know who's playing whom.</p>`;
     body += `<div class="acts cwrap" style="margin-top:10px">
-      ${["BESTBALL","SCRAMBLE4","SCRAMBLE3","SCRAMBLE2X4","FORTYBALL"].map(t =>
+      ${["BESTBALL","SCRAMBLE4","SCRAMBLE3","SCRAMBLE2X4","FORTYBALL","WOLF5"].map(t =>
         `<button class="btn ghost" data-addgame="${e.id}:${t}">+ ${LABEL[t]}</button>`).join("")}
     </div>`;
     h += panel("e:games", "Games in this round", body,
@@ -4482,9 +4662,56 @@ function gameEditor(g){
   </div>`;
 }
 
+/* ---------- events ----------
+   Everything the app has ever scored, in three kinds: the EI by year, golf
+   trips, single games. Switching is one tap; starting one is a name and a tap.
+   Only the EI's years feed the History — the other two kinds are kept apart on
+   purpose, so a trip's results can never move the EI record. */
+const KIND_WORD = { ei:"The EI", trip:"Golf trips", game:"Single games" };
+function renderEvents(){
+  const here = activeYear;
+  const row = (k, name, tags) => `<button class="evrow${k === here ? " on" : ""}" data-year="${esc(k)}">
+      <span class="evrow-n">${esc(name)}</span>${tags.map(t => `<i>${esc(t)}</i>`).join("")}</button>`;
+  const tagsOf = k => [k === liveYear ? "live" : "", (openKey || liveYear) === k ? "everyone opens" : "",
+                       k === here ? "you're here" : ""].filter(Boolean);
+  const newForm = kind => newEv === kind ? `<div class="evnew">
+      <input id="newevname" autocomplete="off" placeholder="${kind === "game"
+        ? "Name (optional) \u2014 e.g. Sunday skins" : "Name \u2014 e.g. Bandon 2027"}">
+      <div class="acts"><button class="btn" data-createevent="${kind}">Create</button>
+        <button class="btn ghost" data-newevent="">Cancel</button></div>
+      <p class="hint">${kind === "game"
+        ? "One round today. You'll go straight to picking the course, the format and who's playing."
+        : "Its own players, courses, schedule and Board, starting from the ones on screen now. Nothing in it touches the EI."}</p>
+    </div>` : `<button class="btn ghost" data-newevent="${kind}">+ New ${kind === "game" ? "single game" : "golf trip"}</button>`;
+
+  let h = `<h2 class="sec">Events</h2>`;
+  h += `<div class="evcur"><div class="evcur-t">${esc(isEI() ? (here || "") + " EI"
+      : EVENT_META.name || eventInfo(here).name)}</div>
+    <div class="acts cwrap">
+      <button class="btn ghost" data-sharelink="${esc(here || "")}">Share a link to this</button>
+      ${isAdmin && (openKey || liveYear) !== here ? `<button class="btn ghost" data-openforall="${esc(here || "")}">Make this the one everyone opens</button>` : ""}
+    </div></div>`;
+
+  const eiYears = YEARS.slice().sort().reverse();
+  h += `<h3 class="evsec">${KIND_WORD.ei}</h3>
+    ${eiYears.map(y => row(y, y + " EI", tagsOf(y))).join("")}
+    ${isAdmin ? `<button class="btn ghost" data-newevent="ei">Start the ${esc(String(+(liveYear || YEAR_NOW) + 1))} EI</button>`
+      : `<p class="hint">Starting the next EI needs the admin code \u2014 unlock it on the Schedule tab.</p>`}`;
+  ["trip", "game"].forEach(kind => {
+    const list = EVENTS.filter(e => e.kind === kind).sort((a, b) => (b.at || 0) - (a.at || 0));
+    h += `<h3 class="evsec">${KIND_WORD[kind]}</h3>
+      ${list.length ? list.map(e => row(e.id, e.name, tagsOf(e.id))).join("")
+        : `<p class="hint">None yet.</p>`}
+      ${newForm(kind)}`;
+  });
+  h += `<div class="footnote">Only the EI goes into the EI record and History. A golf trip keeps
+    its own standings; a single game is just the game. Every format works in all three.</div>`;
+  app.innerHTML = h;
+}
+
 /* ---------- year switcher ---------- */
 function yearBar(){
-  if (!YEARS.length) return "";
+  if (!YEARS.length || !isEI()) return "";
   let h = `<div class="yearbar">
     ${YEARS.map(y => `<button class="ybtn ${y===activeYear?"on":""}" data-year="${y}">${esc(y)}
       ${y===liveYear?`<i>live</i>`:""}</button>`).join("")}
@@ -5717,7 +5944,7 @@ function renderCorridor(g, t, h){
 
 function renderPlayers(){
   const co = C(editCourseId);
-  const ro = SYNC.on && !isAdmin;          // read-only for non-admins
+  const ro = SYNC.on && !canSetup();       // read-only for non-admins
   const dis = ro ? " disabled" : "";
   /* Rounds are deliberately untitled — they're named after their course — so
      reading .title here printed "Played , ." or "Played undefined."
@@ -5844,12 +6071,12 @@ function renderPlayers(){
       <button class="btn ghost" id="purgegames">Remove stray games</button>
       <button class="btn red" id="resetall">Reset everything</button>
     </div>
-    <p class="hint" style="margin:12px 0 8px">Starting a new year keeps this one exactly as it
+    ${isEI() && isAdmin ? `<p class="hint" style="margin:12px 0 8px">Starting a new year keeps this one exactly as it
       is and opens a fresh tournament. Players, courses and tees carry over; the schedule and
-      scores start empty.</p>
+      scores start empty. Trips and single games are on the Events screen.</p>
     <div class="acts">
       <button class="btn ghost" id="startyear">Start ${esc(String(+(liveYear||YEAR_NOW)+1))}</button>
-    </div>
+    </div>` : ""}
     <p class="impmsg" id="dangermsg"></p>
   </div>`);
 
@@ -5863,7 +6090,7 @@ function renderPlayers(){
 /* nine-hole block of the scorecard, as editable cells */
 function cardBlock(off){
   const co = C(editCourseId);
-  const dis = (SYNC.on && !isAdmin) ? " disabled" : "";
+  const dis = (SYNC.on && !canSetup()) ? " disabled" : "";
   const nums = [], pars = [], sis = [];
   for (let i = off; i < off + 9; i++){
     nums.push(`<th>${i+1}</th>`);
@@ -5993,16 +6220,51 @@ function handleClick(el){
     }
     return;
   }
-  if (el.dataset.year){ switchYear(el.dataset.year); return; }
-  if (el.id === "startyear"){
-    const next = String(+(liveYear || YEAR_NOW) + 1);
-    if (YEARS.includes(next)){ switchYear(next); return; }
-    if (!confirm(`Start the ${next} EI?\n\n${liveYear} stays exactly as it is and stays `
-      + `readable. Players, courses and tees carry over. Schedule and scores start empty.`)) return;
-    startYear(next).then(() => toast(next + " started"))
-      .catch(e => toast((e.code||e.message||"failed")));
+  if (el.dataset.year){
+    const k = el.dataset.year;
+    if (k === activeYear){ view.tab = "home"; render(); return; }
+    switchYear(k).then(() => { view.tab = "home"; render(); });
     return;
   }
+  if (el.dataset.newevent !== undefined){
+    const kind = el.dataset.newevent;
+    if (kind === "ei"){ startNextEI(); return; }
+    newEv = kind || null; render();
+    const box = document.getElementById("newevname"); if (box) box.focus();
+    return;
+  }
+  if (el.dataset.createevent){
+    const kind = el.dataset.createevent;
+    const box = document.getElementById("newevname");
+    const name = box ? box.value.trim() : "";
+    if (kind === "trip" && !name){ toast("Give the trip a name"); return; }
+    newEv = null;
+    startEvent(kind, name).then(() => toast((kind === "game" ? "Game" : "Trip") + " started"))
+      .catch(e => toast((e && (e.code || e.message)) || "failed"));
+    return;
+  }
+  if (el.dataset.openforall !== undefined){
+    if (!isAdmin){ toast("Admin only"); return; }
+    const k = el.dataset.openforall;
+    if (!confirm("Make this the event everyone's app opens on?\n\nEach phone lands on it the next "
+      + "time it opens, once. Anyone can still switch from the Events screen.")) return;
+    setOpenEvent(k).then(() => { toast("Done"); render(); }).catch(e => toast((e.code || e.message || "failed")));
+    return;
+  }
+  if (el.dataset.sharelink !== undefined){
+    const url = APP_URL + "?e=" + encodeURIComponent(el.dataset.sharelink);
+    const title = isEI() ? (activeYear + " EI") : (EVENT_META.name || "Golf");
+    /* The share sheet where there is one (it's a phone, so usually), then the
+       clipboard, then just show it. */
+    if (navigator.share){ navigator.share({ title, url }).catch(() => {}); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(() => toast("Link copied"), () => prompt("Copy this link", url));
+      return;
+    }
+    prompt("Copy this link", url);
+    return;
+  }
+  if (el.id === "startyear"){ startNextEI(); return; }
   if (el.id === "purgegames"){
     /* Two kinds of junk: games whose round is gone, and duplicates written back
        by a device running an older build. A round shouldn't hold two games of
@@ -6702,7 +6964,7 @@ function handleClick(el){
     return;
   }
   if (el.dataset.unlock != null){
-    if (!isAdmin){ toast("Admin only"); return; }
+    if (!canSetup()){ toast("Admin only"); return; }
     const t = +el.dataset.unlock;
     g.holes[h].locked[t] = false;
     pushHole(g, h, `locked.${t}`, false);

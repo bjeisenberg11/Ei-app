@@ -3896,6 +3896,182 @@ t("R150 a game ended early counts as it stood, as a tie, or not at all", () => i
   w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
+/* Asked for once the 2026 weekend was over: the app had one kind of thing,
+   an EI year, and every year fed the EI record. Now there are events of three
+   kinds — the EI, a golf trip, a single game — and only the EI's years reach
+   History. These run at the end (they await), so they put back everything
+   they touch themselves rather than relying on isolate(). */
+const EVENT_STATE = `JSON.stringify({ s:SCHEDULE, g:GAMES, d:DAYS, p:PLAYERS, c:COURSES,
+  y:YEARS, l:liveYear, a:activeYear, e:EVENTS, o:openKey, m:EVENT_META, adm:isAdmin,
+  tab:view.tab, bm:boardMode })`;
+const restoreEvents = (w, snap) => w.eval(`(function(){
+  const o = JSON.parse(${JSON.stringify(snap)});
+  SCHEDULE = o.s; GAMES = o.g;
+  DAYS.length = 0; o.d.forEach(x => DAYS.push(x));
+  PLAYERS.length = 0; o.p.forEach(x => PLAYERS.push(x));
+  COURSES.length = 0; o.c.forEach(x => COURSES.push(x));
+  YEARS = o.y; liveYear = o.l; activeYear = o.a; EVENTS = o.e; openKey = o.o;
+  EVENT_META = o.m; isAdmin = o.adm; boardMode = o.bm; newEv = null;
+  editEvent = null; view.gameId = null; view.tab = o.tab; render();
+})()`);
+
+ta("R151 a golf trip and a single game are events of their own, apart from the EI", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  try {
+    w.eval(`YEARS = ["2025","2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; openKey = null;
+            isAdmin = false; render();`);
+    eq(w.eval("isEI() && !canSetup()"), true, "in the EI, setup still needs the admin code:");
+
+    const trip = await w.startEvent("trip", "Bandon 2027");
+    const t = JSON.parse(w.eval(`JSON.stringify({ active: activeYear, ei: isEI(), kind: eventKind(),
+      setup: canSetup(), archive: isArchive(), ttl: document.getElementById("ttl").textContent,
+      sub: document.getElementById("tsub").textContent, inYears: YEARS.includes(activeYear),
+      listed: EVENTS.some(e => e.id === activeYear && e.kind === "trip" && e.name === "Bandon 2027"),
+      bar: (document.querySelector(".evbar-t") || {}).textContent })`));
+    eq(t.active, trip, "creating a trip opens it:");
+    ok(/^x-/.test(trip), "with an id that can't be mistaken for a year: " + trip);
+    eq(t.ei, false, "it isn't the EI:");
+    eq(t.kind, "trip", "it's a trip:");
+    eq(t.ttl, "Bandon 2027", "the header names it:");
+    eq(t.sub, "Golf trip", "and says what it is:");
+    eq(t.bar, "Golf trip", "so does the Games tab:");
+    ok(t.setup, "setup in a trip doesn't need the EI's admin code:");
+    ok(!t.archive, "and a trip is never a frozen archive:");
+    ok(!t.inYears && t.listed, "it's listed as an event, never as an EI year — History reads years only:");
+
+    w.eval(`view.tab = "board"; boardMode = "history"; render();`);
+    const board = w.eval(`document.getElementById("app").innerHTML`);
+    ok(!/data-board="history"/.test(board), "a trip's Board has no History:");
+    ok(!/class="yearbar"/.test(board), "and no EI year picker:");
+    eq(w.eval("boardMode"), "table", "a History left open in the EI falls back to the table:");
+
+    const game = await w.startEvent("game", "");
+    const gm = JSON.parse(w.eval(`JSON.stringify({ active: activeYear, kind: eventKind(), tab: view.tab,
+      edit: editEvent, rounds: SCHEDULE.filter(e => e.type === "ROUND").length,
+      round: SCHEDULE[0], days: DAYS.slice(), name: EVENT_META.name,
+      html: document.getElementById("app").innerHTML })`));
+    eq(gm.active, game, "a single game opens too:");
+    eq(gm.kind, "game", "as a game:");
+    eq(gm.rounds, 1, "with one round:");
+    eq(gm.days.length, 1, "on one day:");
+    eq(gm.round.day, gm.days[0], "today:");
+    ok(/^Game · /.test(gm.name), "named for the date when no name is given: " + gm.name);
+    eq(gm.tab, "sched", "and goes straight to the round editor:");
+    eq(gm.edit, gm.round.id, "on that round:");
+    ok(/data-addgame="[^"]+:WOLF5"/.test(gm.html), "every format can be added, Wolf included:");
+
+    w.eval(`view.tab = "events"; editEvent = null; render();`);
+    const ev = w.eval(`document.getElementById("app").innerHTML`);
+    ok(new RegExp('data-year="' + trip + '"').test(ev) && new RegExp('data-year="' + game + '"').test(ev),
+       "the Events screen lists both:");
+    ok(/data-year="2026"/.test(ev) && /data-year="2025"/.test(ev), "and the EI's years:");
+    ok(/data-newevent="trip"/.test(ev) && /data-newevent="game"/.test(ev), "with a way to start each kind:");
+    ok(!/data-newevent="ei"/.test(ev), "but not the next EI without the admin code:");
+
+    /* a trip needs a name; nothing is created without one */
+    w.eval(`handleClick({ dataset:{ newevent:"trip" } })`);
+    ok(w.eval(`!!document.getElementById("newevname")`), "New golf trip opens a name box:");
+    const n = w.eval("EVENTS.length");
+    w.eval(`handleClick({ dataset:{ createevent:"trip" } })`);
+    eq(w.eval("EVENTS.length"), n, "and an unnamed trip isn't made:");
+
+    /* back to the EI: everything reads as the EI again */
+    await w.switchYear("2026");
+    eq(w.eval("isEI() && !canSetup() && eventKind() === 'ei'"), true, "back in the EI, it's the EI again:");
+    ok(/Eisenberg Invitational/.test(w.eval(`document.getElementById("ttl").textContent`)), "by name too:");
+
+    /* landing: the event set for everyone, once; then wherever this phone was */
+    /* jsdom gives this page no localStorage, so lend it a plain one */
+    w.eval(`(function(){ const m = {}; window.__ls = { getItem: k => k in m ? m[k] : null,
+      setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } };
+      Object.defineProperty(window, "localStorage", { value: __ls, configurable: true }); })()`);
+    const land = JSON.parse(w.eval(`(function(){
+      localStorage.setItem("ei-open-seen", "2026"); localStorage.setItem("ei-year", ${JSON.stringify(trip)});
+      openKey = "2026"; const stays = landingKey();
+      openKey = ${JSON.stringify(game)}; const moved = landingKey();
+      localStorage.setItem("ei-year", ${JSON.stringify(trip)}); const once = landingKey();
+      return JSON.stringify({ stays, moved, once });
+    })()`));
+    eq(land.stays, trip, "a phone stays where it was while the open event hasn't changed:");
+    eq(land.moved, game, "lands on a newly set open event:");
+    eq(land.once, trip, "but only once — after that its own choice sticks:");
+  } finally {
+    try { w.eval(`delete window.localStorage`); } catch(e){}
+    restoreEvents(w, snap);
+  }
+});
+
+/* What reaches the database. Starting a trip writes its own document and adds
+   it to the registry with a merge — the registry also holds the EI's years and
+   must never be written over. Starting the next EI from inside a trip takes
+   the EI's players, not the trip's. A score queued in one event is sent to
+   that event even after the phone has switched to another. */
+ta("R152 events are written beside the EI's years, never over them", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  const saved = w.eval("JSON.stringify({ on: SYNC.on })");
+  try {
+    w.eval(`(function(){
+      window.__w = { sets: [], updates: [] };
+      window.__realConnect = connectWith; connectWith = async () => {};
+      window.__realSync = { api: SYNC.api, db: SYNC.db };
+      SYNC.on = true; SYNC.db = {};
+      SYNC.api = {
+        doc: (...a) => a.slice(1).join("/"),
+        setDoc: (ref, data, opts) => { __w.sets.push({ ref, data: JSON.parse(JSON.stringify(data)), merge: !!(opts && opts.merge) }); return Promise.resolve(); },
+        updateDoc: (ref, d) => { __w.updates.push({ ref, d }); return Promise.resolve(); },
+        getDoc: ref => Promise.resolve({ exists: () => ref === "tournaments/ei-2026",
+          data: () => ({ players: [{ id:"p1", name:"EI Man", index: 5, tees:{} }], courses: COURSES, days: ["Thursday"] }) }),
+        arrayUnion: x => ({ union: x })
+      };
+      YEARS = ["2025","2026"]; liveYear = "2026"; activeYear = "2026"; EVENTS = []; isAdmin = true;
+    })()`);
+    const trip = await w.startEvent("trip", "Pinehurst");
+    const w1 = JSON.parse(w.eval("JSON.stringify(__w.sets)"));
+    const cfg = w1.find(x => x.ref === "tournaments/" + trip);
+    const reg = w1.find(x => x.ref === "tournaments/_index");
+    ok(cfg && cfg.data.kind === "trip" && cfg.data.name === "Pinehurst", "the trip gets its own document:");
+    ok(cfg && cfg.data.players.length > 0, "starting from the players on screen:");
+    ok(reg && reg.merge, "the registry is merged into, never replaced:");
+    ok(reg && reg.data.events && reg.data.events.union && reg.data.events.union.id === trip,
+       "with the trip added to its events, not written over them:");
+    ok(!("years" in (reg ? reg.data : {})), "and the EI's years left alone:");
+
+    /* a score entered in the trip, then the phone moves to the EI before it's sent */
+    w.eval(`(function(){
+      GAMES.push({ id:"gtrip", roundId:"r", type:"SCRAMBLE4", teams:{0:[],1:[]}, holes: blankHoles() });
+      /* queued but not yet sent — what happens with no signal */
+      enqueue("gtrip", 0, "teamScore.0", 4);
+      activeYear = "2026";                      // switched away before it flushed
+    })()`);
+    const item = JSON.parse(w.eval(`JSON.stringify(queue.find(x => x.gid === "gtrip") || null)`));
+    eq(item && item.ev, trip, "a queued score remembers its event:");
+    await w.flushQueue();
+    const up = JSON.parse(w.eval("JSON.stringify(__w.updates)"));
+    ok(up.some(u => u.ref === "tournaments/" + trip + "/games/gtrip"),
+       "and is sent to that event's game, not the one on screen: " + JSON.stringify(up.map(u => u.ref)));
+
+    /* the next EI, started from inside the trip */
+    w.eval(`activeYear = ${JSON.stringify(trip)}; __w.sets.length = 0;`);
+    await w.startYear("2027");
+    const w2 = JSON.parse(w.eval("JSON.stringify(__w.sets)"));
+    const ei = w2.find(x => x.ref === "tournaments/ei-2027");
+    const reg2 = w2.find(x => x.ref === "tournaments/_index");
+    ok(ei && ei.data.players.length === 1 && ei.data.players[0].name === "EI Man",
+       "the next EI carries over the EI's players, not the trip's:");
+    ok(reg2 && reg2.merge, "and adds its year with a merge, so the trips survive:");
+    eq(w.eval("activeYear"), "2027", "and opens it:");
+  } finally {
+    w.eval(`(function(){
+      connectWith = window.__realConnect; SYNC.api = window.__realSync.api; SYNC.db = window.__realSync.db;
+      SYNC.on = ${JSON.parse(saved).on};
+      queue = queue.filter(x => x.gid !== "gtrip"); saveQueue();
+    })()`);
+    restoreEvents(w, snap);
+  }
+});
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
