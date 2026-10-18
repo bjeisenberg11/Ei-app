@@ -3789,6 +3789,113 @@ t("R149 the scramble grid carries a par row under the hole numbers", () => isola
   w.eval("view.gameId = null; view.tab = 'home'; render();");
 }));
 
+/* Asked for after the 2026 weekend: a match conceded before the 18th, and a
+   round rained off after ten that the group decided not to count. A game can
+   now be ended early as final-as-it-stands, a tie, or not counted, and the
+   record follows. The end is written as one field, never the whole game. */
+t("R150 a game ended early counts as it stood, as a tie, or not at all", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    const r = ROUNDS()[0].id; GAMES.length = 0;
+    const rec = id => { const x = standings().find(p => p.id === id); return x.w + "-" + x.l + "-" + x.t + "/" + x.gp; };
+    const saved = { on: SYNC.on, api: SYNC.api, db: SYNC.db };
+    const updates = []; let sets = 0;
+    SYNC.on = true; SYNC.db = {};
+    SYNC.api = { doc: (...a) => a.slice(1).join("/"),
+      updateDoc: (ref, d) => { updates.push(JSON.stringify(d)); return Promise.resolve(); },
+      setDoc: () => { sets++; return Promise.resolve(); } };
+    const realConfirm = window.confirm; window.confirm = () => true;
+    const res = {};
+
+    /* 1. Best ball conceded 2 UP with four to play. */
+    const m = { id:"gm", roundId:r, type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles() };
+    m.holes[0].conceded = 1; m.holes[1].conceded = 1;
+    for (let h = 2; h < 14; h++) m.holes[h].conceded = h % 2;
+    GAMES.push(m);
+    view.tab = "home"; view.gameId = "gm"; view.hole = 14; endOpen = null; render();
+    const html = () => document.getElementById("app").innerHTML;
+    res.linkShown = /data-endgame="gm"/.test(html());
+    const holesBefore = JSON.stringify(m.holes);
+    handleClick({ dataset:{ endgame:"gm" } });
+    res.panelShown = /data-endhow="final"/.test(html()) && /2 UP thru 14/.test(html());
+    handleClick({ dataset:{ endhow:"final" } });
+    res.match = { ended: m.ended && m.ended.how, after: m.ended && m.ended.after,
+      result: gameResult(m), p1: rec("p1"), p3: rec("p3"),
+      holesSame: JSON.stringify(m.holes) === holesBefore,
+      write: updates.slice(), sets, reopenShown: /data-reopen="gm"/.test(html()),
+      banner: (document.querySelector(".banner .st") || {}).textContent };
+    handleClick({ dataset:{ reopen:"gm" } });
+    res.reopened = { ended: m.ended, result: gameResult(m), p1: rec("p1"), lastWrite: updates[updates.length - 1] };
+    GAMES.length = 0;
+
+    /* 2. A 4v4 rained off after ten: called a tie, then not counted. */
+    const s = { id:"gs", roundId:r, type:"SCRAMBLE4", teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes: blankHoles() };
+    const par = h => courseOf(s).holes[h].par;
+    for (let h = 0; h < 10; h++){ s.holes[h].teamScore[0] = par(h) - (h === 0 ? 1 : 0); s.holes[h].teamScore[1] = par(h); }
+    GAMES.push(s);
+    s.ended = { how:"tie", after:10, at:1 };
+    res.tie = { p1: rec("p1"), p5: rec("p5"), label: gameStatusLabel(s).text, foot: gameBoard(s).foot };
+    s.ended = { how:"void", after:10, at:1 };
+    res.void = { p1: rec("p1"), p5: rec("p5"), label: gameStatusLabel(s).text };
+    s.ended = { how:"final", after:10, at:1 };
+    res.final4 = { p1: rec("p1"), p5: rec("p5") };
+    GAMES.length = 0;
+
+    /* 3. Four teams stopped on different holes: ranked on to par, not gross —
+       a side five holes in at +5 has the fewest strokes on the card. */
+    const q = { id:"gq", roundId:r, type:"SCRAMBLE2X4",
+      teams:{0:["p1","p2"],1:["p3","p4"],2:["p5","p6"],3:["p7","p8"]}, holes: blankHoles() };
+    for (let h = 0; h < 10; h++){ q.holes[h].teamScore[0] = par(h) - 1; q.holes[h].teamScore[2] = par(h); q.holes[h].teamScore[3] = par(h); }
+    for (let h = 0; h < 5; h++) q.holes[h].teamScore[1] = par(h) + 1;
+    q.ended = { how:"final", after:10, at:1 };
+    GAMES.push(q);
+    res.multi = teamOutcomes(q).join(",");
+    q.ended = { how:"tie", after:10, at:1 };
+    res.multiTie = teamOutcomes(q).join(",");
+
+    /* 4. Nothing played: no link. A finished game: no link either. */
+    const e = { id:"ge", roundId:r, type:"SCRAMBLE4", teams:{0:["p1","p2","p3","p4"],1:["p5","p6","p7","p8"]}, holes: blankHoles() };
+    GAMES.push(e); view.gameId = "ge"; view.hole = 0; render();
+    res.noLinkUnplayed = !/data-endgame="ge"/.test(html());
+    for (let h = 0; h < 18; h++){ e.holes[h].teamScore[0] = par(h); e.holes[h].teamScore[1] = par(h) + 1; }
+    render();
+    res.noLinkFinished = !/data-endgame="ge"/.test(html());
+
+    window.confirm = realConfirm; Object.assign(SYNC, saved); endOpen = null;
+    return JSON.stringify(res);
+  })()`));
+  ok(out.linkShown, "a game under way offers End game early:");
+  ok(out.panelShown, "and the panel shows what 'as it stands' would be — 2 UP thru 14:");
+  eq(out.match.ended, "final", "ended final:");
+  eq(out.match.after, 14, "after 14 holes:");
+  eq(out.match.result.winner, "A", "the side 2 up wins:");
+  eq(out.match.p1, "1-0-0/1", "the winners get the W:");
+  eq(out.match.p3, "0-1-0/1", "the side that conceded the L:");
+  ok(out.match.holesSame, "no hole was touched:");
+  ok(out.match.write.length === 1 && /^\{"ended":\{"how":"final","after":14,"at":\d+\}\}$/.test(out.match.write[0]),
+     "one write, of the ended field only: " + out.match.write[0]);
+  eq(out.match.sets, 0, "never a whole-game setDoc:");
+  ok(/WIN/.test(out.match.banner || ""), "the banner gives the result: " + out.match.banner);
+  ok(out.match.reopenShown, "and offers Reopen:");
+  eq(out.reopened.ended, null, "reopening clears it:");
+  eq(out.reopened.result, null, "the match is back in progress:");
+  eq(out.reopened.p1, "0-0-0/0", "and off the record until it finishes:");
+  eq(out.reopened.lastWrite, '{"ended":null}', "written as one field too:");
+  eq(out.tie.p1, "0-0-1/1", "called a tie: a T and a game played for one side:");
+  eq(out.tie.p5, "0-0-1/1", "and the other:");
+  ok(/ended after 10/.test(out.tie.label) && /called a tie/.test(out.tie.foot), "the list says how it ended: " + out.tie.label + " | " + out.tie.foot);
+  eq(out.void.p1, "0-0-0/0", "not counted: nothing, not even a game played:");
+  eq(out.void.p5, "0-0-0/0", "for either side:");
+  ok(/not counted/.test(out.void.label) && !/undefined|VOID/.test(out.void.label), "and it says so plainly: " + out.void.label);
+  eq(out.final4.p1, "1-0-0/1", "final as it stands: the side ahead after ten wins:");
+  eq(out.final4.p5, "0-1-0/1", "and the other loses:");
+  eq(out.multi, "W,L,T,T", "four teams on different holes are ranked on to par, not the gross:");
+  eq(out.multiTie, "T,T,T,T", "and a four-team game called a tie is a T for all four:");
+  ok(out.noLinkUnplayed, "nothing played, nothing to end:");
+  ok(out.noLinkFinished, "a game that finished on its own isn't offered it either:");
+  w.eval("view.gameId = null; view.tab = 'home'; render();");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

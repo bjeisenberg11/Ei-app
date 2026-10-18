@@ -442,6 +442,16 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .teeord li::before{content:counter(tee);font-family:'Barlow Condensed',sans-serif;
   font-weight:700;font-size:12px;color:var(--ink-faint);margin-right:5px}
 .teeord li.is-wolf{font-weight:700}
+.endrow{margin-top:18px;text-align:center}
+.endrow .lnk{background:none;border:none;padding:6px;font:inherit;font-size:13px;
+  color:var(--ink-faint);text-decoration:underline;cursor:pointer}
+.endpanel{border:1px solid var(--rule);padding:10px 12px 4px;margin-top:18px}
+.endopt{display:block;width:100%;text-align:left;background:var(--paper-2);
+  border:1px solid var(--rule);padding:10px 12px;margin-top:7px;font:inherit;
+  color:var(--ink);cursor:pointer}
+.endopt b{display:block;font-size:15px}
+.endopt span{display:block;font-size:13px;color:var(--ink-soft);margin-top:2px}
+.endopt:disabled{opacity:.45;cursor:default}
 .teechg{margin-left:auto;background:none;border:none;padding:0;font:inherit;
   font-size:13px;color:var(--ink-soft);text-decoration:underline;cursor:pointer}
 /* Who is on which side of the hole, once the wolf has decided. A tint rather
@@ -1607,6 +1617,10 @@ function teamOutcomes(g){
      and the round it belongs to isn't sanctioned in the first place.
      standings() already drops a game whose outcomes come back null. */
   if (isWolf(g)) return null;
+  /* Ended early: a void game reaches the record as nothing at all, a game
+     called a tie as a T for every side, four teams included. */
+  if (endedHow(g) === "void") return null;
+  if (endedHow(g) === "tie") return sides(g).map(() => "T");
   if (!gameResult(g)) return null;
   if (!isMulti(g)){
     const r = gameResult(g);
@@ -1615,7 +1629,12 @@ function teamOutcomes(g){
   }
   /* Lowest is best below, so a skins game comes in negated rather than having
      the whole cut worked out twice with the comparisons flipped. */
-  const totals = isSkins(g) ? skinTotals(g).totals.map(v => -v) : strokeTotals(g).totals;
+  /* Stroke play is ranked on to par, which for a finished round orders the
+     sides exactly as the gross does (every side's par is 72) and for a game
+     ended early is the only fair comparison between sides on different holes. */
+  const st = strokeTotals(g);
+  const totals = isSkins(g) ? skinTotals(g).totals.map(v => -v)
+    : sides(g).map(i => st.totals[i] - strokeParSoFar(g, i));
   const slots = Math.floor(sideCount(g) / 2);          // two of four go through
   const cut = totals.slice().sort((a,b) => a - b)[slots - 1];
   const below = totals.filter(v => v < cut).length;
@@ -1632,8 +1651,81 @@ function strokeParSoFar(g, t){
   return p;
 }
 
+/* ---------- ended early ----------
+   A game can be stopped before the 18th: a side concedes the match, or it
+   rains. g.ended = { how, after, at } and how is one of
+     "final" — the result stands as it is at that moment;
+     "tie"   — called level: every side gets a T and a game played;
+     "void"  — doesn't count: no W, L or T, not even a game played, the same
+               rule as a casual round (a played game with no result would
+               drag win% down).
+   Which of the two a rain-out gets is decided when it's ended, because the
+   group has done both. `after` is how many holes had been played, for the
+   captions. Absent means the game runs its course, so every stored game
+   reads as it always did and there was no SCHEMA bump. */
+const endedHow = g => (g && g.ended && g.ended.how) || null;
+/* holes played so far, in whatever sense the format counts them */
+function holesPlayed(g){
+  if (isWolf(g))  return wolfTotals(g).holes;
+  if (isMatch(g)) return matchState(g).played;
+  if (isSkins(g)) return skinTotals(g).holes;
+  if (isStroke(g)) return Math.max(0, ...strokeTotals(g).holes);
+  return Math.max(fbHolesLocked(g, 0), fbHolesLocked(g, 1));
+}
+/* The result if the game stopped right now, or null if nothing's been played.
+   Stroke play and 40ball compare on to par, not the gross: sides are often a
+   different number of holes in when a game is stopped, and a side two holes
+   behind would otherwise "win" by having fewer strokes on the card. */
+function resultAsItStands(g){
+  const winOf = (vals, better) => {
+    const best = better(...vals);
+    const top = vals.map((v, i) => v === best ? i : -1).filter(i => i >= 0);
+    return top.length === 1 ? SIDE_CODES[sides(g)[top[0]]] : "TIE";
+  };
+  if (isWolf(g)){
+    const { pts, holes } = wolfTotals(g), roster = rosterOf(g);
+    if (!holes || !roster.length) return null;
+    const best = Math.max(...roster.map(id => pts[id]));
+    const top = roster.filter(id => pts[id] === best);
+    return { winner: top.length === 1 ? top[0] : "TIE",
+             label: roster.map(id => pts[id]).sort((a, b) => b - a).join("–") };
+  }
+  if (isMatch(g)){
+    const st = matchState(g);
+    if (st.result) return st.result;
+    if (!st.played) return null;
+    return st.status === 0 ? { winner:"TIE", label:`A/S thru ${st.played}` }
+      : { winner: st.status > 0 ? "A" : "B", label:`${Math.abs(st.status)} UP thru ${st.played}` };
+  }
+  if (isSkins(g)){
+    const { totals, holes } = skinTotals(g);
+    if (!holes) return null;
+    return { winner: winOf(totals, Math.max),
+             label: totals.slice().sort((a, b) => b - a).map(fmtSkins).join("–") };
+  }
+  const ix = sides(g);
+  const rel = isStroke(g)
+    ? (st => ix.map(i => st.holes[i] ? st.totals[i] - strokeParSoFar(g, i) : null))(strokeTotals(g))
+    : ix.map(t => fbHolesLocked(g, t) ? fbTotal(g, t) - fbParBasis(g, t) : null);
+  if (rel.some(v => v == null)) return null;          // a side that hasn't started can't be ranked
+  return { winner: winOf(rel, Math.min),
+           label: rel.slice().sort((a, b) => a - b).map(toPar).join(" / ") };
+}
+/* "after 10" for every caption that says a game was stopped */
+const endedAfter = g => g.ended && g.ended.after != null ? `after ${g.ended.after}` : "early";
+
 /* ---------- unified result ---------- */
 function gameResult(g){
+  const how = endedHow(g);
+  /* VOID is a result in the sense that the game is over, but it's nobody's
+     win: anything that prints a winner has to check for it first. */
+  if (how === "void") return { winner:"VOID", label:"not counted" };
+  if (how === "tie")  return { winner:"TIE", label:"called a tie" };
+  const r = playedResult(g);
+  if (r || how !== "final") return r;
+  return resultAsItStands(g);
+}
+function playedResult(g){
   if (isWolf(g))   return wolfState(g).result;
   if (isMatch(g))  return matchState(g).result;
   /* Before isStroke: a skins game is still a SCRAMBLE2X4 and would otherwise
@@ -1862,6 +1954,15 @@ function allTime(){
    is the question being asked of them. 40ball reads only the shown numbers,
    so a sealed hole stays sealed here as everywhere else (R138). */
 function gameBoard(g){
+  const b = boardRows(g);
+  /* A game stopped early says so under the rows rather than "Final" or
+     "thru 10", which would read as either finished or still going. */
+  if (b && g.ended) b.foot = endedHow(g) === "void" ? `Ended ${endedAfter(g)} \u00b7 not counted`
+    : endedHow(g) === "tie" ? `Ended ${endedAfter(g)} \u00b7 called a tie`
+    : `Final \u00b7 ended ${endedAfter(g)}`;
+  return b;
+}
+function boardRows(g){
   const res = gameResult(g);
   const rowsOf = (vals, better) => {
     const live = vals.filter(v => v.n != null);
@@ -1930,6 +2031,13 @@ function gameBoard(g){
 
 function gameStatusLabel(g){
   const res = gameResult(g);
+  if (res && g.ended){
+    const after = endedAfter(g);
+    if (res.winner === "VOID") return { text:`Ended ${after} \u00b7 not counted`, cls:"done" };
+    if (endedHow(g) === "tie") return { text:`Tied \u00b7 ended ${after}`, cls:"done" };
+    return { text: (res.winner === "TIE" ? "TIED" : `${winnerLabel(g, res.winner)} ${isWolf(g) ? "WINS" : "WIN"}`)
+      + ` ${res.label} \u00b7 ended ${after}`, cls:"done" };
+  }
   if (res) return { text: res.winner === "TIE" ? "HALVED"
     /* One man wins a wolf game, so "Blake WINS", not "Blake WIN". */
     : `${winnerLabel(g,res.winner)} ${isWolf(g) ? "WINS" : "WIN"} ${res.label}`, cls:"done" };
@@ -2056,7 +2164,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-17.1040";
+const BUILD = "2026-10-18.1700";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2790,6 +2898,17 @@ function pushGame(g){
     .then(() => setSync("live", {lastAt:new Date()}))
     .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
 }
+/* Write named top-level fields of a game and nothing else — never the holes.
+   pushGame would setDoc the whole game from this phone's copy, which could
+   wipe a score another phone sent a second ago. */
+function pushGameFields(g, fields){
+  if (staleDevice || isArchive()) return;
+  if (!SYNC.on || !SYNC.api) return;
+  const { doc, updateDoc } = SYNC.api;
+  updateDoc(doc(SYNC.db, "tournaments", tidFor(activeYear), "games", g.id), fields)
+    .then(() => setSync("live", {lastAt:new Date()}))
+    .catch(e => setSync("error", { err: (e.code||e.message) + " (game write failed)" }));
+}
 /* Write a wolf game's tee order and nothing else. pushGame would setDoc the
    whole game from this phone's copy, which mid-round could wipe a score
    another phone sent a second ago; two fields can't touch a hole. */
@@ -2946,6 +3065,8 @@ let rulesOpen = null;
 /* A wolf tee order being tapped in by hand: { gid, picks:[ids in order] }.
    Keyed by game id like rulesOpen, so it can't leak onto another game. */
 let teeSet = null;
+/* The game whose End game choices are open, by id like rulesOpen. */
+let endOpen = null;
 /* The flight form's half-filled state, per direction. Kept off the page
    because tapping an airline or a name redraws the screen, and a number typed
    a moment earlier has to survive that. */
@@ -4131,8 +4252,10 @@ function scoresToText(){
       L.push("");
       L.push(`${LABEL[g.type]}: ${sides(g).map(i => teamLabel(g,i)).join("  vs  ")}`);
       const res = gameResult(g);
-      L.push("Result: " + (res
-        ? (res.winner === "TIE" ? "tied " + res.label
+      L.push("Result: " + (res && res.winner === "VOID" ? `not counted (ended ${endedAfter(g)})`
+        : res
+        ? (g.ended ? `ended ${endedAfter(g)}, ` : "")
+          + (res.winner === "TIE" ? "tied " + res.label
            : winnerLabel(g, res.winner) + " win " + res.label)
         : "in progress"));
 
@@ -4954,6 +5077,37 @@ function gameRules(g){
     hcp, pu, casual ]);
 }
 
+/* End game. For a match conceded before the 18th or a round rained off:
+   stop it and say how it counts. Quiet until it's asked for — a link at the
+   foot of the card — because on most days nobody needs it, and three big
+   buttons under every hole would be three chances to end a live game.
+   Offered once something's been played and the game hasn't finished on its
+   own; once ended, the same place offers Reopen. */
+function endGamePanel(g){
+  if (isArchive()) return "";
+  if (g.ended) return `<div class="endrow"><button class="lnk" data-reopen="${esc(g.id)}">Reopen this game</button></div>`;
+  const played = holesPlayed(g);
+  if (!played || playedResult(g)) return "";
+  if (endOpen !== g.id)
+    return `<div class="endrow"><button class="lnk" data-endgame="${esc(g.id)}">End game early</button></div>`;
+  const now = resultAsItStands(g);
+  const asIs = !now ? "Not every side has a score yet, so there's no standing to take."
+    : now.winner === "TIE" ? `Level as it stands \u2014 counts as a tie (${esc(now.label)}).`
+    : `${esc(winnerLabel(g, now.winner))} ${isWolf(g) ? "wins" : "win"}, ${esc(now.label)}.`;
+  const casual = !gameCounts(g) || isWolf(g);
+  return `<div class="endpanel">
+    <div class="wolfhead"><span class="wolflab">End after ${played}</span></div>
+    <button class="endopt" data-endhow="final"${now ? "" : " disabled"}>
+      <b>Final as it stands</b><span>${asIs}</span></button>
+    <button class="endopt" data-endhow="tie">
+      <b>Call it a tie</b><span>Every side gets a tie and a game played.</span></button>
+    <button class="endopt" data-endhow="void">
+      <b>Doesn't count</b><span>Left out of the record \u2014 no win, loss or tie.</span></button>
+    ${casual ? `<p class="note">This game isn't in the EI record either way.</p>` : ""}
+    <div class="endrow"><button class="lnk" data-endgame="">Cancel</button></div>
+  </div>`;
+}
+
 function renderGame(){
   const g = GAMES.find(x => x.id === view.gameId);
   const course = courseOf(g);
@@ -5003,7 +5157,21 @@ function renderGame(){
   }
 
   /* banner */
-  if (isMatch(g)){
+  if (g.ended){
+    /* Stopped early: one box saying how it was settled, in place of the
+       format's own, which would read "thru 10" as if play were still on. */
+    const res = gameResult(g), how = endedHow(g);
+    out += `<div class="banner tight closed">
+      <div class="st">${how === "void" ? "NOT COUNTED" : how === "tie" ? "TIED"
+        : !res ? "ENDED" : res.winner === "TIE" ? "TIED"
+        : `${esc(winnerLabel(g, res.winner))} ${isWolf(g) ? "WINS" : "WIN"}`}</div>
+      <div class="thru">Ended ${endedAfter(g)} \u00b7 ${how === "void" ? "left out of the record"
+        : how === "tie" ? "a tie for everyone" : res ? esc(res.label) : "nothing to settle"}</div>
+      ${isWolf(g) ? wolfRanked(g).map(r => `<div class="strokerow">
+        <span class="sname">${esc((P(r.id) || {}).name || "?")}</span>
+        <span class="stot wide">${r.pts}</span></div>`).join("") : ""}
+    </div>`;
+  } else if (isMatch(g)){
     const st = matchState(g);
     out += `<div class="banner ${st.closed?"closed":""}">
       <div class="st">${st.closed ? `${winnerLabel(g,st.result.winner)} WIN ${st.result.label}`
@@ -5126,6 +5294,7 @@ function renderGame(){
         : "At least one player per side must hole out."}</p>`;
   }
 
+  out += endGamePanel(g);
 
 
   app.innerHTML = out;
@@ -6392,6 +6561,25 @@ function handleClick(el){
     hole.pack = p;
     pushHole(g, hh, "pack", p);
     if (hole.lone){ hole.lone = false; pushHole(g, hh, "lone", false); }
+    render(); return;
+  }
+  if (el.dataset.endgame !== undefined){
+    endOpen = el.dataset.endgame || null;
+    render(); return;
+  }
+  if (el.dataset.endhow){
+    const how = el.dataset.endhow, after = holesPlayed(g);
+    const what = how === "final" ? "Final as it stands" : how === "tie" ? "Call it a tie" : "Doesn't count";
+    if (!confirm(`End this game after ${after}?\n\n${what}. You can reopen it later.`)) return;
+    g.ended = { how, after, at: Date.now() };
+    endOpen = null;
+    pushGameFields(g, { ended: g.ended });
+    render(); return;
+  }
+  if (el.dataset.reopen){
+    if (!confirm("Reopen this game?\n\nIt goes back to being played out, and the result it was ended with is dropped.")) return;
+    g.ended = null;
+    pushGameFields(g, { ended: null });
     render(); return;
   }
   if (el.dataset.teeset !== undefined){

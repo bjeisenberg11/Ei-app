@@ -191,6 +191,27 @@ The app covers:
     make an orphan game inherit whatever flag the first round happens to have.
   - The flag is on the **round**, never the game: a round can hold several games
     and it's the round that is or isn't part of the tournament.
+- **Ending a game early** (R150): a match conceded before the 18th, or a round
+  rained off. `g.ended = { how, after, at }`, `how` one of **`final`** (the
+  result as it stands — `resultAsItStands`), **`tie`** (a T and a game played
+  for every side, four teams included) or **`void`** (no W/L/T and not a game
+  played, the casual-round rule). The group has settled rain-outs both ways, so
+  the choice is made when ending, not fixed. Absent means the game runs its
+  course: no `SCHEMA` bump.
+  - `gameResult` checks `ended` first and otherwise calls `playedResult` (the
+    per-format results). A void game's result is `{ winner:"VOID" }` — anything
+    that prints a winner must check for it before `winnerLabel`.
+  - Stopped games are compared on **to par**, not gross, because sides are
+    often on different holes. `teamOutcomes` ranks multi-team stroke play on
+    to par for every game now; for a finished round that orders sides exactly
+    as the gross does.
+  - Written through `pushGameFields(g, {ended})`, an `updateDoc` of that field
+    only — never `pushGame`. Reopen writes `ended: null`.
+  - The control is a quiet "End game early" link at the foot of the card,
+    shown once something's been played and the game hasn't finished on its
+    own; `endOpen` (a game id) opens the three choices, each confirmed.
+    Scores stay editable after ending. The pairings matrix still counts a void
+    game: the men did play together.
 - **Board tab**: the leaderboard for the year (W/L/T, ranked on points) and
   a **History** view. The 3v3 scramble is **not an EI game in any year**: the
   2024 and 2025 records (`HISTORY_SEED`, and the live `_history` doc, which
@@ -449,7 +470,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **188 passed, 0 failed**. The suite is
+Current status against `index.html`: **189 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
