@@ -4475,6 +4475,46 @@ ta("R157 a player saved twice is merged back into one, and Add me waits for the 
   }
 });
 
+/* Reported from the phone: "0 saved players" after opening the EI. The EI's
+   courses weren't on the saved list yet, so they were added — in a merge write
+   that also carried { players: {} }, and Firestore's merge takes an empty map
+   as "this field is now empty". Every saved player went. Writes to the list
+   now never carry an empty map, and the list refills from the field. */
+t("R158 adding to the saved list never sends an empty map that would wipe the other half", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    const saved = { on: SYNC.on, api: SYNC.api, db: SYNC.db, lp: LIB.players, lc: LIB.courses, loaded: LIB.loaded };
+    const sent = [];
+    SYNC.on = true; SYNC.db = {};
+    SYNC.api = { doc: (...a) => a.slice(1).join("/"),
+      setDoc: (ref, data, o) => { sent.push({ ref, data: JSON.parse(JSON.stringify(data)) }); return Promise.resolve(); } };
+    LIB.loaded = true;
+    /* players all saved, courses not: only courses may go */
+    LIB.players = {}; PLAYERS.forEach(p => LIB.players[p.id] = clone(p)); LIB.courses = {};
+    libAbsorb(true);
+    const a = sent.slice(); sent.length = 0;
+    /* the other way round */
+    LIB.players = {}; LIB.courses = {}; COURSES.forEach(c => LIB.courses[c.id] = clone(c));
+    libAbsorb(true);
+    const b = sent.slice(); sent.length = 0;
+    /* an edit to one course only */
+    snapField(); COURSES[0].name = COURSES[0].name + " "; libPushEdits(); COURSES[0].name = COURSES[0].name.trim();
+    const c = sent.slice();
+    Object.assign(SYNC, { on: saved.on, api: saved.api, db: saved.db });
+    LIB.players = saved.lp; LIB.courses = saved.lc; LIB.loaded = saved.loaded;
+    const empty = list => list.some(x => Object.values(x.data).some(m => m && typeof m === "object" && !Object.keys(m).length));
+    return JSON.stringify({
+      a: a.map(x => Object.keys(x.data).join()), b: b.map(x => Object.keys(x.data).join()),
+      c: c.map(x => Object.keys(x.data).join()), anyEmpty: empty(a) || empty(b) || empty(c) });
+  })()`));
+  eq(out.a.join("|"), "courses", "missing courses go up alone, with no empty players map:");
+  eq(out.b.join("|"), "players", "missing players go up alone, with no empty courses map:");
+  eq(out.c.join("|"), "courses", "an edit to a course sends courses only:");
+  ok(!out.anyEmpty, "and no write ever carries an empty map:");
+  ok(/libAbsorb\(true\);\s*\n\s*libPull\(\);/.test(html) && !/if \(first\) libAbsorb/.test(html),
+     "the list refills from the field on every snapshot, not just the first:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

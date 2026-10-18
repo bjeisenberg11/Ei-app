@@ -302,6 +302,12 @@ The app covers:
     a stale index over a newer one), changed entries on `pushConfig` (a real
     edit). It waits for the library snapshot (`LIB.loaded`) before writing,
     and never runs from an archive.
+    - **Never send an empty map to `_library`** (R158). A merge write takes
+      `{ players: {} }` as "players is now empty" — adding the EI's courses
+      once went up with an empty players map and wiped every saved player.
+      Every write goes through `libWrite`, which drops an empty half, and the
+      listener runs `libAbsorb(true)` on **every** snapshot so a list that
+      lost entries refills from whichever event's field is open.
   - **New trips and games start with an empty field.** Outside the EI the
     course picker and the roster editor list saved courses and players after
     the event's own; picking one brings it in (`fieldAddCourse`,
@@ -583,7 +589,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **196 passed, 0 failed**. The suite is
+Current status against `index.html`: **197 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

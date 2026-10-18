@@ -2229,7 +2229,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.2345";
+const BUILD = "2026-10-18.2350";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2283,6 +2283,18 @@ const libPlayers = () => Object.values(LIB.players).filter(p => p && p.id && p.n
 const libCourses = () => Object.values(LIB.courses).filter(c => c && c.id && c.name)
   .sort((a, b) => a.name.localeCompare(b.name));
 const clone = o => JSON.parse(JSON.stringify(o));
+/* Send entries to the saved list. NEVER an empty map: setDoc with merge
+   treats { players: {} } as "players is now empty" and wipes the lot. That's
+   exactly what happened the first time the EI's courses were added — the
+   write carried an empty players map beside them and every saved player
+   vanished (R158). Only the maps that have something in them go. */
+function libWrite(add){
+  const out = {};
+  if (add.players && Object.keys(add.players).length) out.players = add.players;
+  if (add.courses && Object.keys(add.courses).length) out.courses = add.courses;
+  if (!Object.keys(out).length || staleDevice || !SYNC.on || !SYNC.api) return;
+  SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"), out, { merge: true }).catch(() => {});
+}
 /* Put this event's field into the library. onlyMissing on load: an old event
    being looked at must not push a stale handicap over a newer one. A real edit
    (pushConfig) sends what changed. Never before the library has been read —
@@ -2304,9 +2316,7 @@ function libAbsorb(onlyMissing){
     if (cur && (onlyMissing || JSON.stringify(cur) === JSON.stringify(c))) return;
     add.courses[c.id] = clone(c); LIB.courses[c.id] = clone(c); n++;
   });
-  if (!n || staleDevice || !SYNC.on || !SYNC.api) return;
-  const { doc, setDoc } = SYNC.api;
-  setDoc(doc(SYNC.db, "tournaments", "_library"), add, { merge: true }).catch(() => {});
+  if (n) libWrite(add);
 }
 /* Which of this event's players and courses were edited HERE, rather than
    arriving from the saved list: fieldBase is the field as it stood when it was
@@ -2333,8 +2343,7 @@ function libPushEdits(){
     c.upd = now; add.courses[c.id] = clone(c); LIB.courses[c.id] = clone(c); n++;
   });
   snapField();
-  if (!n || !SYNC.on || !SYNC.api) return;
-  SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"), add, { merge: true }).catch(() => {});
+  if (n) libWrite(add);
 }
 /* The saved list into this event: any player or course it has a newer copy
    of. Not into an archived year — that's the record — and not while a local
@@ -2750,10 +2759,16 @@ async function connectWith(i){
     /* the saved players and courses — see LIB */
     unsubs.push(fsMod.onSnapshot(fsMod.doc(db, "tournaments", "_library"), d => {
       if (myGen !== gen) return;
+      /* A cached read that simply doesn't have the doc yet says nothing — taking
+         it as "the list is empty" would show 0 saved and re-add everything. */
+      if (!d.exists() && d.metadata && d.metadata.fromCache) return;
       const v = d.data() || {};
       LIB.players = v.players || {}; LIB.courses = v.courses || {};
-      const first = !LIB.loaded; LIB.loaded = true;
-      if (first) libAbsorb(true);             // whatever this event has that the list doesn't
+      LIB.loaded = true;
+      /* Every time, not just the first: missing-only never overwrites, and it's
+         what puts the list back together from the field if it has lost
+         anyone — which it did, once (libWrite). */
+      libAbsorb(true);
       libPull();
       if (SYNC.seen.cfg) libDedupe();
     }, () => {}));
