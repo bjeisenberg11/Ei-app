@@ -2229,7 +2229,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.2130";
+const BUILD = "2026-10-18.2345";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2355,6 +2355,41 @@ function libPull(){
   snapField();
   if (n){ queueConfig(); if (!document.querySelector("input:focus")) render(); }
 }
+/* Two saved players with the same name are the same man saved twice — it
+   happened when "Add me" was used before the saved list had loaded, so the
+   real Blake wasn't there to be found and a second one was made. Keep the one
+   this event's field uses (else the oldest), give it the newest index of the
+   pair, point this phone's "you" at it, and take the other off the list. Only
+   ever an exact name match, and never one that's in this event's field. */
+function libDedupe(){
+  if (isArchive() || staleDevice || (SYNC.on && !LIB.loaded)) return;
+  const byName = {};
+  Object.values(LIB.players).forEach(p => {
+    if (!p || !p.id || !p.name) return;
+    const k = p.name.trim().toLowerCase();
+    (byName[k] = byName[k] || []).push(p);
+  });
+  const drop = [];
+  let me = null; try { me = localStorage.getItem("ei-me"); } catch(e){}
+  Object.values(byName).forEach(list => {
+    if (list.length < 2) return;
+    const keep = list.find(p => P(p.id)) || list.slice().sort((a, b) => (+a.upd || 0) - (+b.upd || 0))[0];
+    const newest = list.slice().sort((a, b) => (+b.upd || 0) - (+a.upd || 0))[0];
+    list.forEach(p => {
+      if (p.id === keep.id || P(p.id)) return;
+      drop.push(p.id); delete LIB.players[p.id];
+      if (me === p.id) setMe(keep.id);
+    });
+    if (newest.id !== keep.id && (+newest.upd || 0) > (+keep.upd || 0) && newest.index !== keep.index)
+      libSavePlayer({ ...keep, index: newest.index });
+  });
+  if (!drop.length || !SYNC.on || !SYNC.api) { if (drop.length) render(); return; }
+  const { doc, updateDoc, deleteField } = SYNC.api;
+  const upd = {}; drop.forEach(id => { upd["players." + id] = deleteField(); });
+  updateDoc(doc(SYNC.db, "tournaments", "_library"), upd).catch(() => {});
+  render();
+}
+
 /* One saved player, written to the list (and into this event, if he's in it
    and it isn't archived). The "You" screen's index uses this. */
 function libSavePlayer(p){
@@ -2720,6 +2755,7 @@ async function connectWith(i){
       const first = !LIB.loaded; LIB.loaded = true;
       if (first) libAbsorb(true);             // whatever this event has that the list doesn't
       libPull();
+      if (SYNC.seen.cfg) libDedupe();
     }, () => {}));
 
     unsubs.push(fsMod.onSnapshot(cfgRef, d => {
@@ -2740,6 +2776,7 @@ async function connectWith(i){
       libAbsorb(true);
       libPull();
       touchSync("cfg", d);
+      libDedupe();
       if (!document.querySelector("input:focus")) render();
     }, e => reportListenerError(myGen, e)));
 
@@ -7326,12 +7363,16 @@ function handleClick(el){
     toast("Index saved \u2014 " + (Math.round(v * 10) / 10).toFixed(1)); render(); return;
   }
   if (el.id === "mecreate"){
+    /* Not before the saved list has loaded: until then nobody is "already
+       saved", and that's how a second Blake got made. */
+    if (SYNC.on && !LIB.loaded){ toast("Still loading the saved players \u2014 try again in a moment"); return; }
     const name = ((document.getElementById("mename") || {}).value || "").trim();
     const raw = ((document.getElementById("meidx") || {}).value || "").trim().replace("+", "-");
     if (!name){ toast("Type your name"); return; }
     const index = raw === "" ? 0 : parseFloat(raw);
     if (!isFinite(index) || index < -10 || index > 54){ toast("Index looks wrong"); return; }
-    const known = libPlayers().find(p => p.name.toLowerCase() === name.toLowerCase());
+    const known = libPlayers().find(p => p.name.toLowerCase() === name.toLowerCase())
+      || PLAYERS.find(p => p.name.toLowerCase() === name.toLowerCase());
     const id = known ? known.id : "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
     libSavePlayer(known ? { ...known, index: Math.round(index * 10) / 10 }
                         : { id, name, index: Math.round(index * 10) / 10, tees: {} });

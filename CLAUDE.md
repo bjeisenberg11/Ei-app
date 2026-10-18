@@ -366,6 +366,13 @@ The app covers:
     list), **your handicap index** with Save (`libSavePlayer`), the saved
     players and courses, EI admin unlock, Check for update and the build line
     (moved off the Games tab).
+  - **Same-name saved players merge** (`libDedupe`, R157): kept is the one
+    this event's field uses (else the oldest), with the newer index of the
+    pair; the others are removed from `_library` (`deleteField`) unless they're
+    in this field, and a phone's "you" pointing at one moves to the keeper. It
+    came from "Add me" being used before the list loaded, which made a second
+    Blake — so `mecreate` now refuses until `LIB.loaded`, and checks the
+    event's field names as well as the saved list.
   - **Indexes lock per game** (`g.idx`, `freezeIndexes`, R156): a handicap
     game's players' indexes are copied onto it at its **first score** (in
     `pushHole`), and `courseHcp(pid, course, g)` reads them from there
@@ -576,7 +583,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **195 passed, 0 failed**. The suite is
+Current status against `index.html`: **196 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

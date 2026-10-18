@@ -4425,6 +4425,56 @@ ta("R156 Clubhouse home; your index flows to new games and never rescores a play
   }
 });
 
+/* Reported from the phone: Blake twice on the saved list. He'd used "Add me"
+   before the saved list had loaded, so the real Blake (p1, the EI's) wasn't
+   there to be found and a second was made — and his phone pointed at the
+   copy. Same-name saved players now merge into the one the field uses, with
+   the newer index; and Add me waits for the list. */
+ta("R157 a player saved twice is merged back into one, and Add me waits for the list", async () => {
+  const w = dom.window;
+  const snap = w.eval(EVENT_STATE);
+  const lib0 = w.eval("JSON.stringify({ p: LIB.players, c: LIB.courses })");
+  try {
+    w.eval(`(function(){ const m = {}; Object.defineProperty(window, "localStorage", { value: {
+      getItem: k => k in m ? m[k] : null, setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } },
+      configurable: true }); })()`);
+    const out = JSON.parse(w.eval(`(function(){
+      YEARS = ["2026"]; liveYear = "2026"; activeYear = "2026";
+      const b = P("p1");
+      LIB.players.p1 = Object.assign(clone(b), { upd: 100 });
+      LIB.players.pdup = { id:"pdup", name: b.name, index: 11.4, tees:{}, upd: 200 };
+      LIB.players.pother = { id:"pother", name:"Somebody Else", index: 9, tees:{}, upd: 1 };
+      setMe("pdup");
+      libDedupe();
+      const same = Object.values(LIB.players).filter(p => p.name === b.name);
+      return JSON.stringify({ n: same.length, kept: same[0] && same[0].id, idx: LIB.players.p1.index,
+        field: P("p1").index, me: localStorage.getItem("ei-me"), other: !!LIB.players.pother });
+    })()`));
+    eq(out.n, 1, "the two Blakes become one:");
+    eq(out.kept, "p1", "the one the EI's field uses:");
+    eq(out.idx, 11.4, "with the newer index of the pair:");
+    eq(out.field, 11.4, "which reaches the field too:");
+    eq(out.me, "p1", "and the phone's 'you' moves to him:");
+    ok(out.other, "nobody with a different name is touched:");
+
+    /* Add me before the list has loaded is refused rather than guessing */
+    const early = JSON.parse(w.eval(`(function(){
+      const was = { on: SYNC.on, loaded: LIB.loaded }; const n = Object.keys(LIB.players).length;
+      SYNC.on = true; LIB.loaded = false; meEdit = true; view.tab = "settings"; render();
+      document.getElementById("mename").value = "Zed Early"; document.getElementById("meidx").value = "10";
+      handleClick({ id:"mecreate", dataset:{} });
+      const after = Object.keys(LIB.players).length;
+      SYNC.on = was.on; LIB.loaded = was.loaded; meEdit = false;
+      return JSON.stringify({ n, after });
+    })()`));
+    eq(early.after, early.n, "Add me before the saved list has loaded makes nobody:");
+  } finally {
+    try { w.eval(`delete window.localStorage`); } catch(e){}
+    w.eval(`(function(){ const o = JSON.parse(${JSON.stringify(lib0)}); LIB.players = o.p; LIB.courses = o.c; })()`);
+    restoreEvents(w, snap);
+  }
+});
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
