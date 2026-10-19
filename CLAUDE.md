@@ -362,11 +362,11 @@ The app covers:
     level, and the EI square (`#toclub`) goes home too. On the Clubhouse and
     settings `body.clubmode` hides the event tabs. Share a link and (admin)
     "Make this the one everyone opens" sit at the foot of an event's Games tab.
-  - **Where it opens** (`maybeLandInEvent`, once, on the first games to
-    arrive): into the event if it came from a `?e=` link, if one of its games
-    is under way, or if it's a single game dated today — never on day names
-    alone (an EI's days are "Thursday"…"Sunday", half of every week), and never
-    once the user has tapped (`userMoved`).
+  - **Where it opens**: **always the Clubhouse** (R160). `maybeLandInEvent`
+    goes into the event only when the page came from a shared `?e=` link,
+    and never once the user has tapped (`userMoved`). It used to land in an
+    event with a game under way or a single game dated today; the morning
+    after the EI that put everyone back inside a finished weekend.
   - **You & settings** (`view.tab = "settings"`, `renderSettings`): who this
     phone is (`meId()`, `localStorage["ei-me"]`, checked against the saved
     list), **your handicap index** with Save (`libSavePlayer`), the saved

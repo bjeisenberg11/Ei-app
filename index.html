@@ -2237,7 +2237,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-19.0045";
+const BUILD = "2026-10-19.1245";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3523,26 +3523,21 @@ function pushConfig(){
 /* ============================================================
    VIEW STATE
    ============================================================ */
-/* The app opens on the Clubhouse; maybeLandInEvent takes it straight into
-   the event when that's plainly where you're going. */
+/* The app always opens on the Clubhouse (Blake, R160). The one exception is
+   a shared link (?e=…): whoever taps "here's the game" means that game.
+   It used to land in the event whenever a game was under way, or a single
+   game was set for today — which, the morning after the EI, put everyone
+   back inside a finished weekend that still had an unfinished game in it. */
 let view = { tab:"club", gameId:null, hole:0 };
 let userMoved = false, landed = false;
-/* Once, on the first games to arrive: into the event if it was opened from a
-   shared link, if one of its games is under way, or if it's a single game
-   set for today. Not on the day names alone — an EI's days are just
-   "Thursday" to "Sunday", and that's half of every week. Never once someone
-   has tapped somewhere. */
+/* Once, on the first games to arrive. Never once someone has tapped. */
 function maybeLandInEvent(){
   if (landed) return;
   landed = true;
   if (userMoved || view.tab !== "club") return;
   let fromUrl = null;
   try { fromUrl = new URLSearchParams(location.search).get("e"); } catch(e){}
-  const today = isoDate(new Date());
-  const on = (fromUrl && fromUrl === activeYear)
-    || GAMES.some(g => holesPlayed(g) > 0 && !gameResult(g))
-    || (eventKind() === "game" && ROUNDS().some(r => r.date === today));
-  if (on){ view.tab = "home"; render(); }
+  if (fromUrl && fromUrl === activeYear){ view.tab = "home"; render(); }
 }
 let showStrokes = false;
 let editCourseId = (COURSES[0] || NO_COURSE).id;

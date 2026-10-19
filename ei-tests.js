@@ -4402,7 +4402,7 @@ ta("R156 Clubhouse home; your index flows to new games and never rescores a play
     w.eval(`handleClick({ id:"toclub", dataset:{} })`);
     eq(w.eval("view.tab"), "club", "the EI square goes back to the Clubhouse too:");
 
-    /* 5. landing: into the event only when something's under way */
+    /* 5. landing: always the Clubhouse, even with a game under way (R160) */
     const land = JSON.parse(w.eval(`(function(){
       const r = ROUNDS()[0];
       landed = false; userMoved = false; view.tab = "club";
@@ -4416,8 +4416,11 @@ ta("R156 Clubhouse home; your index flows to new games and never rescores a play
       return JSON.stringify({ idle, busy, touched });
     })()`));
     eq(land.idle, "club", "nothing under way: the app opens on the Clubhouse:");
-    eq(land.busy, "home", "a game under way: straight into the event:");
-    eq(land.touched, "club", "but never once you've tapped somewhere yourself:");
+    eq(land.busy, "club", "R160 a game under way still opens on the Clubhouse:");
+    eq(land.touched, "club", "and never once you've tapped somewhere yourself:");
+    const landFn = w.eval("maybeLandInEvent.toString()");
+    ok(/fromUrl === activeYear/.test(landFn) && !/GAMES|ROUNDS/.test(landFn),
+       "R160 only a shared ?e= link goes straight into an event:");
   } finally {
     try { w.eval(`delete window.localStorage`); } catch(e){}
     w.eval(`(function(){ const o = JSON.parse(${JSON.stringify(lib0)}); LIB.players = o.p; LIB.courses = o.c; })()`);
