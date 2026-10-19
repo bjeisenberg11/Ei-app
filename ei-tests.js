@@ -4515,6 +4515,19 @@ t("R158 adding to the saved list never sends an empty map that would wipe the ot
      "the list refills from the field on every snapshot, not just the first:");
 }));
 
+/* Reported from the phone ("Nav bar", screenshot of a single game's round
+   editor): Done/Cancel was pinned 58px up, the tab bar is shorter than that,
+   and the "+ game" buttons showed through the strip between them. The date
+   box also ran past the card, iOS giving a date input its own width. */
+t("R159 Done/Cancel sits on the measured tab bar, and the date box fits the card", () => {
+  ok(/\.stick\{[^}]*bottom:var\(--tabh/.test(html), "the pinned bar's bottom is the measured tab height:");
+  ok(!/\.stick\{[^}]*bottom:calc\(58px/.test(html), "not the old guessed 58px:");
+  ok(/toggle\("clubmode"[^\n]*\n\s*fitTabs\(\);/.test(html), "measured on every render, after the tabs show or hide:");
+  ok(/input\[type=date\]\.timein\{[^}]*width:100%[^}]*min-width:0/.test(html), "the date input is held to the card's width:");
+  const v = dom.window.document.documentElement.style.getPropertyValue("--tabh");
+  ok(/px$/.test(v), "and --tabh is set once the page has drawn: " + v);
+});
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

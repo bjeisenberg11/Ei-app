@@ -589,7 +589,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **197 passed, 0 failed**. The suite is
+Current status against `index.html`: **198 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 
@@ -737,6 +737,11 @@ Three things in the view layer are deliberate and will look like mistakes:
   the iPhone wheel, every minute, and its value is already the `"HH:MM"` the
   schedule stores. The field does **not** re-render while it's being used —
   redrawing mid-spin shuts the wheel.
+- **The pinned Done/Cancel bar (`.stick`) sits on `--tabh`**, the tab bar's
+  height as measured by `fitTabs()` on every render and resize (R159). A guessed
+  58px left a strip on an iPhone that the "+ game" buttons scrolled through.
+  A date input is held to `width:100%; min-width:0`, since iOS gives it a width
+  of its own that ran past the card.
 - **Long screens are collapsible sections** (`panel()`, `openPanel`), one open
   at a time per screen. The Field tab was 66 input fields on one scroll. Tests
   that need a control inside one call `openSection("f:card")` first.

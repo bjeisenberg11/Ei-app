@@ -604,6 +604,11 @@ select.tee:focus{outline:none;border-color:var(--brass)}
 input.timein{flex:1;background:var(--paper-2);border:1.5px solid var(--rule);
   color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:17px;
   padding:11px 10px;border-radius:0;min-height:46px}
+/* iOS gives a date input a fixed width of its own, wider than a phone's card,
+   so the single game's Date box ran out past the border. */
+input[type=date].timein{display:block;width:100%;min-width:0;box-sizing:border-box;
+  -webkit-appearance:none;appearance:none;text-align:left}
+input[type=date].timein::-webkit-date-and-time-value{text-align:left}
 input.timein:focus{outline:none;border-color:var(--brass);background:var(--paper)}
 td.ch{font-weight:600;font-size:15px}
 table.ftbl th:nth-child(n+2),table.ttbl th:nth-child(n+2){text-align:right}
@@ -863,7 +868,10 @@ table.pm .tot{background:var(--paper-3);font-weight:600}
 .pnl-b .imp{border:none;padding:0;background:none}
 
 /* editor actions, pinned so Done is never a scroll away */
-.stick{position:sticky;bottom:calc(58px + env(safe-area-inset-bottom));z-index:30;
+/* bottom is the tab bar's measured height (--tabh, set by fitTabs). A guessed
+   58px left a strip between Done and the tabs on an iPhone, and the "+ game"
+   buttons scrolled through it, looking like they'd fallen under the nav bar. */
+.stick{position:sticky;bottom:var(--tabh, calc(41px + env(safe-area-inset-bottom)));z-index:30;
   background:var(--paper);padding:10px 0 6px;margin-top:16px;
   border-top:1.5px solid var(--ink)}
 
@@ -2229,7 +2237,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-18.2350";
+const BUILD = "2026-10-19.0045";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -3718,6 +3726,16 @@ async function applyUpdate(){
 }
 
 /* ---------- render router ---------- */
+/* The pinned Done/Cancel bar sits directly on the tab bar, whose height is
+   the phone's (safe-area inset) plus the buttons — so it's measured, not
+   guessed. Hidden tabs (Clubhouse) measure 0 and the bar drops to the floor. */
+function fitTabs(){
+  const tabs = document.querySelector(".tabs");
+  const h = tabs ? tabs.offsetHeight : 0;
+  document.documentElement.style.setProperty("--tabh", h + "px");
+}
+window.addEventListener("resize", fitTabs);
+
 function render(){
   captureRows();            // before the DOM goes
   const inGame = !!view.gameId;
@@ -3727,6 +3745,7 @@ function render(){
   const inClub = !inGame && !editEvent && (view.tab === "club" || view.tab === "events");
   const inSettings = !inGame && !editEvent && view.tab === "settings";
   document.body.classList.toggle("clubmode", inClub || inSettings);
+  fitTabs();
   const back = $("#back");
   back.style.display = inClub ? "none" : "block";
   back.textContent = inGame || editEvent ? "Back" : "\u2039 Clubhouse";
