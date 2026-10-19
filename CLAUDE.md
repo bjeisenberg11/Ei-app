@@ -315,9 +315,15 @@ The app covers:
       arrived, so it showed Blake 8.2, Jake 3.1 and so on. `libAbsorb`, `libPull`,
       `libDedupe`, `libSavePlayer`'s field write, `freezeIndexes` and
       `pushConfig` all check it. `libRepairDemo` puts real players back over
-      demo copies (`looksDemo`: identical to `DEMO_PLAYERS`, no `upd`) and
+      demo copies and
       drops the invented demo courses; `freezeIndexes` re-locks a game whose
       `idx` is all demo values when the field disagrees.
+      `looksDemo` judges by **name and index** (`demoIndexFor`), saved before
+      `DEMO_FIXED_AT`: matching on id and an untouched copy fixed two of eight,
+      since the other six had been re-saved — stamped, or under an id the EI
+      doesn't use — still carrying the demo number. The EI's man of that name
+      replaces the copy (under the EI's id; the stray id is deleted and "me"
+      follows), and `libPull` never brings a demo copy into a field.
   - **New trips and games start with an empty field.** Outside the EI the
     course picker and the roster editor list saved courses and players after
     the event's own; picking one brings it in (`fieldAddCourse`,

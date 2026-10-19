@@ -4560,12 +4560,19 @@ t("R161 nothing takes the demo field for real players, and the demo copies are r
     PLAYERS.forEach(p => { p.index = +(p.index + 1.3).toFixed(1); p.tees = { tib: "Gold" }; });
     cfgFor = "2026"; snapField();
     DEMO_PLAYERS.forEach(p => LIB.players[p.id] = clone(p));
+    /* as found on the phone: some copies re-saved with a stamp, one under an id the EI doesn't use */
+    LIB.players.p2.upd = Date.UTC(2026, 9, 19, 12);
+    delete LIB.players.p3; LIB.players.zz = { ...clone(DEMO_PLAYERS.find(p => p.id === "p3")), id:"zz", upd: 5 };
+    const pulledBefore = PLAYERS.find(p => p.id === "p2").index;
+    libPull();
+    const pulled = PLAYERS.find(p => p.id === "p2").index;
     const pine = COURSES.findIndex(c => c.id === "pine");
     DEMO_COURSES.forEach(c => LIB.courses[c.id] = clone(c));
     if (pine >= 0) COURSES.splice(pine, 1);
     sets.length = 0; upds.length = 0;
     libRepairDemo();
     const blake = LIB.players.p1, sent = sets[0] && sets[0].d.players || {};
+    const dan = LIB.players.p2.index, jason = LIB.players.p3 && LIB.players.p3.index, zz = !!LIB.players.zz;
     const del = upds.map(u => Object.keys(u.d).join()).join("|");
     /* 3. a game locked off the demo indexes is locked again off the field */
     g.idx = { p1: 8.2, p2: 14.1, p3: 5.0, p4: 21.3 };
@@ -4578,12 +4585,16 @@ t("R161 nothing takes the demo field for real players, and the demo copies are r
     PLAYERS.length = 0; keep.pl.forEach(p => PLAYERS.push(p)); COURSES.length = 0; keep.co.forEach(c => COURSES.push(c));
     GAMES = keep.games; cfgDirty = false; snapField();
     return JSON.stringify({ early, blake: blake.index, sentKeys: Object.keys(sent).length,
+      dan, danWas: DEMO_PLAYERS.find(p => p.id === "p2").index, jason, zz, pulled, pulledBefore,
       del, relocked, realKept: real.idx.p1 });
   })()`));
   eq(out.early.sets + out.early.upds, 0, "before the event's own field loads, nothing is written anywhere:");
   ok(!out.early.froze && !out.early.idx, "no game locks the demo indexes:");
   eq(out.blake, 9.5, "a demo copy on the saved list is replaced by the event's real player:");
   eq(out.sentKeys, 8, "all eight go back up:");
+  eq(out.dan, +(out.danWas + 1.3).toFixed(1), "a demo copy re-saved with a timestamp is still repaired:");
+  ok(out.jason > 0 && !out.zz, "one saved under an id the EI doesn't use is replaced by the EI's man, matched by name:");
+  eq(out.pulled, out.pulledBefore, "and a stamped demo copy is never pulled into the event's field:");
   ok(/courses\.pine/.test(out.del), "an invented demo course the event doesn't use comes off the list: " + out.del);
   eq(out.relocked, 9.5, "a game locked on the demo indexes is locked again on the real ones:");
   eq(out.realKept, 7, "a game locked on real indexes is never touched:");

@@ -1013,11 +1013,19 @@ const P = id => PLAYERS.find(p => p.id === id);
    the saved list can be told apart from real players (looksDemo, R161). */
 const DEMO_PLAYERS = JSON.parse(JSON.stringify(PLAYERS));
 const DEMO_COURSES = JSON.parse(JSON.stringify(COURSES));
-const looksDemo = p => {
-  const d = p && DEMO_PLAYERS.find(x => x.id === p.id);
-  return !!d && !p.upd && p.name === d.name && +p.index === +d.index
-    && JSON.stringify(p.tees || {}) === JSON.stringify(d.tees || {});
+/* Judged by NAME and index, not id or anything else on the entry: the first
+   repair matched on id and an untouched copy, and fixed Adam and Luke but left
+   six — those had been re-saved (an id the EI doesn't use, or a timestamp)
+   while still carrying the demo number. Anyone saved before this repair with
+   exactly the demo index for his name is a leaked copy. After it, a man may
+   genuinely set that number himself, so a later save is believed. */
+const DEMO_FIXED_AT = Date.UTC(2026, 9, 19, 19, 0);       // 2pm Chicago, 19 Oct
+const demoIndexFor = name => {
+  const d = DEMO_PLAYERS.find(x => x.name === name);
+  return d ? +d.index : null;
 };
+const looksDemo = p => !!p && !!p.name && demoIndexFor(p.name) !== null
+  && +p.index === demoIndexFor(p.name) && !((+p.upd || 0) >= DEMO_FIXED_AT);
 
 /* ---------- games ---------- */
 function blankHole(){
@@ -2246,7 +2254,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-19.1300";
+const BUILD = "2026-10-19.1310";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2343,13 +2351,24 @@ function libAbsorb(onlyMissing){
 function libRepairDemo(){
   if (isArchive() || staleDevice || !fieldReady() || (SYNC.on && !LIB.loaded)) return;
   const add = { players:{}, courses:{} }; let n = 0;
+  const gone = [];
+  let me = null; try { me = localStorage.getItem("ei-me"); } catch(e){}
   Object.values(LIB.players).forEach(l => {
     if (!looksDemo(l)) return;
-    const f = P(l.id);
+    /* this event's real man of that name — by name, since the ids needn't agree */
+    const f = PLAYERS.find(p => p && p.name === l.name);
     if (!f || looksDemo(f)) return;
-    add.players[l.id] = clone(f); LIB.players[l.id] = clone(f); n++;
+    add.players[f.id] = clone(f); LIB.players[f.id] = clone(f); n++;
+    if (l.id !== f.id){
+      delete LIB.players[l.id]; gone.push(l.id);
+      if (me === l.id) setMe(f.id);
+    }
   });
   if (n) libWrite(add);
+  if (gone.length && SYNC.on && SYNC.api && SYNC.api.deleteField){
+    const upd = {}; gone.forEach(id => { upd["players." + id] = SYNC.api.deleteField(); });
+    SYNC.api.updateDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"), upd).catch(() => {});
+  }
   const drop = DEMO_COURSES.filter(d => {
     const l = LIB.courses[d.id];
     return l && !l.upd && JSON.stringify(l) === JSON.stringify(d) && !COURSES.some(c => c.id === d.id);
@@ -2399,6 +2418,7 @@ function libPull(){
   let n = 0;
   PLAYERS.forEach((p, i) => {
     const l = LIB.players[p && p.id];
+    if (looksDemo(l) && !looksDemo(p)) return;      // a leaked demo copy, however new its stamp (R161)
     if (l && (+l.upd || 0) > (+p.upd || 0)){ PLAYERS[i] = clone(l); n++; }
   });
   COURSES.forEach((c, i) => {
@@ -3434,8 +3454,7 @@ function freezeIndexes(g){
      demo one, and the field saying otherwise. Lock it again off the field. */
   if (g.idx){
     const ids = Object.keys(g.idx);
-    const demo = ids.length && ids.every(id => { const d = DEMO_PLAYERS.find(x => x.id === id);
-      return d && +d.index === +g.idx[id]; });
+    const demo = ids.length && ids.every(id => P(id) && demoIndexFor(P(id).name) === +g.idx[id]);
     const differs = ids.some(id => P(id) && !looksDemo(P(id)) && +P(id).index !== +g.idx[id]);
     if (!(demo && differs)) return false;
     delete g.idx;
