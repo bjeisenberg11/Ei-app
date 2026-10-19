@@ -308,6 +308,16 @@ The app covers:
       Every write goes through `libWrite`, which drops an empty half, and the
       listener runs `libAbsorb(true)` on **every** snapshot so a list that
       lost entries refills from whichever event's field is open.
+    - **Nothing reads the field as this event's until its config has loaded**
+      (`fieldReady()`, `cfgFor`, R161). Until then `PLAYERS`/`COURSES` are the
+      demo field (on open) or the last event's (after `switchYear`). The saved
+      list once filled itself from the demo players a moment before the EI
+      arrived, so it showed Blake 8.2, Jake 3.1 and so on. `libAbsorb`, `libPull`,
+      `libDedupe`, `libSavePlayer`'s field write, `freezeIndexes` and
+      `pushConfig` all check it. `libRepairDemo` puts real players back over
+      demo copies (`looksDemo`: identical to `DEMO_PLAYERS`, no `upd`) and
+      drops the invented demo courses; `freezeIndexes` re-locks a game whose
+      `idx` is all demo values when the field disagrees.
   - **New trips and games start with an empty field.** Outside the EI the
     course picker and the roster editor list saved courses and players after
     the event's own; picking one brings it in (`fieldAddCourse`,
@@ -589,7 +599,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **198 passed, 0 failed**. The suite is
+Current status against `index.html`: **199 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

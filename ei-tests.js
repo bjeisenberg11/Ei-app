@@ -4531,6 +4531,64 @@ t("R159 Done/Cancel sits on the measured tab bar, and the date box fits the card
   ok(/px$/.test(v), "and --tabh is set once the page has drawn: " + v);
 });
 
+/* Reported from the phone: the saved list showed Blake 8.2, Jake 3.1, Adam
+   19.2 — the demo players the page ships with. The list filled itself from
+   PLAYERS a moment before the EI's config had replaced them. Nothing that reads
+   the field as "this event's" may run until it has (fieldReady), and the demo
+   copies that got in are recognised and put right. */
+t("R161 nothing takes the demo field for real players, and the demo copies are repaired", () => isolate(() => {
+  const w = dom.window;
+  const out = JSON.parse(w.eval(`(function(){
+    const keep = { on: SYNC.on, api: SYNC.api, db: SYNC.db, ay: activeYear, cf: cfgFor,
+      lp: LIB.players, lc: LIB.courses, ll: LIB.loaded, pl: clone(PLAYERS), co: clone(COURSES),
+      games: GAMES, seen: SYNC.seen.games };
+    const sets = [], upds = [];
+    SYNC.on = true; SYNC.db = {}; SYNC.seen.games = true;
+    SYNC.api = { doc: (...a) => a.slice(1).join("/"), deleteField: () => "DEL",
+      setDoc: (r, d) => { sets.push({ r, d: JSON.parse(JSON.stringify(d)) }); return Promise.resolve(); },
+      updateDoc: (r, d) => { upds.push({ r, d: JSON.parse(JSON.stringify(d)) }); return Promise.resolve(); } };
+    activeYear = "2026"; cfgFor = null; LIB.loaded = true;
+    LIB.players = {}; LIB.courses = {};
+    PLAYERS.length = 0; DEMO_PLAYERS.forEach(p => PLAYERS.push(clone(p)));
+    /* 1. before the EI has loaded: the demo field is in memory, nothing may use it */
+    libAbsorb(true); libRepairDemo(); libDedupe();
+    const g = { id:"gd", roundId:"x", type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles() };
+    const froze = freezeIndexes(g);
+    cfgDirty = true; pushConfig();
+    const early = { sets: sets.length, upds: upds.length, froze, idx: !!g.idx, dirty: cfgDirty };
+    /* 2. the EI arrives: real players under the same ids */
+    PLAYERS.forEach(p => { p.index = +(p.index + 1.3).toFixed(1); p.tees = { tib: "Gold" }; });
+    cfgFor = "2026"; snapField();
+    DEMO_PLAYERS.forEach(p => LIB.players[p.id] = clone(p));
+    const pine = COURSES.findIndex(c => c.id === "pine");
+    DEMO_COURSES.forEach(c => LIB.courses[c.id] = clone(c));
+    if (pine >= 0) COURSES.splice(pine, 1);
+    sets.length = 0; upds.length = 0;
+    libRepairDemo();
+    const blake = LIB.players.p1, sent = sets[0] && sets[0].d.players || {};
+    const del = upds.map(u => Object.keys(u.d).join()).join("|");
+    /* 3. a game locked off the demo indexes is locked again off the field */
+    g.idx = { p1: 8.2, p2: 14.1, p3: 5.0, p4: 21.3 };
+    freezeIndexes(g);
+    const relocked = g.idx && g.idx.p1;
+    const real = { id:"gr", roundId:"x", type:"BESTBALL", teams:{0:["p1","p2"],1:["p3","p4"]}, holes: blankHoles(), idx:{ p1: 7, p2: 7, p3: 7, p4: 7 } };
+    freezeIndexes(real);
+    Object.assign(SYNC, { on: keep.on, api: keep.api, db: keep.db }); SYNC.seen.games = keep.seen;
+    activeYear = keep.ay; cfgFor = keep.cf; LIB.players = keep.lp; LIB.courses = keep.lc; LIB.loaded = keep.ll;
+    PLAYERS.length = 0; keep.pl.forEach(p => PLAYERS.push(p)); COURSES.length = 0; keep.co.forEach(c => COURSES.push(c));
+    GAMES = keep.games; cfgDirty = false; snapField();
+    return JSON.stringify({ early, blake: blake.index, sentKeys: Object.keys(sent).length,
+      del, relocked, realKept: real.idx.p1 });
+  })()`));
+  eq(out.early.sets + out.early.upds, 0, "before the event's own field loads, nothing is written anywhere:");
+  ok(!out.early.froze && !out.early.idx, "no game locks the demo indexes:");
+  eq(out.blake, 9.5, "a demo copy on the saved list is replaced by the event's real player:");
+  eq(out.sentKeys, 8, "all eight go back up:");
+  ok(/courses\.pine/.test(out.del), "an invented demo course the event doesn't use comes off the list: " + out.del);
+  eq(out.relocked, 9.5, "a game locked on the demo indexes is locked again on the real ones:");
+  eq(out.realKept, 7, "a game locked on real indexes is never touched:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);

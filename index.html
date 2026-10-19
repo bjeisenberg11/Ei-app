@@ -1009,6 +1009,15 @@ const PLAYERS = [
     tees:{pine:"Blue",  marsh:"Blue",  stone:"Members"}}
 ];
 const P = id => PLAYERS.find(p => p.id === id);
+/* The demo field above, as it ships. Kept so the copies of it that leaked into
+   the saved list can be told apart from real players (looksDemo, R161). */
+const DEMO_PLAYERS = JSON.parse(JSON.stringify(PLAYERS));
+const DEMO_COURSES = JSON.parse(JSON.stringify(COURSES));
+const looksDemo = p => {
+  const d = p && DEMO_PLAYERS.find(x => x.id === p.id);
+  return !!d && !p.upd && p.name === d.name && +p.index === +d.index
+    && JSON.stringify(p.tees || {}) === JSON.stringify(d.tees || {});
+};
 
 /* ---------- games ---------- */
 function blankHole(){
@@ -2237,7 +2246,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-19.1245";
+const BUILD = "2026-10-19.1300";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2308,7 +2317,7 @@ function libWrite(add){
    (pushConfig) sends what changed. Never before the library has been read —
    until then everything looks missing. Never from an archived year. */
 function libAbsorb(onlyMissing){
-  if (isArchive()) return;
+  if (isArchive() || !fieldReady()) return;
   if (SYNC.on && !LIB.loaded) return;
   const add = { players:{}, courses:{} };
   let n = 0;
@@ -2326,6 +2335,33 @@ function libAbsorb(onlyMissing){
   });
   if (n) libWrite(add);
 }
+/* Put back the saved entries that are the demo field rather than real people
+   (R161). A demo copy is a saved player identical to the one the app ships
+   with, never edited (no upd); if this event's field has a real one under the
+   same id, that goes in its place. Demo courses — invented ones, Pine and the
+   rest — come off the list unless this event actually uses them. */
+function libRepairDemo(){
+  if (isArchive() || staleDevice || !fieldReady() || (SYNC.on && !LIB.loaded)) return;
+  const add = { players:{}, courses:{} }; let n = 0;
+  Object.values(LIB.players).forEach(l => {
+    if (!looksDemo(l)) return;
+    const f = P(l.id);
+    if (!f || looksDemo(f)) return;
+    add.players[l.id] = clone(f); LIB.players[l.id] = clone(f); n++;
+  });
+  if (n) libWrite(add);
+  const drop = DEMO_COURSES.filter(d => {
+    const l = LIB.courses[d.id];
+    return l && !l.upd && JSON.stringify(l) === JSON.stringify(d) && !COURSES.some(c => c.id === d.id);
+  }).map(d => d.id);
+  drop.forEach(id => delete LIB.courses[id]);
+  if (drop.length && SYNC.on && SYNC.api && SYNC.api.deleteField){
+    const upd = {}; drop.forEach(id => { upd["courses." + id] = SYNC.api.deleteField(); });
+    SYNC.api.updateDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"), upd).catch(() => {});
+  }
+  if (n || drop.length) render();
+}
+
 /* Which of this event's players and courses were edited HERE, rather than
    arriving from the saved list: fieldBase is the field as it stood when it was
    loaded or last sent. Only those go up to the list (libPushEdits), stamped
@@ -2358,7 +2394,7 @@ function libPushEdits(){
    edit is waiting to go up, which is newer still. Games are unaffected:
    their indexes are locked (freezeIndexes). */
 function libPull(){
-  if (isArchive() || cfgDirty) return;
+  if (isArchive() || cfgDirty || !fieldReady()) return;
   if (SYNC.on && (!LIB.loaded || !SYNC.seen.games)) return;
   let n = 0;
   PLAYERS.forEach((p, i) => {
@@ -2379,7 +2415,7 @@ function libPull(){
    pair, point this phone's "you" at it, and take the other off the list. Only
    ever an exact name match, and never one that's in this event's field. */
 function libDedupe(){
-  if (isArchive() || staleDevice || (SYNC.on && !LIB.loaded)) return;
+  if (isArchive() || staleDevice || !fieldReady() || (SYNC.on && !LIB.loaded)) return;
   const byName = {};
   Object.values(LIB.players).forEach(p => {
     if (!p || !p.id || !p.name) return;
@@ -2416,7 +2452,7 @@ function libSavePlayer(p){
     SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"),
                     { players: { [p.id]: p } }, { merge: true }).catch(() => {});
   const here = PLAYERS.findIndex(x => x.id === p.id);
-  if (here >= 0 && !isArchive()){ PLAYERS[here] = clone(p); snapField(); queueConfig(); }
+  if (here >= 0 && !isArchive() && fieldReady()){ PLAYERS[here] = clone(p); snapField(); queueConfig(); }
 }
 
 /* Bring a saved player or course into this event's field. */
@@ -2773,9 +2809,11 @@ async function connectWith(i){
       const v = d.data() || {};
       LIB.players = v.players || {}; LIB.courses = v.courses || {};
       LIB.loaded = true;
+      libRepairDemo();
       /* Every time, not just the first: missing-only never overwrites, and it's
          what puts the list back together from the field if it has lost
-         anyone — which it did, once (libWrite). */
+         anyone — which it did, once (libWrite). Only once the event's own
+         field is in (fieldReady) — before that it's the demo field. */
       libAbsorb(true);
       libPull();
       if (SYNC.seen.cfg) libDedupe();
@@ -2794,10 +2832,13 @@ async function connectWith(i){
       if (v.schedule) { SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push(x)); }
       if (v.days && v.days.length) { DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
       EVENT_META = { kind: v.kind || (isEI() ? "ei" : "trip"), name: v.name || "" };
+      cfgFor = activeYear;
       migrateLoaded();
       snapField();
+      libRepairDemo();
       libAbsorb(true);
       libPull();
+      freezePlayed();
       touchSync("cfg", d);
       libDedupe();
       if (!document.querySelector("input:focus")) render();
@@ -2984,6 +3025,7 @@ async function switchYear(y, preload){
      set it would make this phone ignore the next event's config as it arrives. */
   if (cfgDirty){ clearTimeout(cfgTimer); pushConfig(); cfgDirty = false; }
   activeYear = y;
+  cfgFor = null;                 // the field in memory is still the last event's
   try { localStorage.setItem("ei-year", y); } catch(e){}
   GAMES = []; SCHEDULE = [];
   /* A brand-new event's config is already in hand, so the screen can show it
@@ -3153,6 +3195,7 @@ function loadConfigLocally(v){
   if (v.courses){ COURSES.length = 0; v.courses.forEach(x => COURSES.push(JSON.parse(JSON.stringify(x)))); }
   if (v.schedule){ SCHEDULE.length = 0; v.schedule.forEach(x => SCHEDULE.push({ ...x })); }
   if (v.days && v.days.length){ DAYS.length = 0; v.days.forEach(x => DAYS.push(x)); }
+  cfgFor = activeYear;
   snapField();
 }
 
@@ -3386,7 +3429,17 @@ window.addEventListener("online", flushQueue);
    score, and on load for any game that was scored before locking existed —
    the 2026 EI was played on the indexes it has now, so that's what it keeps. */
 function freezeIndexes(g){
-  if (!g || g.idx || !usesHcp(g) || isArchive() || staleDevice) return false;
+  if (!g || !usesHcp(g) || isArchive() || staleDevice || !fieldReady()) return false;
+  /* Locked off the demo field in the same race (R161): every man's index the
+     demo one, and the field saying otherwise. Lock it again off the field. */
+  if (g.idx){
+    const ids = Object.keys(g.idx);
+    const demo = ids.length && ids.every(id => { const d = DEMO_PLAYERS.find(x => x.id === id);
+      return d && +d.index === +g.idx[id]; });
+    const differs = ids.some(id => P(id) && !looksDemo(P(id)) && +P(id).index !== +g.idx[id]);
+    if (!(demo && differs)) return false;
+    delete g.idx;
+  }
   const idx = {};
   rosterOf(g).forEach(id => { const p = P(id); if (p) idx[id] = +p.index || 0; });
   if (!Object.keys(idx).length) return false;
@@ -3501,6 +3554,9 @@ async function resetTournament(){
 let cfgRetry = false;
 function pushConfig(){
   if (staleDevice || isArchive()){ cfgDirty = false; return; }      // never write from an old build
+  /* Never over an event whose own field hasn't loaded: what's in memory is
+     the demo field or another event's. */
+  if (!fieldReady()){ cfgDirty = false; return; }
   libPushEdits();                    // an edit here is an edit to the saved list too
   if (!SYNC.on || !SYNC.api){ cfgDirty = false; return; }
   const { doc, setDoc } = SYNC.api;
@@ -3619,6 +3675,13 @@ let cfgTimer = null;
    While it's set, incoming server snapshots are ignored for config — ours is
    newer, and letting the old copy land was wiping freshly imported rounds. */
 let cfgDirty = false;
+/* Which event's players and courses are in PLAYERS/COURSES right now. Until
+   the event's config has arrived they're the demo field (on open) or the last
+   event's (after a switch), and nothing may treat them as this event's: the
+   saved list took the demo players as real once — Blake 8.2, Jake 3.1 — because
+   it filled itself a moment before the EI had loaded (R161). */
+let cfgFor = null;
+const fieldReady = () => !SYNC.on || cfgFor === activeYear;
 function queueConfig(){
   cfgDirty = true;
   clearTimeout(cfgTimer);
