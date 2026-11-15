@@ -4600,6 +4600,95 @@ t("R161 nothing takes the demo field for real players, and the demo copies are r
   eq(out.realKept, 7, "a game locked on real indexes is never touched:");
 }));
 
+/* Asked for from the phone: add and remove saved players and courses on the
+   settings screen, with no admin code. The list refills itself from whatever
+   event's field is open, so a removal has to be recorded or the next snapshot
+   puts the man straight back — and removing must never touch an event's own
+   field, where his games and record live. */
+t("R162 settings adds and removes saved players and courses, no admin, and a removal sticks", () => isolate(() => {
+  const w = dom.window;
+  const oldConfirm = w.confirm; w.confirm = () => true;
+  let out;
+  try {
+  out = JSON.parse(w.eval(`(function(){
+    const keep = { on: SYNC.on, api: SYNC.api, db: SYNC.db, lp: LIB.players, lc: LIB.courses,
+      rm: LIB.removed, loaded: LIB.loaded, admin: isAdmin, tab: view.tab };
+    const sent = [];
+    const DEL = { del: true };
+    SYNC.on = true; SYNC.db = {}; LIB.loaded = true; isAdmin = false;
+    SYNC.api = { doc: (...a) => a.slice(1).join("/"), deleteField: () => DEL,
+      setDoc: (ref, data) => { sent.push({ ref, data }); return Promise.resolve(); } };
+    LIB.players = {}; PLAYERS.forEach(p => LIB.players[p.id] = clone(p));
+    LIB.courses = {}; COURSES.forEach(c => LIB.courses[c.id] = clone(c));
+    LIB.removed = { players:{}, courses:{} };
+    const openS = name => { openPanel.s = name; render(); };
+    try {
+    const fieldP = PLAYERS.length, fieldC = COURSES.length;
+    view.tab = "settings"; openS("players");
+    const html = document.getElementById("app").innerHTML;
+    const p = PLAYERS[1], c = COURSES[0];
+    const offeredP = html.includes('data-libdelp="' + p.id + '"') && !!document.getElementById("libaddp");
+    openS("courses");
+    const html2 = document.getElementById("app").innerHTML;
+    const offered = offeredP && html2.includes('data-libdelc="' + c.id + '"') && !!document.getElementById("libcrscheck");
+    openS("players");
+
+    /* remove: off the list, recorded, field untouched, and the refill skips him */
+    handleClick({ dataset:{ libdelp: p.id } });
+    handleClick({ dataset:{ libdelc: c.id } });
+    const write = sent.find(x => x.data.players && x.data.players[p.id] === DEL);
+    const recorded = !!(write && write.data.removed && write.data.removed.players[p.id]);
+    libAbsorb(true);
+    snapField(); P(p.id).index = P(p.id).index + 1; libPushEdits(); P(p.id).index = P(p.id).index - 1;
+    const stayedOff = !LIB.players[p.id] && !LIB.courses[c.id];
+    const fieldKept = PLAYERS.length === fieldP && COURSES.length === fieldC && !!P(p.id);
+
+    /* add a new player, a duplicate, and him again — he comes back as himself */
+    document.getElementById("libpname").value = "Zed Settings"; document.getElementById("libpidx").value = "12.4";
+    handleClick({ id:"libaddp", dataset:{} });
+    const zed = Object.values(LIB.players).find(x => x.name === "Zed Settings");
+    const n = Object.keys(LIB.players).length;
+    document.getElementById("libpname").value = "zed settings"; document.getElementById("libpidx").value = "3";
+    handleClick({ id:"libaddp", dataset:{} });
+    const noDup = Object.keys(LIB.players).length === n;
+    document.getElementById("libpname").value = p.name; document.getElementById("libpidx").value = "9";
+    handleClick({ id:"libaddp", dataset:{} });
+    const back = !!LIB.players[p.id] && !LIB.removed.players[p.id];
+
+    /* add a course from a scorecard */
+    openS("courses");
+    document.getElementById("libcrsin").value = COURSE_EXAMPLE.replace("The Black Course", "Settings Links");
+    handleClick({ id:"libcrscheck", dataset:{} });
+    const btn = !!document.getElementById("libcrsadd");
+    handleClick({ id:"libcrsadd", dataset:{} });
+    const crs = Object.values(LIB.courses).find(x => x.name === "Settings Links");
+
+    /* nothing sent an empty map (R158) */
+    const empty = sent.some(x => Object.values(x.data).some(m => m && typeof m === "object" && m !== DEL && !Object.keys(m).length));
+    const res = { offered, recorded, stayedOff, fieldKept, zed: zed && zed.index, noDup, back,
+      btn, crs: !!crs && crs.holes.length === 18 && crs.tees.length === 4, crsField: COURSES.some(x => x.name === "Settings Links"),
+      empty, admin: isAdmin };
+    return JSON.stringify(res);
+    } finally {
+      Object.assign(SYNC, { on: keep.on, api: keep.api, db: keep.db });
+      LIB.players = keep.lp; LIB.courses = keep.lc; LIB.removed = keep.rm; LIB.loaded = keep.loaded;
+      isAdmin = keep.admin; view.tab = keep.tab; openPanel.s = null; cfgDirty = false; clearTimeout(cfgTimer);
+    }
+  })()`));
+  } finally { w.confirm = oldConfirm; }
+  ok(out.offered, "settings offers Remove on each saved player and course, and Add for both:");
+  ok(out.recorded, "a removal deletes the entry and records it in the same write:");
+  ok(out.stayedOff, "and it sticks — neither the refill from the field nor an edit in an event puts it back:");
+  ok(out.fieldKept, "the event's own field keeps them:");
+  eq(out.zed, 12.4, "a new player is saved with his index:");
+  ok(out.noDup, "a name already saved isn't saved twice:");
+  ok(out.back, "and adding a removed player again brings him back as himself:");
+  ok(out.btn && out.crs, "a course from a scorecard is checked, then saved:");
+  ok(!out.crsField, "to the saved list only, not into the event on screen:");
+  ok(!out.empty, "no write carries an empty map:");
+  ok(!out.admin, "all of it without the admin code:");
+}));
+
 t("R69 no test left the tournament in a different shape than it found it", () => {
   const now = dom.window.eval("JSON.stringify({g:GAMES.length, s:SCHEDULE.length, d:DAYS.length, c:COURSES.length, p:PLAYERS.length})");
   const a = JSON.parse(WORLD0), b = JSON.parse(now);
