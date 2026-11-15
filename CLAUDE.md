@@ -388,6 +388,20 @@ The app covers:
     list), **your handicap index** with Save (`libSavePlayer`), the saved
     players and courses, EI admin unlock, Check for update and the build line
     (moved off the Games tab).
+  - **Settings adds and removes saved players and courses, no admin code**
+    (R162). Add a player (name + index; a name already saved is refused, and
+    one this event's field has comes back under his own id) or a course from a
+    scorecard (`parseCourse`; same name keeps the id and takes the new card,
+    stamped so `libPull` carries it into events). **Remove takes it off the
+    saved list only** — every event's field keeps its copy, so games and
+    records are untouched. Because the list refills from the open field
+    (`libAbsorb`), a removal is recorded in `_library.removed.{players,courses}`
+    in the same merge write that deletes the entry (`libRemove`), and
+    `libAbsorb`, `libPushEdits` and `libRepairDemo` skip anything in it
+    (`libGone`). Saving it again on purpose — settings Add, `libSavePlayer`,
+    `libSaveCourse`, or Field's scorecard Replace — clears it (`libUnremove`).
+    Removing the phone's own "you" forgets it. All of it waits for
+    `LIB.loaded` and refuses on a stale device.
   - **Same-name saved players merge** (`libDedupe`, R157): kept is the one
     this event's field uses (else the oldest), with the newer index of the
     pair; the others are removed from `_library` (`deleteField`) unless they're
@@ -492,7 +506,7 @@ tournaments/_index                 { years: ["2025","2026"], live: "2026", open?
                                    — always written with merge: a wholesale { years, live } loses the events
 tournaments/x-{id}                 a trip or single game: same shape as a year's config plus { kind, name },
                                    with its own games subcollection
-tournaments/_library               { players:{ id:{…} }, courses:{ id:{…} } }  saved for every event — merge writes only
+tournaments/_library               { players:{ id:{…} }, courses:{ id:{…} }, removed:{ players:{id:ts}, courses:{id:ts} } }  saved for every event — merge writes only
 tournaments/_history               { years: { "2021": { rows:[{name,w,l,t,gp}] }, ... } }  pre-app records
 tournaments/ei-{YEAR}              config: { schema, appBuild, players, courses, schedule, days }
 tournaments/ei-{YEAR}/games/{id}   one doc per game: { id, roundId, type, teams:{0:[..],1:[..]}, oneGroup?, holes:{ "0":{...}, ..., "17":{...} } }
@@ -605,7 +619,7 @@ next free number from `grep -oE '"R[0-9]+' ei-tests.js | tr -d '\"R' | sort -n |
 tail -1` rather than from whatever precedes your insertion point. Two batches
 have collided this way already.
 
-Current status against `index.html`: **199 passed, 0 failed**. The suite is
+Current status against `index.html`: **200 passed, 0 failed**. The suite is
 green — a red run means your change broke something, not drift. If you change
 markup a test selects on, fix the test in the same commit.
 

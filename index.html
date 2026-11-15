@@ -451,6 +451,11 @@ table.sgrid thead th.cur{background:var(--brass);color:var(--paper)}
 .newp #newpname{flex:1 1 auto;min-width:0}
 .newp #newpidx{flex:0 0 70px;min-width:0}
 .newp .btn{flex:0 0 auto}
+.newp #libpname{flex:1 1 auto;min-width:0}
+.newp #libpidx{flex:0 0 70px;min-width:0}
+/* settings: the saved lists, with Remove at the end of each row */
+table.libtbl td.libx{width:1%;text-align:right;padding-left:8px}
+table.libtbl .evdel{padding:6px 10px}
 .sellist-h{padding-left:14px !important}
 .sellist-h,.rost-h{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-transform:uppercase;
   letter-spacing:.1em;font-size:11px;color:var(--ink-faint);margin:10px 0 4px;padding:6px 0 0}
@@ -2254,7 +2259,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "499802253483",
   appId: "1:499802253483:web:5ac27bc1501e8319962fee"
 };
-const BUILD = "2026-10-19.1310";
+const BUILD = "2026-11-15.1200";
 /* One tournament per year. A registry doc lists the years that exist and
    which one is live; everything else hangs off tournaments/{tid}. Past years
    are readable but frozen — results shouldn't change after the fact. */
@@ -2302,7 +2307,12 @@ const isArchive = () => !!(isEI() && liveYear && activeYear && activeYear !== li
    Stored at tournaments/_library as two maps keyed by id, not arrays: a merge
    write of { players: { p9: … } } then touches that one entry and nothing
    else, so two phones adding different people at once can't lose either. */
-const LIB = { players:{}, courses:{}, loaded:false };
+const LIB = { players:{}, courses:{}, removed:{ players:{}, courses:{} }, loaded:false };
+/* Taken off the saved list on purpose (settings → Remove). The list refills
+   itself from whatever event's field is open (libAbsorb), so without a record
+   of the removal anyone still in an event's field would be straight back on
+   the next snapshot. Saving them again on purpose clears it (libUnremove). */
+const libGone = (kind, id) => !!(LIB.removed[kind] && LIB.removed[kind][id]);
 const libPlayers = () => Object.values(LIB.players).filter(p => p && p.id && p.name)
   .sort((a, b) => a.name.localeCompare(b.name));
 const libCourses = () => Object.values(LIB.courses).filter(c => c && c.id && c.name)
@@ -2330,13 +2340,13 @@ function libAbsorb(onlyMissing){
   const add = { players:{}, courses:{} };
   let n = 0;
   PLAYERS.forEach(p => {
-    if (!p || !p.id || !p.name) return;
+    if (!p || !p.id || !p.name || libGone("players", p.id)) return;
     const cur = LIB.players[p.id];
     if (cur && (onlyMissing || JSON.stringify(cur) === JSON.stringify(p))) return;
     add.players[p.id] = clone(p); LIB.players[p.id] = clone(p); n++;
   });
   COURSES.forEach(c => {
-    if (!c || !c.id || !c.name) return;
+    if (!c || !c.id || !c.name || libGone("courses", c.id)) return;
     const cur = LIB.courses[c.id];
     if (cur && (onlyMissing || JSON.stringify(cur) === JSON.stringify(c))) return;
     add.courses[c.id] = clone(c); LIB.courses[c.id] = clone(c); n++;
@@ -2357,7 +2367,7 @@ function libRepairDemo(){
     if (!looksDemo(l)) return;
     /* this event's real man of that name — by name, since the ids needn't agree */
     const f = PLAYERS.find(p => p && p.name === l.name);
-    if (!f || looksDemo(f)) return;
+    if (!f || looksDemo(f) || libGone("players", f.id)) return;
     add.players[f.id] = clone(f); LIB.players[f.id] = clone(f); n++;
     if (l.id !== f.id){
       delete LIB.players[l.id]; gone.push(l.id);
@@ -2397,12 +2407,16 @@ function libPushEdits(){
   if (isArchive() || staleDevice) return;
   const add = { players:{}, courses:{} }; let n = 0;
   const now = Date.now();
+  /* Someone taken off the saved list stays off it when he's edited inside an
+     event — the edit is that event's business. */
   PLAYERS.forEach(p => {
     if (!p || !p.id || !p.name || fieldBase["p:" + p.id] === JSON.stringify(p)) return;
+    if (libGone("players", p.id)) return;
     p.upd = now; add.players[p.id] = clone(p); LIB.players[p.id] = clone(p); n++;
   });
   COURSES.forEach(c => {
     if (!c || !c.id || !c.name || fieldBase["c:" + c.id] === JSON.stringify(c)) return;
+    if (libGone("courses", c.id)) return;
     c.upd = now; add.courses[c.id] = clone(c); LIB.courses[c.id] = clone(c); n++;
   });
   snapField();
@@ -2468,11 +2482,49 @@ function libDedupe(){
 function libSavePlayer(p){
   p = clone(p); p.upd = Date.now();
   LIB.players[p.id] = p;
+  libUnremove("players", p.id);
   if (SYNC.on && SYNC.api && !staleDevice)
     SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"),
                     { players: { [p.id]: p } }, { merge: true }).catch(() => {});
   const here = PLAYERS.findIndex(x => x.id === p.id);
   if (here >= 0 && !isArchive() && fieldReady()){ PLAYERS[here] = clone(p); snapField(); queueConfig(); }
+}
+/* The same for a course, from settings. Stamped, so libPull carries a
+   corrected card into any event that has this course and isn't archived. */
+function libSaveCourse(c){
+  c = clone(c); c.upd = Date.now();
+  LIB.courses[c.id] = c;
+  libUnremove("courses", c.id);
+  if (SYNC.on && SYNC.api && !staleDevice)
+    SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"),
+                    { courses: { [c.id]: c } }, { merge: true }).catch(() => {});
+  const here = COURSES.findIndex(x => x.id === c.id);
+  if (here >= 0 && !isArchive() && fieldReady()){ COURSES[here] = clone(c); snapField(); queueConfig(); }
+}
+/* Off the saved list, and only that. Every event's field keeps its own copy,
+   so nobody's games, handicaps or record change — he just stops being offered
+   for the next trip or game. One merge write: the entry goes (deleteField)
+   and the removal is recorded beside it, so the two can't be half-applied. */
+function libRemove(kind, id){
+  const at = Date.now();
+  delete LIB[kind][id];
+  LIB.removed[kind][id] = at;
+  if (kind === "players"){
+    let me = null; try { me = localStorage.getItem("ei-me"); } catch(e){}
+    if (me === id){ try { localStorage.removeItem("ei-me"); } catch(e){} }
+  }
+  if (!SYNC.on || !SYNC.api || staleDevice || !SYNC.api.deleteField) return;
+  SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"),
+    { [kind]: { [id]: SYNC.api.deleteField() }, removed: { [kind]: { [id]: at } } },
+    { merge: true }).catch(() => {});
+}
+/* Saved again on purpose: forget that it was ever removed. */
+function libUnremove(kind, id){
+  if (!libGone(kind, id)) return;
+  delete LIB.removed[kind][id];
+  if (!SYNC.on || !SYNC.api || staleDevice || !SYNC.api.deleteField) return;
+  SYNC.api.setDoc(SYNC.api.doc(SYNC.db, "tournaments", "_library"),
+    { removed: { [kind]: { [id]: SYNC.api.deleteField() } } }, { merge: true }).catch(() => {});
 }
 
 /* Bring a saved player or course into this event's field. */
@@ -2828,6 +2880,8 @@ async function connectWith(i){
       if (!d.exists() && d.metadata && d.metadata.fromCache) return;
       const v = d.data() || {};
       LIB.players = v.players || {}; LIB.courses = v.courses || {};
+      const rm = v.removed || {};
+      LIB.removed = { players: rm.players || {}, courses: rm.courses || {} };
       LIB.loaded = true;
       libRepairDemo();
       /* Every time, not just the first: missing-only never overwrites, and it's
@@ -3659,6 +3713,7 @@ function closeEvent(keep){
 }
 let csvPlan = null;
 let crsPlan = null;
+let libCrsPlan = null;      // settings' add-a-course, checked and waiting for Add
 let boardMode = "table";
 /* The whole weekend by default. Narrowing to today reads as a shorter
    tournament than it is: on Friday morning the Thursday results are what
@@ -5285,14 +5340,40 @@ function renderSettings(){
   }
   h += `</div>`;
 
+  /* Anyone can add to or take off the saved lists — no admin code. They're
+     only what a new trip or game picks from; taking someone off never touches
+     an event he's already in, so there's nothing here for the code to guard. */
   const ps = libPlayers(), cs = libCourses();
-  h += panel("s:players", "Saved players", `<table class="lb ftbl"><tbody>${ps.map(p =>
-      `<tr><td>${esc(p.name)}</td><td class="mono">${(+p.index || 0).toFixed(1)}</td></tr>`).join("")}</tbody></table>
-    <p class="note">Everyone ever added to an EI, trip or game. Add someone new from an event's Field tab
-      or a game's roster; edit anyone's index on the Field tab.</p>`, ps.length + " saved");
-  h += panel("s:courses", "Saved courses", `<table class="lb ftbl"><tbody>${cs.map(c =>
-      `<tr><td>${esc(c.name)}</td><td class="mono">par ${(c.holes || []).reduce((a, x) => a + (+x.par || 0), 0)}</td></tr>`).join("")}</tbody></table>
-    <p class="note">Add or correct a course's card and tees on an event's Field tab.</p>`, cs.length + " saved");
+  const rm = (attr, id, name) =>
+    `<td class="libx"><button class="evdel" data-${attr}="${esc(id)}" aria-label="Remove ${esc(name)}">Remove</button></td>`;
+  h += panel("s:players", "Saved players", `<table class="lb ftbl libtbl"><tbody>${ps.map(p =>
+      `<tr><td>${esc(p.name)}</td><td class="mono">${(+p.index || 0).toFixed(1)}</td>${rm("libdelp", p.id, p.name)}</tr>`).join("")}</tbody></table>
+    <div class="imp">
+      <label class="addlab" for="libpname">Add a player</label>
+      <div class="newp">
+        <input id="libpname" autocomplete="off" placeholder="Name">
+        <input id="libpidx" inputmode="decimal" maxlength="5" placeholder="Index">
+        <button class="btn" id="libaddp">Add</button>
+      </div>
+    </div>
+    <p class="note">Everyone ever added to an EI, trip or game. Removing someone takes them off this
+      list only — any event they're already in keeps them, with their games and record. Edit anyone's
+      index on the Field tab.</p>`, ps.length + " saved");
+  h += panel("s:courses", "Saved courses", `<table class="lb ftbl libtbl"><tbody>${cs.map(c =>
+      `<tr><td>${esc(c.name)}</td><td class="mono">par ${(c.holes || []).reduce((a, x) => a + (+x.par || 0), 0)}</td>${rm("libdelc", c.id, c.name)}</tr>`).join("")}</tbody></table>
+    <div class="imp">
+      <label class="addlab" for="libcrsin">Add a course from a scorecard</label>
+      <p class="hint" style="margin:0 0 9px">Type what's on the card, or paste what Claude hands back from a
+        photo of it. A course already saved under the same name gets the new card and tees.</p>
+      <textarea id="libcrsin" rows="7" placeholder="${esc(COURSE_EXAMPLE)}"></textarea>
+      <div class="acts">
+        <button class="btn ghost" id="crsexample">Copy example</button>
+        <button class="btn" id="libcrscheck">Check it</button>
+      </div>
+      <div id="libcrsout"></div>
+    </div>
+    <p class="note">Removing a course takes it off this list only — events that use it keep it.
+      Change a course's tees for one event on that event's Field tab.</p>`, cs.length + " saved");
 
   h += `<h2 class="sec">App</h2><div class="imp">
     ${isAdmin
@@ -7001,6 +7082,7 @@ function handleClick(el){
     if (existing){
       existing.holes = crsPlan.holes; existing.tees = crsPlan.tees; existing.name = crsPlan.name;
       editCourseId = existing.id;
+      libUnremove("courses", existing.id);   // re-entered on purpose: back on the saved list
     } else {
       const id = "c" + Date.now().toString(36);
       COURSES.push({ id, name: crsPlan.name, holes: crsPlan.holes, tees: crsPlan.tees });
@@ -7488,6 +7570,71 @@ function handleClick(el){
     libSavePlayer(known ? { ...known, index: Math.round(index * 10) / 10 }
                         : { id, name, index: Math.round(index * 10) / 10, tees: {} });
     setMe(id); meEdit = false; toast("You're " + name); render(); return;
+  }
+  /* The saved lists, from settings. Not before they've loaded — until then
+     nobody is "already saved" and a removal would be undone by the first
+     snapshot — and not from an out-of-date phone, whose writes are dropped. */
+  if (el.id === "libaddp" || el.id === "libcrscheck" || el.id === "libcrsadd"
+      || el.dataset.libdelp || el.dataset.libdelc){
+    if (SYNC.on && !LIB.loaded){ toast("Still loading the saved list — try again in a moment"); return; }
+    if (staleDevice){ toast("This phone is out of date — update it first"); return; }
+  }
+  if (el.id === "libaddp"){
+    const name = ((document.getElementById("libpname") || {}).value || "").trim();
+    const raw = ((document.getElementById("libpidx") || {}).value || "").trim().replace("+", "-");
+    if (!name){ toast("Type a name"); return; }
+    const index = raw === "" ? 0 : parseFloat(raw);
+    if (!isFinite(index) || index < -10 || index > 54){ toast("Index looks wrong"); return; }
+    const saved = libPlayers().find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (saved){ toast(saved.name + " is already saved"); return; }
+    /* Someone this event already has, taken off the list earlier, comes back
+       as himself rather than as a second man with a new id. */
+    const here = PLAYERS.find(p => p.name.toLowerCase() === name.toLowerCase());
+    libSavePlayer(here ? { ...here, index: Math.round(index * 10) / 10 }
+      : { id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 4),
+          name, index: Math.round(index * 10) / 10, tees: {} });
+    toast(name + " saved"); render(); return;
+  }
+  if (el.dataset.libdelp){
+    const p = LIB.players[el.dataset.libdelp]; if (!p) return;
+    if (!confirm(`Take ${p.name} off the saved players?\n\nAny event ${p.name} is already in keeps `
+      + `them, with their games and record. They just won't be offered for new trips and games.`)) return;
+    libRemove("players", p.id); toast(p.name + " removed"); render(); return;
+  }
+  if (el.dataset.libdelc){
+    const c = LIB.courses[el.dataset.libdelc]; if (!c) return;
+    if (!confirm(`Take ${c.name} off the saved courses?\n\nEvents that use it keep it. `
+      + `It just won't be offered for new trips and games.`)) return;
+    libRemove("courses", c.id); toast(c.name + " removed"); render(); return;
+  }
+  if (el.id === "libcrscheck"){
+    const { errors, course } = parseCourse((document.getElementById("libcrsin") || {}).value || "");
+    const o = document.getElementById("libcrsout");
+    if (errors.length){
+      libCrsPlan = null;
+      o.innerHTML = `<p class="impmsg bad">${errors.length} problem(s):</p>
+        <ul class="csverr">${errors.slice(0,10).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`;
+    } else {
+      libCrsPlan = course;
+      const dup = libCourses().find(c => c.name.toLowerCase() === course.name.toLowerCase());
+      o.innerHTML = `<p class="impmsg good">${esc(course.name)} — par ${course.total},
+        ${course.tees.length} tee set(s): ${course.tees.map(t=>esc(t.name)).join(", ")}.</p>
+        ${dup ? `<p class="impmsg bad">"${esc(dup.name)}" is already saved —
+          adding will replace its holes and tees.</p>` : ""}
+        <div class="acts"><button class="btn" id="libcrsadd">${dup ? "Replace" : "Add"} course</button></div>`;
+    }
+    return;
+  }
+  if (el.id === "libcrsadd"){
+    if (!libCrsPlan) return;
+    const name = libCrsPlan.name, lc = name.toLowerCase();
+    /* the same course by name — saved, or in this event after being taken off
+       the list — keeps its id, so events that have it get the new card */
+    const known = libCourses().find(c => c.name.toLowerCase() === lc)
+      || COURSES.find(c => c.name.toLowerCase() === lc);
+    libSaveCourse(known ? { ...known, name, holes: libCrsPlan.holes, tees: libCrsPlan.tees }
+      : { id: "c" + Date.now().toString(36), name, holes: libCrsPlan.holes, tees: libCrsPlan.tees });
+    libCrsPlan = null; toast(name + " saved"); render(); return;
   }
   if (el.dataset.game){ view.gameId = el.dataset.game;
     view.hole = el.dataset.jumphole != null ? +el.dataset.jumphole : 0; render(); return; }
